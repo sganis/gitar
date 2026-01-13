@@ -1,2 +1,2 @@
-# gitai
-Git + AI assistance
+# gitan
+The Git Narrator
