@@ -1,0 +1,2 @@
+# gitai
+Git + AI assistance
