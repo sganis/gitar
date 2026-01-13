@@ -73,6 +73,33 @@ Respond with ONLY the commit message (no markdown, no extra explanation)."""
 
 # -----------------------------------------------------------------------------
 
+QUICK_COMMIT_SYSTEM_PROMPT = """You generate concise, meaningful Git commit messages from diffs.
+
+## Rules
+1. Focus on PURPOSE of changes, not file listings
+2. Ignore build directories, minified files, compiled output
+3. Only analyze actual source code changes
+4. Ignore changes to build assets (auto-generated)
+5. Keep response in a SINGLE LINE, no markdown
+6. Understand features added and bugs fixed
+7. Be specific about what changed
+
+## Examples
+"Add user authentication with OAuth2 support and session management"
+"Fix payment timeout bug by adding retry logic with exponential backoff"
+"Refactor database queries to use connection pooling for better performance"
+"""
+
+QUICK_COMMIT_USER_PROMPT = """Analyze this git diff and generate a concise commit message in a single line.
+
+```
+{diff}
+```
+
+Respond with ONLY the commit message (single line, no markdown)."""
+
+# -----------------------------------------------------------------------------
+
 PR_SYSTEM_PROMPT = """You are a senior engineer writing a PR description for code review.
 
 ## Output Format
@@ -243,7 +270,6 @@ Respond with your recommendation and reasoning."""
 # GIT UTILITIES
 # =============================================================================
 
-# Files to exclude from diffs (noisy/generated)
 EXCLUDE_PATTERNS = [
     ":(exclude)*.lock",
     ":(exclude)package-lock.json",
@@ -288,7 +314,6 @@ def get_current_branch() -> str:
 
 
 def get_default_branch() -> str:
-    """Try to find main/master branch."""
     for branch in ["main", "master"]:
         if run_git(["rev-parse", "--verify", branch]).returncode == 0:
             return branch
@@ -296,14 +321,11 @@ def get_default_branch() -> str:
 
 
 def get_diff(target: str = None, staged: bool = False, max_chars: int = 15000) -> str:
-    """Get diff with exclusions and smart truncation."""
     args = ["diff", "--unified=3"]
-    
     if staged:
         args.append("--cached")
     elif target:
         args.append(target)
-    
     args.append("--")
     args.append(".")
     args.extend(EXCLUDE_PATTERNS)
@@ -318,12 +340,10 @@ def get_diff(target: str = None, staged: bool = False, max_chars: int = 15000) -
             truncated = truncated[:last_file]
         truncated += "\n\n[... diff truncated ...]"
         return truncated
-    
     return diff
 
 
 def get_diff_stats(target: str = None, staged: bool = False) -> str:
-    """Get diff --stat summary."""
     args = ["diff", "--stat"]
     if staged:
         args.append("--cached")
@@ -335,7 +355,6 @@ def get_diff_stats(target: str = None, staged: bool = False) -> str:
 
 def get_commit_logs(limit: int = None, since: str = None, range_spec: str = None) -> list[dict]:
     args = ["log", "--pretty=format:%H|%an|%ad|%s", "--date=iso"]
-    
     if range_spec:
         args.append(range_spec)
     if limit:
@@ -344,7 +363,6 @@ def get_commit_logs(limit: int = None, since: str = None, range_spec: str = None
         args.append(f"--since={since}")
     
     result = run_git(args)
-    
     commits = []
     for line in result.stdout.strip().split("\n"):
         if not line:
@@ -370,7 +388,6 @@ def get_commit_diff(commit_hash: str, max_chars: int = 12000) -> str | None:
     
     args.append(".")
     args.extend(EXCLUDE_PATTERNS)
-    
     result = run_git(args)
     
     if result.returncode != 0:
@@ -384,19 +401,10 @@ def get_commit_diff(commit_hash: str, max_chars: int = 12000) -> str | None:
             truncated = truncated[:last_file]
         truncated += "\n\n[... diff truncated ...]"
         return truncated
-    
     return diff
 
 
-def get_file_tree(max_depth: int = 2) -> str:
-    """Get a simple file tree for context."""
-    result = run_git(["ls-tree", "-r", "--name-only", "HEAD"])
-    files = result.stdout.strip().split("\n")[:50]
-    return "\n".join(files)
-
-
 def get_current_version() -> str:
-    """Try to get current version from tags."""
     result = run_git(["describe", "--tags", "--abbrev=0"])
     if result.returncode == 0:
         return result.stdout.strip()
@@ -440,6 +448,89 @@ def call_ai(
 # =============================================================================
 # COMMANDS
 # =============================================================================
+
+def cmd_commit(args, client: OpenAI):
+    """Interactive commit with AI-generated message."""
+    staged = run_git(["diff", "--cached"])
+    unstaged = run_git(["diff"])
+    
+    diff = ""
+    if staged.returncode == 0 and staged.stdout.strip():
+        diff += staged.stdout.strip()
+    if unstaged.returncode == 0 and unstaged.stdout.strip():
+        diff += "\n" + unstaged.stdout.strip()
+    
+    if not diff.strip():
+        print("Nothing to commit.")
+        return
+    
+    diff = diff[:100000]
+    
+    while True:
+        prompt = QUICK_COMMIT_USER_PROMPT.format(diff=diff)
+        
+        commit_message = call_ai(
+            client, QUICK_COMMIT_SYSTEM_PROMPT, prompt,
+            model=args.model, max_tokens=200
+        )
+        
+        if not commit_message:
+            print("Failed to generate commit message.")
+            return
+        
+        print(f"\n{commit_message}\n")
+        
+        print("=" * 50)
+        print("  Is this message good?")
+        print("=" * 50)
+        print("  [  Enter  ] → Accept and commit")
+        print("  [    g    ] → Generate a new message")
+        print("  [    e    ] → Edit message manually")
+        print("  [ Any key ] → Cancel")
+        print("=" * 50)
+        
+        user_input = input("> ").strip().lower()
+        
+        if user_input == "":
+            break
+        elif user_input == "g":
+            print("Regenerating...\n")
+            continue
+        elif user_input == "e":
+            print(f"Current: {commit_message}")
+            edited = input("New message: ").strip()
+            if edited:
+                commit_message = edited
+            break
+        else:
+            print("Commit canceled.")
+            return
+    
+    if args.all:
+        print("Staging all changes...")
+        run_git(["add", "-A"])
+    
+    print("Committing...")
+    
+    full_message = f"{commit_message} [AI:{args.model}]" if args.tag else commit_message
+    commit_args = ["commit", "-am", full_message] if args.all else ["commit", "-m", full_message]
+    
+    result = run_git(commit_args)
+    print(result.stdout)
+    if result.stderr:
+        print(result.stderr)
+    
+    if result.returncode != 0:
+        print("Commit failed.")
+        return
+    
+    if args.push:
+        print("Pushing...")
+        push_result = run_git(["push"])
+        print(push_result.stdout)
+        if push_result.stderr:
+            print(push_result.stderr)
+
 
 def cmd_commits(args, client: OpenAI):
     """Generate commit messages for history."""
@@ -502,7 +593,6 @@ def cmd_pr(args, client: OpenAI):
     
     print(f"Generating PR description: {branch} → {base}\n")
     
-    # Get diff
     diff_target = f"{base}...{branch}" if branch != base else None
     
     if args.staged:
@@ -648,6 +738,13 @@ def main():
     
     subparsers = parser.add_subparsers(dest="command", help="Command to run")
     
+    # commit (interactive)
+    p_commit = subparsers.add_parser("commit", help="Interactive commit with AI-generated message")
+    p_commit.add_argument("-p", "--push", action="store_true", help="Push after commit")
+    p_commit.add_argument("-a", "--all", action="store_true", help="Stage all changes (git commit -a)")
+    p_commit.add_argument("--tag", action="store_true", default=True, help="Add model tag to message")
+    p_commit.add_argument("--no-tag", dest="tag", action="store_false", help="Don't add model tag")
+    
     # commits
     p_commits = subparsers.add_parser("commits", help="Generate commit messages for history")
     p_commits.add_argument("-n", "--limit", type=int, help="Number of commits")
@@ -690,7 +787,12 @@ def main():
     
     client = get_openai_client()
     
+    # Pass model to args for commands that need it
+    if not hasattr(args, 'model'):
+        args.model = "gpt-4o"
+    
     commands = {
+        "commit": cmd_commit,
         "commits": cmd_commits,
         "pr": cmd_pr,
         "changelog": cmd_changelog,
