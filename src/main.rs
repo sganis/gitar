@@ -60,41 +60,69 @@ impl Config {
 // PROMPTS
 // =============================================================================
 
-const COMMIT_SYSTEM_PROMPT: &str = r#"You are an expert software engineer who writes clear, informative Git commit messages.
+const COMMIT_SYSTEM_PROMPT: &str = r#"You are an expert software engineer who writes clear, informative Git commit messages following best practices.
 
 ## Commit Message Format
+```
 <Type>(<scope>):
 <description line 1>
 <description line 2 if needed>
+<more lines for complex changes>
+```
 
 ## Types
 - Feat: New feature
 - Fix: Bug fix
-- Refactor: Code restructuring
-- Docs: Documentation
-- Style: Formatting
-- Test: Tests
-- Chore: Build/config
-- Perf: Performance
+- Refactor: Code restructuring without behavior change
+- Docs: Documentation changes
+- Style: Formatting, whitespace (no code logic change)
+- Test: Adding or modifying tests
+- Chore: Build process, dependencies, config
+- Perf: Performance improvement
 
 ## Rules
-1. First line: Type(scope): only, capitalized
-2. Following lines: describe WHAT and WHY
-3. Scale detail to complexity
-4. Use imperative mood"#;
+1. First line: Type(scope): only, capitalized (no description on this line)
+2. Following lines: describe WHAT changed and WHY
+3. Scale detail to complexity: simple changes get 1-2 lines, complex changes get more
+4. Use imperative mood ("Add" not "Added")
+5. Be specific about impact and reasoning
+6. Use plain ASCII characters only. Do not use emojis or Unicode symbols.
+
+## Examples
+
+Simple change:
+Feat(docker):
+Add 'll' alias for directory listing.
+
+Medium change:
+Fix(api):
+Handle null response from payment gateway.
+Prevents 500 errors when gateway times out during peak traffic.
+
+Complex change:
+Refactor(auth):
+Extract token validation into dedicated middleware.
+Centralizes JWT verification logic previously duplicated across 5 controllers.
+Adds automatic token refresh for requests within 5 minutes of expiry.
+Improves testability by isolating auth concerns.
+
+Analyze the diff carefully. Identify:
+- Files changed and their purpose
+- The nature of the change (new feature, bug fix, refactor, etc.)
+- Any patterns suggesting the intent (error handling, optimization, etc.)"#;
 
 const COMMIT_USER_PROMPT: &str = r#"Generate a commit message for this diff.
-First line: Type(scope): only
-Following lines: describe what and why (1-5 lines)
+First line: Type(scope): only (capitalized, nothing else on this line)
+Following lines: describe what and why (1-5 lines depending on complexity)
 
-**Original message:** {original_message}
+**Original message (if any):** {original_message}
 
 **Diff:**
 ```
 {diff}
 ```
+Respond with ONLY the commit message (no markdown, no extra explanation)."#;
 
-Respond with ONLY the commit message."#;
 
 const QUICK_COMMIT_SYSTEM_PROMPT: &str = r#"You generate concise Git commit messages from diffs.
 
@@ -103,6 +131,7 @@ Rules:
 2. Ignore build/minified files
 3. Single line, no markdown
 4. Be specific
+5. Use plain ASCII characters only. Do not use emojis or Unicode symbols.
 
 Examples:
 "Add user authentication with OAuth2 support"
@@ -111,14 +140,14 @@ Examples:
 "#;
 
 const QUICK_COMMIT_USER_PROMPT: &str = r#"Generate a concise single-line commit message.
-
 ```
 {diff}
 ```
-
 Respond with ONLY the commit message (single line)."#;
 
 const PR_SYSTEM_PROMPT: &str = r#"Write a PR description.
+
+Use plain ASCII characters only. Do not use emojis or Unicode symbols.
 
 Format:
 ## Summary
@@ -139,6 +168,7 @@ Motivation.
 ## Rollout
 - Deploy notes or "Standard""#;
 
+
 const PR_USER_PROMPT: &str = r#"Generate PR description.
 
 **Branch:** {branch}
@@ -151,19 +181,23 @@ const PR_USER_PROMPT: &str = r#"Generate PR description.
 **Diff:**
 ```
 {diff}
-```"#;
+```
+"#;
 
 const CHANGELOG_SYSTEM_PROMPT: &str = r#"Create release notes.
 
+Use plain ASCII characters only. Do not use emojis or Unicode symbols.
+
 Format:
 # Release Notes
-## ✨ Features
-## 🐛 Fixes
-## 🔧 Improvements
-## ⚠️ Breaking Changes
-## 🏗️ Infrastructure
+## Features
+## Fixes
+## Improvements
+## Breaking Changes
+## Infrastructure
 
 Group related changes, omit empty sections."#;
+
 
 const CHANGELOG_USER_PROMPT: &str = r#"Generate release notes.
 
@@ -175,6 +209,8 @@ const CHANGELOG_USER_PROMPT: &str = r#"Generate release notes.
 
 const EXPLAIN_SYSTEM_PROMPT: &str = r#"Explain code changes to non-technical stakeholders.
 No jargon, focus on user impact, be brief.
+
+Use plain ASCII characters only. Do not use emojis or Unicode symbols.
 
 Format:
 ## What's Changing
@@ -203,6 +239,8 @@ const VERSION_SYSTEM_PROMPT: &str = r#"Recommend semantic version bump.
 - MAJOR: Breaking changes
 - MINOR: New features
 - PATCH: Fixes/refactors
+
+Use plain ASCII characters only. Do not use emojis or Unicode symbols.
 
 Output: Recommendation + Reasoning + Breaking: Yes/No"#;
 
