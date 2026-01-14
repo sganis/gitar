@@ -1,6 +1,6 @@
 // gitar - AI-powered Git assistant
 // src/main.rs
-
+mod tests;
 use anyhow::{bail, Context, Result};
 use async_openai::{
     config::OpenAIConfig,
