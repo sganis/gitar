@@ -26,10 +26,12 @@ use std::process::Command;
 const COMMIT_SYSTEM_PROMPT: &str = r#"You are an expert software engineer who writes clear, informative Git commit messages following best practices.
 
 ## Commit Message Format
+```
 <Type>(<scope>):
 <description line 1>
 <description line 2 if needed>
 <more lines for complex changes>
+```
 
 ## Types
 - Feat: New feature
