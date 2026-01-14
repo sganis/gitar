@@ -632,10 +632,10 @@ async fn cmd_commits(client: &LlmClient, limit: Option<usize>, since: Option<Str
         let a = if c.author.len() > 15 { &c.author[..15] } else { &c.author };
         let m = if c.message.len() > 40 { &c.message[..40] } else { &c.message };
         println!("[{}/{}] {} | {} | {:15} | {}", i+1, commits.len(), h, d, a, m);
-        let diff = match get_commit_diff(&c.hash, 12000)? { Some(d) if !d.trim().is_empty() => d, _ => { println!("  ⚠ No diff"); continue; } };
+        let diff = match get_commit_diff(&c.hash, 12000)? { Some(d) if !d.trim().is_empty() => d, _ => { println!("  - No diff"); continue; } };
         let prompt = COMMIT_USER_PROMPT.replace("{original_message}", &c.message).replace("{diff}", &diff);
         match client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await {
-            Ok(r) => { for (j, l) in r.lines().enumerate() { if !l.trim().is_empty() { println!("{}{}", if j == 0 { "  ✓ " } else { "    " }, l); } } }
+            Ok(r) => { for (j, l) in r.lines().enumerate() { if !l.trim().is_empty() { println!("{}{}", if j == 0 { "  - " } else { "    " }, l); } } }
             Err(e) => println!("  ✗ {}", e),
         }
         if i < commits.len() - 1 { tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await; }
