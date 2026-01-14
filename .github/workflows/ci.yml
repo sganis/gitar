@@ -42,22 +42,19 @@ jobs:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            rs/target
+            target
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('rs/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.target }}-cargo-
 
       - name: Build Rust project (rs/)
-        working-directory: rs
         run: cargo build --release --target ${{ matrix.target }}
 
       - name: Test Rust project (rs/)
-        working-directory: rs
         run: cargo test --release
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
-        working-directory: rs
         run: |
           mkdir -p dist
           cp target/${{ matrix.target }}/release/${{ matrix.binary_name }} dist/
@@ -66,7 +63,6 @@ jobs:
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        working-directory: rs
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist
@@ -77,5 +73,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: rs/dist/${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}
           if-no-files-found: error
