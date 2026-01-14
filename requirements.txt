@@ -1,3 +1,0 @@
-gitpython
-openai
-dotenv
