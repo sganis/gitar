@@ -538,7 +538,3 @@ gitar commits -n 5
 ## License
 
 MIT
-
-## Author
-
-San <sganis@gmail.com>
