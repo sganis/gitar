@@ -31,7 +31,6 @@ const COMMIT_SYSTEM_PROMPT: &str = r#"You are an expert software engineer who wr
 <description line 2 if needed>
 <more lines for complex changes>
 
-
 ## Types
 - Feat: New feature
 - Fix: Bug fix
@@ -80,9 +79,9 @@ Following lines: describe what and why (1-5 lines depending on complexity)
 **Original message (if any):** {original_message}
 
 **Diff:**
-
+```
 {diff}
-
+```
 Respond with ONLY the commit message (no markdown, no extra explanation)."#;
 
 
@@ -93,6 +92,7 @@ Rules:
 2. Ignore build/minified files
 3. Single line, no markdown
 4. Be specific
+5. Use plain ASCII characters only. Do not use emojis or Unicode symbols.
 
 Examples:
 "Add user authentication with OAuth2 support"
@@ -101,12 +101,14 @@ Examples:
 "#;
 
 const QUICK_COMMIT_USER_PROMPT: &str = r#"Generate a concise single-line commit message.
-
+```
 {diff}
-
+```
 Respond with ONLY the commit message (single line)."#;
 
 const PR_SYSTEM_PROMPT: &str = r#"Write a PR description.
+
+Use plain ASCII characters only. Do not use emojis or Unicode symbols.
 
 Format:
 ## Summary
@@ -127,6 +129,7 @@ Motivation.
 ## Rollout
 - Deploy notes or "Standard""#;
 
+
 const PR_USER_PROMPT: &str = r#"Generate PR description.
 
 **Branch:** {branch}
@@ -137,20 +140,25 @@ const PR_USER_PROMPT: &str = r#"Generate PR description.
 {stats}
 
 **Diff:**
+```
 {diff}
+```
 "#;
 
 const CHANGELOG_SYSTEM_PROMPT: &str = r#"Create release notes.
 
+Use plain ASCII characters only. Do not use emojis or Unicode symbols.
+
 Format:
 # Release Notes
-## ✨ Features
-## 🐛 Fixes
-## 🔧 Improvements
-## ⚠️ Breaking Changes
-## 🏗️ Infrastructure
+## Features
+## Fixes
+## Improvements
+## Breaking Changes
+## Infrastructure
 
 Group related changes, omit empty sections."#;
+
 
 const CHANGELOG_USER_PROMPT: &str = r#"Generate release notes.
 
@@ -162,6 +170,8 @@ const CHANGELOG_USER_PROMPT: &str = r#"Generate release notes.
 
 const EXPLAIN_SYSTEM_PROMPT: &str = r#"Explain code changes to non-technical stakeholders.
 No jargon, focus on user impact, be brief.
+
+Use plain ASCII characters only. Do not use emojis or Unicode symbols.
 
 Format:
 ## What's Changing
@@ -190,6 +200,8 @@ const VERSION_SYSTEM_PROMPT: &str = r#"Recommend semantic version bump.
 - MAJOR: Breaking changes
 - MINOR: New features
 - PATCH: Fixes/refactors
+
+Use plain ASCII characters only. Do not use emojis or Unicode symbols.
 
 Output: Recommendation + Reasoning + Breaking: Yes/No"#;
 
