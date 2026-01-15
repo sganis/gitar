@@ -414,7 +414,7 @@ gitar init [OPTIONS]
 
 ```bash
 gitar init --api-key "sk-..."
-gitar init --model "gpt-4o-mini" --base-branch "develop"
+gitar init --model "gpt-5-mini" --base-branch "develop"
 gitar init --base-url "http://localhost:11434/v1"  # Ollama
 ```
 
@@ -468,7 +468,7 @@ These options can be used with any command:
 **Example:**
 
 ```bash
-gitar --model gpt-4o-mini changelog v1.0.0
+gitar --model gpt-5-mini changelog v1.0.0
 gitar --base-branch develop pr
 ```
 
