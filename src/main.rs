@@ -142,11 +142,6 @@ Respond with ONLY the commit message (no markdown, no extra explanation)."#;
 
 const QUICK_COMMIT_SYSTEM_PROMPT: &str = r#"You generate clear and informative Git commit messages from diffs.
 
-Commit Message Format:
-<description line 1>.
-<description line 2 if needed>.
-<description line 3 if there was a lot of work done>.
-
 Rules:
 1. Focus on PURPOSE, not file listings
 2. Ignore build/minified files
@@ -159,11 +154,11 @@ Examples:
 "Refactor database queries for connection pooling"
 "#;
 
-const QUICK_COMMIT_USER_PROMPT: &str = r#"Generate a commit message.
+const QUICK_COMMIT_USER_PROMPT: &str = r#"Generate a commit message in a single-line.
 ```
 {diff}
 ```
-Respond with ONLY the commit message."#;
+Respond with ONLY the commit message. (single-line)"#;
 
 const PR_SYSTEM_PROMPT: &str = r#"Write a PR description.
 
