@@ -103,7 +103,7 @@ struct ApiErrorDetail {
 // PROMPTS
 // =============================================================================
 
-const COMMIT_SYSTEM_PROMPT: &str = r#"You are an expert software engineer who writes clear, informative Git commit messages.
+const HISTORY_SYSTEM_PROMPT: &str = r#"You are an expert software engineer who writes clear, informative Git commit messages.
 
 ## Commit Message Format
 <Type>(<scope>):
@@ -128,7 +128,7 @@ const COMMIT_SYSTEM_PROMPT: &str = r#"You are an expert software engineer who wr
 5. Be specific about impact and reasoning
 6. Use plain ASCII characters only. Do not use emojis or Unicode symbols."#;
 
-const COMMIT_USER_PROMPT: &str = r#"Generate a commit message for this diff.
+const HISTORY_USER_PROMPT: &str = r#"Generate a commit message for this diff.
 First line: Type(scope): only (capitalized, nothing else on this line)
 Following lines: describe what and why (1-5 lines depending on complexity)
 
@@ -140,7 +140,7 @@ Following lines: describe what and why (1-5 lines depending on complexity)
 ```
 Respond with ONLY the commit message (no markdown, no extra explanation)."#;
 
-const QUICK_COMMIT_SYSTEM_PROMPT: &str = r#"You generate clear and informative Git commit messages from diffs.
+const COMMIT_SYSTEM_PROMPT: &str = r#"You generate clear and informative Git commit messages from diffs.
 
 Rules:
 1. Focus on PURPOSE, not file listings
@@ -154,7 +154,7 @@ Examples:
 "Refactor database queries for connection pooling"
 "#;
 
-const QUICK_COMMIT_USER_PROMPT: &str = r#"Generate a commit message in a single-line.
+const COMMIT_USER_PROMPT: &str = r#"Generate a commit message in a single-line.
 ```
 {diff}
 ```
@@ -296,15 +296,15 @@ struct Cli {
     api_key: Option<String>,
 
     /// Model name
-    #[arg(long, global = true)]
+    #[arg(long, global = true, default_value = "gpt-4o-mini")]
     model: Option<String>,
 
     /// Maximum tokens
-    #[arg(long, global = true)]
+    #[arg(long, global = true, default_value = "500")]
     max_tokens: Option<u32>,
 
     /// Temperature (0.0-2.0)
-    #[arg(long, global = true)]
+    #[arg(long, global = true, default_value = "0.5")]
     temperature: Option<f32>,
 
     /// API base URL
@@ -451,8 +451,8 @@ impl ResolvedConfig {
             model: cli.model.clone()
                 .or_else(|| file.model.clone())
                 .unwrap_or_else(|| "gpt-4o-mini".to_string()),
-            max_tokens: cli.max_tokens.or(file.max_tokens).unwrap_or(4096),
-            temperature: cli.temperature.or(file.temperature).unwrap_or(0.7),
+            max_tokens: cli.max_tokens.or(file.max_tokens).unwrap_or(500),
+            temperature: cli.temperature.or(file.temperature).unwrap_or(0.5),
             base_url: cli.base_url.clone()
                 .or_else(|| file.base_url.clone())
                 .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
@@ -819,8 +819,8 @@ async fn cmd_commit(client: &LlmClient, push: bool, all: bool, tag: bool) -> Res
     let diff = truncate_diff(diff, 100000);
 
     let commit_message = loop {
-        let prompt = QUICK_COMMIT_USER_PROMPT.replace("{diff}", &diff);
-        let msg = client.chat(QUICK_COMMIT_SYSTEM_PROMPT, &prompt).await?;
+        let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
+        let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await?;
 
         println!("\n{}\n", msg);
         println!("{}", "=".repeat(50));
@@ -890,8 +890,8 @@ async fn cmd_staged(client: &LlmClient) -> Result<()> {
     if diff.trim().is_empty() {
         bail!("No staged changes.");
     }
-    let prompt = QUICK_COMMIT_USER_PROMPT.replace("{diff}", &diff);
-    let msg = client.chat(QUICK_COMMIT_SYSTEM_PROMPT, &prompt).await?;
+    let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
+    let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await?;
     println!("{}", msg);
     Ok(())
 }
@@ -901,13 +901,13 @@ async fn cmd_unstaged(client: &LlmClient) -> Result<()> {
     if diff.trim().is_empty() {
         bail!("No unstaged changes.");
     }
-    let prompt = QUICK_COMMIT_USER_PROMPT.replace("{diff}", &diff);
-    let msg = client.chat(QUICK_COMMIT_SYSTEM_PROMPT, &prompt).await?;
+    let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
+    let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await?;
     println!("{}", msg);
     Ok(())
 }
 
-async fn cmd_commits(
+async fn cmd_history(
     client: &LlmClient,
     from: Option<String>,
     since: Option<String>,
@@ -958,11 +958,11 @@ async fn cmd_commits(
             }
         };
 
-        let prompt = COMMIT_USER_PROMPT
+        let prompt = HISTORY_USER_PROMPT
             .replace("{original_message}", &c.message)
             .replace("{diff}", &diff);
 
-        match client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await {
+        match client.chat(HISTORY_SYSTEM_PROMPT, &prompt).await {
             Ok(r) => {
                 for (j, l) in r.lines().enumerate() {
                     if !l.trim().is_empty() {
@@ -1255,7 +1255,7 @@ async fn main() -> Result<()> {
         Commands::Staged => cmd_staged(&client).await?,
         Commands::Unstaged => cmd_unstaged(&client).await?,
         Commands::History { from, since, until, limit, delay } => {
-            cmd_commits(&client, from, since, until, limit, delay).await?
+            cmd_history(&client, from, since, until, limit, delay).await?
         }
         Commands::Pr { base, staged } => {
             cmd_pr(&client, base, &config.base_branch, staged).await?

@@ -131,9 +131,9 @@ mod tests {
         let resolved = ResolvedConfig::new(&cli, &file);
 
         assert!(resolved.api_key.is_none());
-        assert_eq!(resolved.model, "gpt-4o");
-        assert_eq!(resolved.max_tokens, 4096);
-        assert_eq!(resolved.temperature, 0.7);
+        assert_eq!(resolved.model, "gpt-4o-mini");
+        assert_eq!(resolved.max_tokens, 500);
+        assert_eq!(resolved.temperature, 0.5);
         assert_eq!(resolved.base_url, "https://api.openai.com/v1");
     }
 
@@ -202,7 +202,7 @@ mod tests {
         assert_eq!(resolved.api_key, Some("file-key".into()));
         assert_eq!(resolved.model, "claude-3"); // CLI wins
         assert_eq!(resolved.max_tokens, 2048); // File value
-        assert_eq!(resolved.temperature, 0.7); // Default
+        assert_eq!(resolved.temperature, 0.5); // Default
         assert_eq!(resolved.base_url, "https://api.openai.com/v1"); // Default
     }
 
@@ -386,18 +386,10 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn quick_commit_prompt_substitution() {
-        let diff = "test diff content";
-        let prompt = QUICK_COMMIT_USER_PROMPT.replace("{diff}", diff);
-        assert!(prompt.contains("test diff content"));
-        assert!(!prompt.contains("{diff}"));
-    }
-
-    #[test]
     fn commit_prompt_substitution() {
         let diff = "test diff";
         let original = "Original message";
-        let prompt = COMMIT_USER_PROMPT
+        let prompt = HISTORY_USER_PROMPT
             .replace("{original_message}", original)
             .replace("{diff}", diff);
         assert!(prompt.contains("test diff"));
@@ -418,7 +410,7 @@ mod tests {
         assert!(prompt.contains("2 files changed"));
         assert!(prompt.contains("diff content"));
         assert!(!prompt.contains("{branch}"));
-        assert!(!prompt.contains("{commits}"));
+        assert!(!prompt.contains("{commtis}"));
         assert!(!prompt.contains("{stats}"));
         assert!(!prompt.contains("{diff}"));
     }
@@ -516,8 +508,8 @@ mod tests {
 
     #[test]
     fn system_prompts_not_empty() {
+        assert!(!HISTORY_SYSTEM_PROMPT.is_empty());
         assert!(!COMMIT_SYSTEM_PROMPT.is_empty());
-        assert!(!QUICK_COMMIT_SYSTEM_PROMPT.is_empty());
         assert!(!PR_SYSTEM_PROMPT.is_empty());
         assert!(!CHANGELOG_SYSTEM_PROMPT.is_empty());
         assert!(!EXPLAIN_SYSTEM_PROMPT.is_empty());
@@ -526,21 +518,21 @@ mod tests {
 
     #[test]
     fn commit_system_prompt_contains_types() {
-        assert!(COMMIT_SYSTEM_PROMPT.contains("Feat"));
-        assert!(COMMIT_SYSTEM_PROMPT.contains("Fix"));
-        assert!(COMMIT_SYSTEM_PROMPT.contains("Refactor"));
-        assert!(COMMIT_SYSTEM_PROMPT.contains("Docs"));
-        assert!(COMMIT_SYSTEM_PROMPT.contains("Style"));
-        assert!(COMMIT_SYSTEM_PROMPT.contains("Test"));
-        assert!(COMMIT_SYSTEM_PROMPT.contains("Chore"));
-        assert!(COMMIT_SYSTEM_PROMPT.contains("Perf"));
+        assert!(HISTORY_SYSTEM_PROMPT.contains("Feat"));
+        assert!(HISTORY_SYSTEM_PROMPT.contains("Fix"));
+        assert!(HISTORY_SYSTEM_PROMPT.contains("Refactor"));
+        assert!(HISTORY_SYSTEM_PROMPT.contains("Docs"));
+        assert!(HISTORY_SYSTEM_PROMPT.contains("Style"));
+        assert!(HISTORY_SYSTEM_PROMPT.contains("Test"));
+        assert!(HISTORY_SYSTEM_PROMPT.contains("Chore"));
+        assert!(HISTORY_SYSTEM_PROMPT.contains("Perf"));
     }
 
     #[test]
     fn prompts_disallow_emojis() {
         let prompts = [
+            HISTORY_SYSTEM_PROMPT,
             COMMIT_SYSTEM_PROMPT,
-            QUICK_COMMIT_SYSTEM_PROMPT,
             PR_SYSTEM_PROMPT,
             CHANGELOG_SYSTEM_PROMPT,
             EXPLAIN_SYSTEM_PROMPT,
