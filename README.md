@@ -5,7 +5,7 @@ AI-powered Git assistant that generates commit messages, PR descriptions, change
 ## Features
 
 - **commit** - Interactive commit with AI-generated message
-- **commits** - Generate meaningful messages for existing commit history
+- **history** - Generate meaningful messages for existing commit history
 - **pr** - Generate PR descriptions from branch changes
 - **changelog** - Generate release notes from commits
 - **explain** - Explain changes in plain English for non-technical stakeholders
@@ -75,6 +75,9 @@ All commands accept an optional `[REF]` argument (tag, commit, branch) as the st
 ```bash
 gitar commit                    # Interactive commit with AI message
 gitar commit -a -p              # Stage all, commit, and push
+
+gitar history v1.0.0            # Commit history since tab
+gitar history --since "1 week ago"
 
 gitar changelog v1.0.0          # Release notes since tag
 gitar changelog --since "1 week ago"
@@ -170,12 +173,12 @@ gitar commits [REF] [OPTIONS]
 **Examples:**
 
 ```bash
-gitar commits                   # Last 50 commits
-gitar commits -n 10             # Last 10 commits
-gitar commits v1.0.0            # All commits since tag
-gitar commits HEAD~5            # Last 5 commits
-gitar commits --since "1 week ago"
-gitar commits --since "2024-01-01" --until "2024-06-01"
+gitar history                   # Last 50 commits
+gitar history -n 10             # Last 10 commits
+gitar history v1.0.0            # All commits since tag
+gitar history HEAD~5            # Last 5 commits
+gitar history --since "1 week ago"
+gitar history --since "2024-01-01" --until "2024-06-01"
 ```
 
 **Output:**

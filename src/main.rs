@@ -2,15 +2,8 @@
 // src/main.rs
 mod tests;
 use anyhow::{bail, Context, Result};
-use async_openai::{
-    config::OpenAIConfig,
-    types::chat::{
-        ChatCompletionRequestSystemMessage, ChatCompletionRequestUserMessage,
-        CreateChatCompletionRequestArgs,
-    },
-    Client,
-};
 use clap::{Parser, Subcommand};
+use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -51,6 +44,59 @@ impl Config {
         println!("Config saved to: {}", path.display());
         Ok(())
     }
+}
+
+// =============================================================================
+// OPENAI API TYPES
+// =============================================================================
+
+#[derive(Debug, Serialize)]
+struct ChatMessage {
+    role: String,
+    content: String,
+}
+
+#[derive(Debug, Serialize)]
+struct ChatCompletionRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    max_tokens: u32,
+    temperature: f32,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatCompletionResponse {
+    choices: Vec<ChatChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatChoice {
+    message: ChatMessageResponse,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatMessageResponse {
+    content: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelsResponse {
+    data: Vec<ModelInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ModelInfo {
+    id: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiError {
+    error: Option<ApiErrorDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiErrorDetail {
+    message: Option<String>,
 }
 
 // =============================================================================
@@ -234,8 +280,8 @@ const VERSION_USER_PROMPT: &str = r#"Recommend version bump.
     gitar changelog HEAD~10         # Release notes for last 10 commits
     gitar changelog --since '1 week ago'
     
-    gitar commits v1.0.0            # Generate messages since tag
-    gitar commits -n 5              # Generate for last 5 commits
+    gitar history v1.0.0            # Generate messages since tag
+    gitar history -n 5              # Generate for last 5 commits
     
     gitar explain v1.0.0            # Explain changes since tag
     gitar explain --staged          # Explain staged changes
@@ -299,7 +345,7 @@ enum Commands {
     Unstaged,
 
     /// Generate messages for commit history
-    Commits {
+    History {
         /// Starting point (tag, commit, branch)
         #[arg(value_name = "REF")]
         from: Option<String>,
@@ -395,7 +441,7 @@ struct ResolvedConfig {
     model: String,
     max_tokens: u32,
     temperature: f32,
-    base_url: Option<String>,
+    base_url: String,
     base_branch: String,
 }
 
@@ -408,7 +454,9 @@ impl ResolvedConfig {
                 .unwrap_or_else(|| "gpt-4o".to_string()),
             max_tokens: cli.max_tokens.or(file.max_tokens).unwrap_or(4096),
             temperature: cli.temperature.or(file.temperature).unwrap_or(0.7),
-            base_url: cli.base_url.clone().or_else(|| file.base_url.clone()),
+            base_url: cli.base_url.clone()
+                .or_else(|| file.base_url.clone())
+                .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
             base_branch: cli.base_branch.clone()
                 .or_else(|| file.base_branch.clone())
                 .unwrap_or_else(get_default_branch),
@@ -421,7 +469,9 @@ impl ResolvedConfig {
 // =============================================================================
 
 struct LlmClient {
-    client: Client<OpenAIConfig>,
+    http: Client,
+    base_url: String,
+    api_key: Option<String>,
     model: String,
     max_tokens: u32,
     temperature: f32,
@@ -429,22 +479,15 @@ struct LlmClient {
 
 impl LlmClient {
     fn new(config: &ResolvedConfig) -> Result<Self> {
-        let mut openai_config = OpenAIConfig::new();
-
-        if let Some(ref api_key) = config.api_key {
-            openai_config = openai_config.with_api_key(api_key);
-        }
-
-        if let Some(ref base_url) = config.base_url {
-            openai_config = openai_config.with_api_base(base_url);
-        }
-
-        let http_client = reqwest::Client::builder()
+        let http = Client::builder()
             .danger_accept_invalid_certs(true)
+            .timeout(std::time::Duration::from_secs(120))
             .build()?;
 
         Ok(Self {
-            client: Client::with_config(openai_config).with_http_client(http_client),
+            http,
+            base_url: config.base_url.trim_end_matches('/').to_string(),
+            api_key: config.api_key.clone(),
             model: config.model.clone(),
             max_tokens: config.max_tokens,
             temperature: config.temperature,
@@ -452,27 +495,98 @@ impl LlmClient {
     }
 
     async fn chat(&self, system: &str, user: &str) -> Result<String> {
-        let request = CreateChatCompletionRequestArgs::default()
-            .model(&self.model)
-            .max_tokens(self.max_tokens)
-            .temperature(self.temperature)
-            .messages(vec![
-                ChatCompletionRequestSystemMessage::from(system).into(),
-                ChatCompletionRequestUserMessage::from(user).into(),
-            ])
-            .build()?;
+        let url = format!("{}/chat/completions", self.base_url);
 
-        let response = self.client.chat().create(request).await?;
+        let request = ChatCompletionRequest {
+            model: self.model.clone(),
+            messages: vec![
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: system.to_string(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: user.to_string(),
+                },
+            ],
+            max_tokens: self.max_tokens,
+            temperature: self.temperature,
+        };
 
-        response.choices.first()
+        let mut req_builder = self.http
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json");
+
+        if let Some(ref api_key) = self.api_key {
+            req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
+        }
+
+        let response = req_builder
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send request")?;
+
+        let status = response.status();
+        let body = response.text().await.context("Failed to read response body")?;
+
+        if !status.is_success() {
+            // Try to parse error message
+            if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
+                if let Some(detail) = err.error {
+                    if let Some(msg) = detail.message {
+                        bail!("API error ({}): {}", status, msg);
+                    }
+                }
+            }
+            bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
+        }
+
+        let resp: ChatCompletionResponse = serde_json::from_str(&body)
+            .context("Failed to parse response")?;
+
+        resp.choices
+            .first()
             .and_then(|c| c.message.content.as_ref())
             .map(|s| s.trim().to_string())
-            .context("No response from API")
+            .context("No response content from API")
     }
 
     async fn list_models(&self) -> Result<Vec<String>> {
-        let response = self.client.models().list().await?;
-        Ok(response.data.into_iter().map(|m| m.id).collect())
+        let url = format!("{}/models", self.base_url);
+
+        let mut req_builder = self.http
+            .get(&url)
+            .header("Accept", "application/json");
+
+        if let Some(ref api_key) = self.api_key {
+            req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
+        }
+
+        let response = req_builder
+            .send()
+            .await
+            .context("Failed to send request")?;
+
+        let status = response.status();
+        let body = response.text().await.context("Failed to read response body")?;
+
+        if !status.is_success() {
+            if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
+                if let Some(detail) = err.error {
+                    if let Some(msg) = detail.message {
+                        bail!("API error ({}): {}", status, msg);
+                    }
+                }
+            }
+            bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
+        }
+
+        let resp: ModelsResponse = serde_json::from_str(&body)
+            .context("Failed to parse models response")?;
+
+        Ok(resp.data.into_iter().map(|m| m.id).collect())
     }
 }
 
@@ -1141,7 +1255,7 @@ async fn main() -> Result<()> {
         }
         Commands::Staged => cmd_staged(&client).await?,
         Commands::Unstaged => cmd_unstaged(&client).await?,
-        Commands::Commits { from, since, until, limit, delay } => {
+        Commands::History { from, since, until, limit, delay } => {
             cmd_commits(&client, from, since, until, limit, delay).await?
         }
         Commands::Pr { base, staged } => {
