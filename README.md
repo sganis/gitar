@@ -1,3 +1,5 @@
+[![Build status](https://github.com/sganis/gitar/actions/workflows/ci.yml/badge.svg)](https://github.com/sganis/gitar/actions)
+
 # gitar
 
 AI-powered Git assistant that generates commit messages, PR descriptions, changelogs, and more using OpenAI-compatible APIs.
