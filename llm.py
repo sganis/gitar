@@ -25,11 +25,11 @@ TIMEOUT = 30
 #   ├── OpenRouter (free tier)
 #   ├── Together.ai
 #   ├── DeepInfra
-# CHEAP
+# NOT SO CHEAP
 #   ├── Mistral
 #   ├── Fireworks
 #   ├── xAI (Grok)
-# EXPENSIVE / PREMIUM
+# PREMIUM
 #   ├── OpenAI
 #   ├── Claude (Anthropic)
 #   └── Gemini (Google)
