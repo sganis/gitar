@@ -140,14 +140,18 @@ Following lines: describe what and why (1-5 lines depending on complexity)
 ```
 Respond with ONLY the commit message (no markdown, no extra explanation)."#;
 
-const QUICK_COMMIT_SYSTEM_PROMPT: &str = r#"You generate concise Git commit messages from diffs.
+const QUICK_COMMIT_SYSTEM_PROMPT: &str = r#"You generate clear and informative Git commit messages from diffs.
+
+Commit Message Format:
+<description line 1>.
+<description line 2 if needed>.
+<description line 3 if there was a lot of work done>.
 
 Rules:
 1. Focus on PURPOSE, not file listings
 2. Ignore build/minified files
-3. Single line, no markdown
+3. No markdown. Use plain ASCII characters only. Do not use emojis or Unicode symbols. Do not use empty lines between lines.
 4. Be specific
-5. Use plain ASCII characters only. Do not use emojis or Unicode symbols.
 
 Examples:
 "Add user authentication with OAuth2 support"
@@ -155,11 +159,11 @@ Examples:
 "Refactor database queries for connection pooling"
 "#;
 
-const QUICK_COMMIT_USER_PROMPT: &str = r#"Generate a concise single-line commit message.
+const QUICK_COMMIT_USER_PROMPT: &str = r#"Generate a commit message.
 ```
 {diff}
 ```
-Respond with ONLY the commit message (single line)."#;
+Respond with ONLY the commit message."#;
 
 const PR_SYSTEM_PROMPT: &str = r#"Write a PR description.
 
@@ -451,7 +455,7 @@ impl ResolvedConfig {
             api_key: cli.api_key.clone().or_else(|| file.api_key.clone()),
             model: cli.model.clone()
                 .or_else(|| file.model.clone())
-                .unwrap_or_else(|| "gpt-4o".to_string()),
+                .unwrap_or_else(|| "gpt-4o-mini".to_string()),
             max_tokens: cli.max_tokens.or(file.max_tokens).unwrap_or(4096),
             temperature: cli.temperature.or(file.temperature).unwrap_or(0.7),
             base_url: cli.base_url.clone()

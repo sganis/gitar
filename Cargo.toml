@@ -1,12 +1,12 @@
 [package]
 name = "gitar"
-version = "1.0.1"
+version = "1.0.2"
 edition = "2021"
 
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
-dirs = "5"
+dirs = "6"
 dotenvy = "0.15"
 reqwest = { version = "0.13", features = ["json"] }
 serde = { version = "1", features = ["derive"] }
