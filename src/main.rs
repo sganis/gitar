@@ -304,7 +304,7 @@ struct Cli {
     #[arg(long, env = "OPENAI_API_KEY", global = true)]
     api_key: Option<String>,
 
-    /// Model name [default: gpt-5-mini]
+    /// Model name [default: gpt-5-chat-latest]
     #[arg(long, global = true)]
     model: Option<String>,
 
@@ -465,7 +465,7 @@ impl ResolvedConfig {
             api_key: cli.api_key.clone().or_else(|| file.api_key.clone()),
             model: cli.model.clone()
                 .or_else(|| file.model.clone())
-                .unwrap_or_else(|| "gpt-5-mini".to_string()),
+                .unwrap_or_else(|| "gpt-5-chat-latest".to_string()),
             max_tokens: cli.max_tokens.or(file.max_tokens).unwrap_or(500),
             temperature: cli.temperature.or(file.temperature).unwrap_or(0.5),
             base_url: cli.base_url.clone()
@@ -838,7 +838,6 @@ fn build_range(from: Option<&str>, base_branch: &str) -> Option<String> {
         })
 }
 
-/// Build a diff target string (e.g., "v1.0.0...HEAD" or "main...feature")
 fn build_diff_target(from: Option<&str>, base_branch: &str) -> String {
     match from {
         Some(r) => format!("{}..HEAD", r),
@@ -847,7 +846,13 @@ fn build_diff_target(from: Option<&str>, base_branch: &str) -> String {
             if branch != base_branch {
                 format!("{}...{}", base_branch, branch)
             } else {
-                String::new()
+                // On base branch with no ref: compare against latest tag
+                let tag = get_current_version();
+                if tag != "0.0.0" {
+                    format!("{}..HEAD", tag)
+                } else {
+                    String::new()
+                }
             }
         }
     }
@@ -1221,8 +1226,6 @@ async fn cmd_version(
     let prompt = VERSION_USER_PROMPT
         .replace("{version}", &current)
         .replace("{diff}", &diff);
-
-    println!("prompt: {}", &prompt);
 
     let r = client.chat(VERSION_SYSTEM_PROMPT, &prompt).await?;
     println!("{}", r);
