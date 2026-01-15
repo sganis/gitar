@@ -388,11 +388,17 @@ enum Commands {
         limit: Option<usize>,
     },
 
-    /// Explain changes for stakeholders
+    // CLI definition - add since/until to Explain
     Explain {
         /// Starting point (tag, commit, branch)
         #[arg(value_name = "REF")]
         from: Option<String>,
+        /// Changes newer than date
+        #[arg(long)]
+        since: Option<String>,
+        /// Changes older than date
+        #[arg(long)]
+        until: Option<String>,
         /// Use staged changes only
         #[arg(long)]
         staged: bool,
@@ -1101,9 +1107,12 @@ async fn cmd_changelog(
     Ok(())
 }
 
+// cmd_explain - replace the function
 async fn cmd_explain(
     client: &LlmClient,
     from: Option<String>,
+    since: Option<String>,
+    until: Option<String>,
     base_branch: &str,
     staged: bool,
 ) -> Result<()> {
@@ -1112,7 +1121,17 @@ async fn cmd_explain(
     let (diff, stats) = if staged {
         (get_diff(None, true, 15000)?, get_diff_stats(None, true)?)
     } else {
-        let diff_target = build_diff_target(from.as_deref(), base_branch);
+        // If since/until provided, find commit range from logs
+        let effective_from = match (&from, &since, &until) {
+            (Some(_), _, _) => from.clone(),
+            (None, Some(_), _) | (None, None, Some(_)) => {
+                let commits = get_commit_logs(None, since.as_deref(), until.as_deref(), None)?;
+                commits.last().map(|c| c.hash.clone())
+            }
+            _ => None,
+        };
+
+        let diff_target = build_diff_target(effective_from.as_deref(), base_branch);
         let diff_target_ref = if diff_target.is_empty() { None } else { Some(diff_target.as_str()) };
         (
             get_diff(diff_target_ref, false, 15000)?,
@@ -1273,8 +1292,8 @@ async fn main() -> Result<()> {
         Commands::Changelog { from, since, until, limit } => {
             cmd_changelog(&client, from, since, until, limit).await?
         }
-        Commands::Explain { from, staged } => {
-            cmd_explain(&client, from, &config.base_branch, staged).await?
+        Commands::Explain { from, since, until, staged } => {
+            cmd_explain(&client, from, since, until, &config.base_branch, staged).await?
         }
         Commands::Version { base, current } => {
             cmd_version(&client, base, &config.base_branch, current).await?

@@ -740,9 +740,29 @@ mod tests {
     fn cli_parses_explain_command() {
         use clap::Parser;
         let cli = Cli::try_parse_from(["gitar", "explain", "--staged"]).unwrap();
-        if let Commands::Explain { from, staged } = cli.command {
+        if let Commands::Explain { from, since, until, staged } = cli.command {
             assert!(from.is_none());
+            assert!(since.is_none());
+            assert!(until.is_none());
             assert!(staged);
+        } else {
+            panic!("Expected Explain command");
+        }
+    }
+    
+    #[test]
+    fn cli_parses_explain_with_date_filters() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar", "explain", "v1.0.0",
+            "--since", "2024-01-01",
+            "--until", "2024-12-31"
+        ]).unwrap();
+        if let Commands::Explain { from, since, until, staged } = cli.command {
+            assert_eq!(from, Some("v1.0.0".into()));
+            assert_eq!(since, Some("2024-01-01".into()));
+            assert_eq!(until, Some("2024-12-31".into()));
+            assert!(!staged);
         } else {
             panic!("Expected Explain command");
         }
