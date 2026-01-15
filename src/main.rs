@@ -3,7 +3,7 @@
 mod tests;
 use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
-use reqwest::Client;
+use reqwest::{Client, Proxy};
 use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 use std::path::PathBuf;
@@ -295,16 +295,16 @@ struct Cli {
     #[arg(long, env = "OPENAI_API_KEY", global = true)]
     api_key: Option<String>,
 
-    /// Model name
-    #[arg(long, global = true, default_value = "gpt-5-mini")]
+    /// Model name [default: gpt-5-mini]
+    #[arg(long, global = true)]
     model: Option<String>,
 
-    /// Maximum tokens
-    #[arg(long, global = true, default_value = "500")]
+    /// Maximum tokens [default: 500]
+    #[arg(long, global = true)]
     max_tokens: Option<u32>,
 
-    /// Temperature (0.0-2.0)
-    #[arg(long, global = true, default_value = "0.5")]
+    /// Temperature (0.0-2.0) [default: 0.5]
+    #[arg(long, global = true)]
     temperature: Option<f32>,
 
     /// API base URL
@@ -478,10 +478,18 @@ struct LlmClient {
 
 impl LlmClient {
     fn new(config: &ResolvedConfig) -> Result<Self> {
-        let http = Client::builder()
+        let mut builder = Client::builder()
             .danger_accept_invalid_certs(true)
-            .timeout(std::time::Duration::from_secs(120))
-            .build()?;
+            .timeout(std::time::Duration::from_secs(120));
+
+        if let Ok(proxy_url) = std::env::var("GITAR_PROXY") {
+            let proxy_url = proxy_url.trim();
+            if !proxy_url.is_empty() {
+                builder = builder.proxy(Proxy::all(proxy_url)?);
+            }
+        }
+
+        let http = builder.build()?;
 
         Ok(Self {
             http,
