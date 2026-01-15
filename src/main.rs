@@ -747,7 +747,9 @@ fn get_diff_stats(target: Option<&str>, staged: bool) -> Result<String> {
 fn get_current_version() -> String {
     run_git(&["describe", "--tags", "--abbrev=0"])
         .map(|s| s.trim().to_string())
-        .unwrap_or_else(|_| "0.0.0".into())
+        .ok()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "0.0.0".into())
 }
 
 fn truncate_diff(diff: String, max: usize) -> String {
