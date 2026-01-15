@@ -296,7 +296,7 @@ struct Cli {
     api_key: Option<String>,
 
     /// Model name
-    #[arg(long, global = true, default_value = "gpt-4o-mini")]
+    #[arg(long, global = true, default_value = "gpt-5-mini")]
     model: Option<String>,
 
     /// Maximum tokens
@@ -450,7 +450,7 @@ impl ResolvedConfig {
             api_key: cli.api_key.clone().or_else(|| file.api_key.clone()),
             model: cli.model.clone()
                 .or_else(|| file.model.clone())
-                .unwrap_or_else(|| "gpt-4o-mini".to_string()),
+                .unwrap_or_else(|| "gpt-5-mini".to_string()),
             max_tokens: cli.max_tokens.or(file.max_tokens).unwrap_or(500),
             temperature: cli.temperature.or(file.temperature).unwrap_or(0.5),
             base_url: cli.base_url.clone()

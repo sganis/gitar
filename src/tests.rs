@@ -72,7 +72,7 @@ mod tests {
     fn config_roundtrip() {
         let original = Config {
             api_key: Some("test-key".into()),
-            model: Some("gpt-4o-mini".into()),
+            model: Some("gpt-5-mini".into()),
             max_tokens: Some(8192),
             temperature: Some(0.5),
             base_url: Some("https://api.example.com".into()),
@@ -131,7 +131,7 @@ mod tests {
         let resolved = ResolvedConfig::new(&cli, &file);
 
         assert!(resolved.api_key.is_none());
-        assert_eq!(resolved.model, "gpt-4o-mini");
+        assert_eq!(resolved.model, "gpt-5-mini");
         assert_eq!(resolved.max_tokens, 500);
         assert_eq!(resolved.temperature, 0.5);
         assert_eq!(resolved.base_url, "https://api.openai.com/v1");
@@ -870,14 +870,14 @@ mod tests {
         let json = r#"{
             "data": [
                 {"id": "gpt-4o"},
-                {"id": "gpt-4o-mini"},
+                {"id": "gpt-5-mini"},
                 {"id": "gpt-3.5-turbo"}
             ]
         }"#;
         let resp: ModelsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.data.len(), 3);
         assert_eq!(resp.data[0].id, "gpt-4o");
-        assert_eq!(resp.data[1].id, "gpt-4o-mini");
+        assert_eq!(resp.data[1].id, "gpt-5-mini");
         assert_eq!(resp.data[2].id, "gpt-3.5-turbo");
     }
 
