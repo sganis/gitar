@@ -8,6 +8,11 @@ use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::{LazyLock, Mutex};
+use std::collections::HashSet;
+
+static REASONING_MODELS: LazyLock<Mutex<HashSet<String>>> = 
+    LazyLock::new(|| Mutex::new(HashSet::new()));
 
 // =============================================================================
 // CONFIG FILE
@@ -50,7 +55,7 @@ impl Config {
 // OPENAI API TYPES
 // =============================================================================
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 struct ChatMessage {
     role: String,
     content: String,
@@ -60,8 +65,12 @@ struct ChatMessage {
 struct ChatCompletionRequest {
     model: String,
     messages: Vec<ChatMessage>,
-    max_tokens: u32,
-    temperature: f32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -510,24 +519,61 @@ impl LlmClient {
     async fn chat(&self, system: &str, user: &str) -> Result<String> {
         let url = format!("{}/chat/completions", self.base_url);
 
+        let is_reasoning_model = REASONING_MODELS
+            .lock()
+            .unwrap()
+            .contains(&self.model);
+
+        let messages = vec![
+            ChatMessage {
+                role: "system".to_string(),
+                content: system.to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: user.to_string(),
+            },
+        ];
+
         let request = ChatCompletionRequest {
             model: self.model.clone(),
-            messages: vec![
-                ChatMessage {
-                    role: "system".to_string(),
-                    content: system.to_string(),
-                },
-                ChatMessage {
-                    role: "user".to_string(),
-                    content: user.to_string(),
-                },
-            ],
-            max_tokens: self.max_tokens,
-            temperature: self.temperature,
+            messages: messages.clone(),
+            max_tokens: if is_reasoning_model { None } else { Some(self.max_tokens) },
+            max_completion_tokens: if is_reasoning_model { Some(self.max_tokens) } else { None },
+            temperature: if is_reasoning_model { None } else { Some(self.temperature) },
         };
 
+        let response = self.send_chat_request(&url, &request).await;
+
+        // Check if we need to retry as a reasoning model
+        if let Err(e) = &response {
+            let err_str = e.to_string();
+            if (err_str.contains("max_completion_tokens") || err_str.contains("temperature")) 
+                && !is_reasoning_model 
+            {
+                REASONING_MODELS
+                    .lock()
+                    .unwrap()
+                    .insert(self.model.clone());
+
+                let retry_request = ChatCompletionRequest {
+                    model: self.model.clone(),
+                    messages,
+                    max_tokens: None,
+                    max_completion_tokens: Some(self.max_tokens),
+                    temperature: None,
+                };
+
+                return self.send_chat_request(&url, &retry_request).await;
+            }
+        }
+
+        response
+    }
+
+    async fn send_chat_request(&self, url: &str, request: &ChatCompletionRequest) -> Result<String> {
         let mut req_builder = self.http
-            .post(&url)
+            .post(url)
             .header("Content-Type", "application/json")
             .header("Accept", "application/json");
 
@@ -536,7 +582,7 @@ impl LlmClient {
         }
 
         let response = req_builder
-            .json(&request)
+            .json(request)
             .send()
             .await
             .context("Failed to send request")?;
@@ -545,7 +591,6 @@ impl LlmClient {
         let body = response.text().await.context("Failed to read response body")?;
 
         if !status.is_success() {
-            // Try to parse error message
             if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
                 if let Some(detail) = err.error {
                     if let Some(msg) = detail.message {
@@ -1176,6 +1221,8 @@ async fn cmd_version(
     let prompt = VERSION_USER_PROMPT
         .replace("{version}", &current)
         .replace("{diff}", &diff);
+
+    println!("prompt: {}", &prompt);
 
     let r = client.chat(VERSION_SYSTEM_PROMPT, &prompt).await?;
     println!("{}", r);
