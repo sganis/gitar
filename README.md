@@ -1,8 +1,8 @@
 [![Build status](https://github.com/sganis/gitar/actions/workflows/ci.yml/badge.svg)](https://github.com/sganis/gitar/actions)
 
-# gitar
+# 🎸 gitar
 
-AI-powered Git assistant that generates commit messages, PR descriptions, changelogs, and more using OpenAI and Anthropic (Claude) APIs. The name combines **git** + **AI** + **Rust** (and happens to sound like guitar 🎸).
+AI-powered Git assistant that generates commit messages, PR descriptions, changelogs, and more using OpenAI and Anthropic (Claude) APIs. The name combines **git** + **AI** + **Rust** (and happens to sound like guitar).
 
 ## Features
 
