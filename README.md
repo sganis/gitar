@@ -128,11 +128,10 @@ Based on cost and quality research:
 - **Best local model**: **Ollama** with `qwen2.5-coder:14b-instruct` - excellent for code, free
 - **Budget-conscious**: Start with **Groq** or **OpenRouter** free tiers
 - **Best quality**: **Claude** (claude-sonnet-4-5) or **OpenAI** (gpt-5-chat-latest)
-- **Balanced**: **Mistral** or **Together.ai** for good quality at lower cost
 
 ### Setup Examples
 ```bash
-# Ollama (free, local) - RECOMMENDED
+# Ollama (free, local)
 ollama pull qwen2.5-coder:14b
 gitar init --base-url "http://localhost:11434/v1" --model "qwen2.5-coder:14b-instruct"
 
