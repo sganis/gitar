@@ -46,6 +46,9 @@ export OPENAI_API_KEY="sk-..."
 
 # For Anthropic (Claude)
 export ANTHROPIC_API_KEY="sk-ant-..."
+
+# For Groq
+export GROQ_API_KEY="gsk_..."
 ```
 
 The appropriate env var is auto-selected based on your `base_url`.
@@ -98,6 +101,7 @@ gitar config
 |----------|----------|---------------|
 | OpenAI | `https://api.openai.com/v1` (default) | `gpt-5-chat-latest` |
 | Anthropic | `https://api.anthropic.com/v1` | `claude-sonnet-4-5-20250929` |
+| Groq | `https://api.groq.com/openai/v1` | `openai/gpt-oss-20b` |
 | Ollama | `http://localhost:11434/v1` | (specify with `--model`) |
 | Any OpenAI-compatible | Custom URL | (specify with `--model`) |
 
@@ -133,8 +137,8 @@ ollama pull qwen2.5-coder:14b
 gitar init --base-url "http://localhost:11434/v1" --model "qwen2.5-coder:14b-instruct"
 
 # Groq (very cheap)
-gitar init --base-url "https://api.groq.com/openai/v1" --model "llama-3.3-70b-versatile"
-export OPENAI_API_KEY="gsk_..."
+gitar init --base-url "https://api.groq.com/openai/v1" --model "openai/gpt-oss-20b"
+export GROQ_API_KEY="gsk_..."
 
 # OpenRouter (aggregator)
 gitar init --base-url "https://openrouter.ai/api/v1" --model "meta-llama/llama-3-70b-instruct"
@@ -721,10 +725,45 @@ gitar models
 |----------|-------------|
 | `OPENAI_API_KEY` | OpenAI API key (used when base_url is OpenAI) |
 | `ANTHROPIC_API_KEY` | Anthropic API key (used when base_url is Anthropic) |
+| `GROQ_API_KEY` | Groq API key (used when base_url is Groq) |
 | `OPENAI_BASE_URL` | Override default base URL |
 | `GITAR_PROXY` | HTTP proxy for API requests |
 
 ---
+
+## Using SSH Tunnel and SOCKS5 Proxy (Restricted Networks)
+
+If you are on a machine without direct internet access (HPC cluster, corporate network), you can use **gitar** through an SSH tunnel.
+
+### Create the tunnel
+
+```bash
+ssh -N -D 8000 user@jump-host-with-internet
+````
+
+This creates a local SOCKS5 proxy at:
+
+```
+socks5h://localhost:8000
+```
+
+Leave this terminal open.
+
+### Configure gitar
+
+```bash
+export GITAR_PROXY="socks5h://localhost:8000"
+```
+
+### Example (Groq)
+
+```bash
+export GROQ_API_KEY="gsk_..."
+gitar init --base-url "https://api.groq.com/openai/v1" --model "llama-3.3-70b-versatile"
+gitar commit
+```
+
+
 
 ## License
 
