@@ -11,6 +11,26 @@ use std::process::Command;
 use std::sync::{LazyLock, Mutex};
 use std::collections::HashSet;
 
+// =============================================================================
+// PROVIDER CONSTANTS (add near the top, after REASONING_MODELS)
+// =============================================================================
+const PROVIDER_OPENAI: &str = "https://api.openai.com/v1";
+const PROVIDER_CLAUDE: &str = "https://api.anthropic.com/v1";
+const PROVIDER_GEMINI: &str = "https://generativelanguage.googleapis.com";
+const PROVIDER_GROQ: &str = "https://api.groq.com/openai/v1";
+const PROVIDER_OLLAMA: &str = "http://localhost:11434/v1";
+
+fn provider_to_url(provider: &str) -> Option<&'static str> {
+    match provider.to_lowercase().as_str() {
+        "openai" => Some(PROVIDER_OPENAI),
+        "claude" | "anthropic" => Some(PROVIDER_CLAUDE),
+        "gemini" | "google" => Some(PROVIDER_GEMINI),
+        "groq" => Some(PROVIDER_GROQ),
+        "ollama" | "local" => Some(PROVIDER_OLLAMA),
+        _ => None,
+    }
+}
+
 static REASONING_MODELS: LazyLock<Mutex<HashSet<String>>> = 
     LazyLock::new(|| Mutex::new(HashSet::new()));
 
@@ -20,7 +40,7 @@ static REASONING_MODELS: LazyLock<Mutex<HashSet<String>>> =
 
 const CONFIG_FILENAME: &str = ".gitar.toml";
 
-#[derive(Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 struct Config {
     api_key: Option<String>,
     model: Option<String>,
@@ -127,9 +147,6 @@ struct ClaudeResponse {
 struct ClaudeContent {
     text: Option<String>,
 }
-
-// GEMINI
-// === ADD: Gemini API types (place near other API TYPES) ===
 
 #[derive(Debug, Serialize)]
 struct GeminiGenerateContentRequest {
@@ -384,6 +401,14 @@ struct Cli {
     #[arg(long, global = true)]
     base_branch: Option<String>,
 
+    /// Provider shortcut: openai, claude, gemini, groq, ollama
+    #[arg(
+        long,
+        global = true,
+        value_parser = ["openai", "claude", "anthropic", "gemini", "google", "groq", "ollama", "local"]
+    )]
+    provider: Option<String>,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -495,20 +520,7 @@ enum Commands {
     },
 
     /// Save options to config file (~/.gitar.toml)
-    Init {
-        #[arg(long)]
-        api_key: Option<String>,
-        #[arg(long)]
-        model: Option<String>,
-        #[arg(long)]
-        max_tokens: Option<u32>,
-        #[arg(long)]
-        temperature: Option<f32>,
-        #[arg(long)]
-        base_url: Option<String>,
-        #[arg(long)]
-        base_branch: Option<String>,
-    },
+    Init,
 
     /// Show current config
     Config,
@@ -528,7 +540,12 @@ struct ResolvedConfig {
 
 impl ResolvedConfig {
     fn new(cli: &Cli, file: &Config) -> Self {
-        let base_url = cli.base_url.clone()
+        // Resolve provider to URL, CLI provider takes precedence
+        let provider_url = cli.provider.as_ref()
+            .and_then(|p| provider_to_url(p).map(String::from));
+
+        let base_url = provider_url
+            .or_else(|| cli.base_url.clone())
             .or_else(|| file.base_url.clone())
             .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
 
@@ -544,20 +561,21 @@ impl ResolvedConfig {
             "gpt-5-chat-latest"
         };
 
+        // Priority: CLI > env var > config file
+        let env_api_key = if is_claude {
+            std::env::var("ANTHROPIC_API_KEY").ok()
+        } else if is_groq {
+            std::env::var("GROQ_API_KEY").ok()
+                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+        } else if is_gemini {
+            std::env::var("GEMINI_API_KEY").ok()
+        } else {
+            std::env::var("OPENAI_API_KEY").ok()
+        };
+
         let api_key = cli.api_key.clone()
-            .or_else(|| file.api_key.clone())
-            .or_else(|| {
-                if is_claude {
-                    std::env::var("ANTHROPIC_API_KEY").ok()
-                } else if is_groq {
-                    std::env::var("GROQ_API_KEY").ok()
-                        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-                } else if is_gemini {
-                    std::env::var("GEMINI_API_KEY").ok()
-                } else {
-                    std::env::var("OPENAI_API_KEY").ok()
-                }
-            });
+            .or(env_api_key)
+            .or_else(|| file.api_key.clone());
 
         Self {
             api_key,
@@ -573,7 +591,6 @@ impl ResolvedConfig {
         }
     }
 }
-
 
 // =============================================================================
 // LLM CLIENT
@@ -1572,24 +1589,28 @@ async fn cmd_version(
     Ok(())
 }
 
-fn cmd_init(
-    api_key: Option<String>,
-    model: Option<String>,
-    max_tokens: Option<u32>,
-    temperature: Option<f32>,
-    base_url: Option<String>,
-    base_branch: Option<String>,
-) -> Result<()> {
-    let mut config = Config::load();
+fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
+    let mut config = file.clone();
 
-    if api_key.is_some() { config.api_key = api_key; }
-    if model.is_some() { config.model = model; }
-    if max_tokens.is_some() { config.max_tokens = max_tokens; }
-    if temperature.is_some() { config.temperature = temperature; }
-    if base_url.is_some() { config.base_url = base_url; }
-    if base_branch.is_some() { config.base_branch = base_branch; }
+    // Resolve provider to URL
+    let resolved_url = cli.provider.as_ref()
+        .and_then(|p| provider_to_url(p).map(String::from))
+        .or_else(|| cli.base_url.clone());
 
-    config.save()
+    if cli.api_key.is_some() { config.api_key = cli.api_key.clone(); }
+    if cli.model.is_some() { config.model = cli.model.clone(); }
+    if cli.max_tokens.is_some() { config.max_tokens = cli.max_tokens; }
+    if cli.temperature.is_some() { config.temperature = cli.temperature; }
+    if resolved_url.is_some() { config.base_url = resolved_url; }
+    if cli.base_branch.is_some() { config.base_branch = cli.base_branch.clone(); }
+
+    config.save()?;
+
+    if let Some(p) = &cli.provider {
+        println!("Provider set to: {}", p);
+    }
+
+    Ok(())
 }
 
 fn cmd_config() -> Result<()> {
@@ -1599,9 +1620,26 @@ fn cmd_config() -> Result<()> {
         .unwrap_or_else(|| "(unknown)".into());
 
     let base_url = config.base_url.as_deref().unwrap_or("https://api.openai.com/v1");
+    
+    // Detect provider from URL
+    let provider_name = if base_url.contains("anthropic.com") {
+        "claude"
+    } else if base_url.contains("generativelanguage.googleapis.com") {
+        "gemini"
+    } else if base_url.contains("api.groq.com") {
+        "groq"
+    } else if base_url.contains("localhost:11434") || base_url.contains("127.0.0.1:11434") {
+        "ollama"
+    } else if base_url.contains("api.openai.com") {
+        "openai"
+    } else {
+        "custom"
+    };
+
     let is_claude = base_url.contains("anthropic.com");
     let is_groq = base_url.contains("api.groq.com");
     let is_gemini = base_url.contains("generativelanguage.googleapis.com");
+    let is_ollama = base_url.contains("localhost:11434") || base_url.contains("127.0.0.1:11434");
 
     println!("Config file: {}\n", path);
     println!("api_key:     {}", config.api_key.as_deref()
@@ -1614,10 +1652,10 @@ fn cmd_config() -> Result<()> {
     println!("temperature: {}", config.temperature
         .map(|t| t.to_string())
         .unwrap_or_else(|| "(not set)".into()));
-    println!("base_url:    {}", config.base_url.as_deref().unwrap_or("(not set)"));
+    println!("base_url:    {} ({})", config.base_url.as_deref().unwrap_or("(not set)"), provider_name);
     println!("base_branch: {}", config.base_branch.as_deref().unwrap_or("(not set)"));
 
-    println!("\nPriority: --api-key > config file > env var");
+    println!("\nPriority: --api-key > env var > config file");
     println!(
         "Env vars checked: {}",
         if is_claude {
@@ -1626,13 +1664,15 @@ fn cmd_config() -> Result<()> {
             "GROQ_API_KEY (fallback: OPENAI_API_KEY)"
         } else if is_gemini {
             "GEMINI_API_KEY"
+        } else if is_ollama {
+            "(none required)"
         } else {
             "OPENAI_API_KEY"
         }
     );
-
     Ok(())
 }
+
 
 async fn cmd_models(client: &LlmClient) -> Result<()> {
     println!("Fetching available models...\n");
@@ -1664,15 +1704,8 @@ async fn main() -> Result<()> {
 
     // Handle non-git commands first
     match &cli.command {
-        Commands::Init { api_key, model, max_tokens, temperature, base_url, base_branch } => {
-            return cmd_init(
-                api_key.clone().or_else(|| cli.api_key.clone()),
-                model.clone().or_else(|| cli.model.clone()),
-                max_tokens.or(cli.max_tokens),
-                temperature.or(cli.temperature),
-                base_url.clone().or_else(|| cli.base_url.clone()),
-                base_branch.clone().or_else(|| cli.base_branch.clone()),
-            );
+        Commands::Init => {
+            return cmd_init(&cli, &file_config);
         }
         Commands::Config => return cmd_config(),
         _ => {}

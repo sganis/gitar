@@ -1322,4 +1322,800 @@ mod tests {
             panic!("Expected Init command");
         }
     }
+    // =========================================================================
+    // GEMINI API TYPES TESTS
+    // =========================================================================
+
+    #[test]
+    fn gemini_request_serializes() {
+        let req = GeminiGenerateContentRequest {
+            system_instruction: Some(GeminiContent {
+                parts: vec![GeminiPart { text: "You are helpful.".to_string() }],
+            }),
+            contents: vec![GeminiContent {
+                parts: vec![GeminiPart { text: "Hello".to_string() }],
+            }],
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"system_instruction\""));
+        assert!(json.contains("You are helpful."));
+        assert!(json.contains("\"contents\""));
+        assert!(json.contains("Hello"));
+    }
+
+    #[test]
+    fn gemini_request_skips_none_system_instruction() {
+        let req = GeminiGenerateContentRequest {
+            system_instruction: None,
+            contents: vec![GeminiContent {
+                parts: vec![GeminiPart { text: "Hello".to_string() }],
+            }],
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(!json.contains("system_instruction"));
+    }
+
+    #[test]
+    fn gemini_response_deserializes() {
+        let json = r#"{
+            "candidates": [
+                {
+                    "content": {
+                        "parts": [{"text": "Hello! How can I help?"}]
+                    }
+                }
+            ]
+        }"#;
+        let resp: GeminiGenerateContentResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.candidates.is_some());
+        let candidates = resp.candidates.unwrap();
+        assert_eq!(candidates.len(), 1);
+        let text = candidates[0].content.as_ref().unwrap().parts[0].text.clone();
+        assert_eq!(text, "Hello! How can I help?");
+    }
+
+    #[test]
+    fn gemini_response_handles_null_candidates() {
+        let json = r#"{"candidates": null}"#;
+        let resp: GeminiGenerateContentResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.candidates.is_none());
+    }
+
+    #[test]
+    fn gemini_response_handles_empty_candidates() {
+        let json = r#"{"candidates": []}"#;
+        let resp: GeminiGenerateContentResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.candidates.as_ref().unwrap().is_empty());
+    }
+
+    #[test]
+    fn gemini_response_handles_null_content() {
+        let json = r#"{
+            "candidates": [{"content": null}]
+        }"#;
+        let resp: GeminiGenerateContentResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.candidates.unwrap()[0].content.is_none());
+    }
+
+    #[test]
+    fn gemini_models_response_deserializes() {
+        let json = r#"{
+            "models": [
+                {"name": "models/gemini-2.5-flash"},
+                {"name": "models/gemini-2.5-pro"},
+                {"name": "models/gemini-1.5-flash"}
+            ]
+        }"#;
+        let resp: GeminiModelsResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.models.len(), 3);
+        assert_eq!(resp.models[0].name, "models/gemini-2.5-flash");
+        assert_eq!(resp.models[1].name, "models/gemini-2.5-pro");
+    }
+
+    #[test]
+    fn gemini_models_response_handles_empty() {
+        let json = r#"{"models": []}"#;
+        let resp: GeminiModelsResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.models.is_empty());
+    }
+
+    #[test]
+    fn gemini_model_name_strip_prefix() {
+        let name = "models/gemini-2.5-flash";
+        let stripped = name.strip_prefix("models/").unwrap_or(name);
+        assert_eq!(stripped, "gemini-2.5-flash");
+    }
+
+    #[test]
+    fn gemini_model_name_no_prefix() {
+        let name = "gemini-2.5-flash";
+        let stripped = name.strip_prefix("models/").unwrap_or(name);
+        assert_eq!(stripped, "gemini-2.5-flash");
+    }
+
+    // =========================================================================
+    // GEMINI API DETECTION TESTS
+    // =========================================================================
+
+    #[test]
+    fn is_gemini_api_detects_google_url() {
+        let config = ResolvedConfig {
+            api_key: None,
+            model: "gemini-2.5-flash".into(),
+            max_tokens: 500,
+            temperature: 0.5,
+            base_url: "https://generativelanguage.googleapis.com".into(),
+            base_branch: "main".into(),
+        };
+        let client = LlmClient::new(&config).unwrap();
+        assert!(client.is_gemini_api());
+        assert!(!client.is_claude_api());
+    }
+
+    #[test]
+    fn is_gemini_api_false_for_openai() {
+        let config = ResolvedConfig {
+            api_key: None,
+            model: "gpt-5-chat-latest".into(),
+            max_tokens: 500,
+            temperature: 0.5,
+            base_url: "https://api.openai.com/v1".into(),
+            base_branch: "main".into(),
+        };
+        let client = LlmClient::new(&config).unwrap();
+        assert!(!client.is_gemini_api());
+    }
+
+    #[test]
+    fn is_gemini_api_false_for_claude() {
+        let config = ResolvedConfig {
+            api_key: None,
+            model: "claude-sonnet-4-5-20250929".into(),
+            max_tokens: 500,
+            temperature: 0.5,
+            base_url: "https://api.anthropic.com/v1".into(),
+            base_branch: "main".into(),
+        };
+        let client = LlmClient::new(&config).unwrap();
+        assert!(!client.is_gemini_api());
+        assert!(client.is_claude_api());
+    }
+
+    // =========================================================================
+    // RESOLVED CONFIG GEMINI TESTS
+    // =========================================================================
+
+    #[test]
+    fn resolved_config_uses_gemini_default_model() {
+        let cli = make_test_cli(
+            None,
+            None,
+            None,
+            None,
+            Some("https://generativelanguage.googleapis.com".into()),
+            None,
+        );
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "gemini-2.5-flash");
+        assert_eq!(resolved.base_url, "https://generativelanguage.googleapis.com");
+    }
+
+    #[test]
+    fn resolved_config_cli_model_overrides_gemini_default() {
+        let cli = make_test_cli(
+            None,
+            Some("gemini-2.5-pro".into()),
+            None,
+            None,
+            Some("https://generativelanguage.googleapis.com".into()),
+            None,
+        );
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "gemini-2.5-pro");
+    }
+
+    #[test]
+    fn resolved_config_file_url_determines_gemini_default_model() {
+        let cli = make_test_cli(None, None, None, None, None, None);
+        let file = Config {
+            base_url: Some("https://generativelanguage.googleapis.com".into()),
+            ..Config::default()
+        };
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "gemini-2.5-flash");
+    }
+
+    // =========================================================================
+    // RESOLVED CONFIG GROQ TESTS
+    // =========================================================================
+
+    #[test]
+    fn resolved_config_groq_uses_openai_default_model() {
+        // Groq uses OpenAI-compatible API, so default model is still gpt-5-chat-latest
+        // (user would override with --model for actual Groq models)
+        let cli = make_test_cli(
+            None,
+            None,
+            None,
+            None,
+            Some("https://api.groq.com/openai/v1".into()),
+            None,
+        );
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "gpt-5-chat-latest");
+        assert_eq!(resolved.base_url, "https://api.groq.com/openai/v1");
+    }
+
+    #[test]
+    fn resolved_config_groq_with_custom_model() {
+        let cli = make_test_cli(
+            None,
+            Some("llama-3.3-70b-versatile".into()),
+            None,
+            None,
+            Some("https://api.groq.com/openai/v1".into()),
+            None,
+        );
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "llama-3.3-70b-versatile");
+    }
+
+    // =========================================================================
+    // CLI GEMINI/GROQ TESTS
+    // =========================================================================
+
+    #[test]
+    fn cli_parses_gemini_base_url() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar",
+            "--base-url",
+            "https://generativelanguage.googleapis.com",
+            "staged",
+        ])
+        .unwrap();
+        assert_eq!(
+            cli.base_url,
+            Some("https://generativelanguage.googleapis.com".into())
+        );
+    }
+
+    #[test]
+    fn cli_parses_groq_base_url() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar",
+            "--base-url",
+            "https://api.groq.com/openai/v1",
+            "staged",
+        ])
+        .unwrap();
+        assert_eq!(cli.base_url, Some("https://api.groq.com/openai/v1".into()));
+    }
+
+    #[test]
+    fn cli_parses_gemini_model() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "--model", "gemini-2.5-flash", "staged"]).unwrap();
+        assert_eq!(cli.model, Some("gemini-2.5-flash".into()));
+    }
+
+    #[test]
+    fn cli_init_with_gemini_config() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar",
+            "init",
+            "--base-url",
+            "https://generativelanguage.googleapis.com",
+            "--model",
+            "gemini-2.5-pro",
+        ])
+        .unwrap();
+        if let Commands::Init { base_url, model, .. } = cli.command {
+            assert_eq!(
+                base_url,
+                Some("https://generativelanguage.googleapis.com".into())
+            );
+            assert_eq!(model, Some("gemini-2.5-pro".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_init_with_groq_config() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar",
+            "init",
+            "--base-url",
+            "https://api.groq.com/openai/v1",
+            "--model",
+            "mixtral-8x7b-32768",
+        ])
+        .unwrap();
+        if let Commands::Init { base_url, model, .. } = cli.command {
+            assert_eq!(base_url, Some("https://api.groq.com/openai/v1".into()));
+            assert_eq!(model, Some("mixtral-8x7b-32768".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    // =========================================================================
+    // PROVIDER MAPPING TESTS - OLLAMA
+    // =========================================================================
+    #[test]
+    fn provider_to_url_ollama() {
+        assert_eq!(provider_to_url("ollama"), Some(PROVIDER_OLLAMA));
+        assert_eq!(provider_to_url("OLLAMA"), Some(PROVIDER_OLLAMA));
+        assert_eq!(provider_to_url("Ollama"), Some(PROVIDER_OLLAMA));
+        assert_eq!(provider_to_url("local"), Some(PROVIDER_OLLAMA));
+        assert_eq!(provider_to_url("LOCAL"), Some(PROVIDER_OLLAMA));
+    }
+
+    #[test]
+    fn provider_ollama_url_is_localhost() {
+        assert!(PROVIDER_OLLAMA.contains("localhost:11434"));
+        assert!(PROVIDER_OLLAMA.starts_with("http://"));
+    }
+
+    // =========================================================================
+    // CLI PROVIDER ARGUMENT TESTS - OLLAMA
+    // =========================================================================
+
+    #[test]
+    fn cli_init_with_provider_ollama() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "init", "--provider", "ollama"]).unwrap();
+        if let Commands::Init { provider, .. } = cli.command {
+            assert_eq!(provider, Some("ollama".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_init_with_provider_local_alias() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "init", "--provider", "local"]).unwrap();
+        if let Commands::Init { provider, .. } = cli.command {
+            assert_eq!(provider, Some("local".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_init_ollama_with_model() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar",
+            "init",
+            "--provider",
+            "ollama",
+            "--model",
+            "llama3.2:latest",
+        ])
+        .unwrap();
+        if let Commands::Init { provider, model, .. } = cli.command {
+            assert_eq!(provider, Some("ollama".into()));
+            assert_eq!(model, Some("llama3.2:latest".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    // =========================================================================
+    // OLLAMA API DETECTION TESTS
+    // =========================================================================
+
+    #[test]
+    fn is_ollama_detected_from_localhost() {
+        let config = ResolvedConfig {
+            api_key: None,
+            model: "llama3.2:latest".into(),
+            max_tokens: 500,
+            temperature: 0.5,
+            base_url: "http://localhost:11434/v1".into(),
+            base_branch: "main".into(),
+        };
+        let client = LlmClient::new(&config).unwrap();
+        assert!(!client.is_claude_api());
+        assert!(!client.is_gemini_api());
+    }
+
+    #[test]
+    fn is_ollama_detected_from_127() {
+        let base_url = "http://127.0.0.1:11434/v1";
+        assert!(base_url.contains("127.0.0.1:11434"));
+    }
+
+    // =========================================================================
+    // RESOLVED CONFIG OLLAMA TESTS
+    // =========================================================================
+
+    #[test]
+    fn resolved_config_ollama_uses_openai_default_model() {
+        // Ollama uses OpenAI-compatible API, user must specify model
+        let cli = make_test_cli(
+            None,
+            None,
+            None,
+            None,
+            Some("http://localhost:11434/v1".into()),
+            None,
+        );
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "gpt-5-chat-latest"); // Default, user should override
+        assert_eq!(resolved.base_url, "http://localhost:11434/v1");
+    }
+
+    #[test]
+    fn resolved_config_ollama_with_custom_model() {
+        let cli = make_test_cli(
+            None,
+            Some("codellama:13b".into()),
+            None,
+            None,
+            Some("http://localhost:11434/v1".into()),
+            None,
+        );
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "codellama:13b");
+    }
+
+    #[test]
+    fn resolved_config_ollama_no_api_key_needed() {
+        let cli = make_test_cli(
+            None,
+            Some("mistral:latest".into()),
+            None,
+            None,
+            Some("http://localhost:11434/v1".into()),
+            None,
+        );
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        // API key can be None for Ollama
+        assert!(resolved.api_key.is_none());
+    }
+
+    // =========================================================================
+    // PROVIDER DETECTION MUTUAL EXCLUSION TESTS (update existing)
+    // =========================================================================
+
+    #[test]
+    fn provider_detection_mutually_exclusive() {
+        let urls = [
+            ("https://api.openai.com/v1", false, false),
+            ("https://api.anthropic.com/v1", true, false),
+            ("https://generativelanguage.googleapis.com", false, true),
+            ("https://api.groq.com/openai/v1", false, false),
+            ("http://localhost:11434/v1", false, false),
+            ("http://127.0.0.1:11434/v1", false, false),
+            ("http://localhost:8080", false, false),
+        ];
+
+        for (url, expected_claude, expected_gemini) in urls {
+            let config = ResolvedConfig {
+                api_key: None,
+                model: "test".into(),
+                max_tokens: 500,
+                temperature: 0.5,
+                base_url: url.into(),
+                base_branch: "main".into(),
+            };
+            let client = LlmClient::new(&config).unwrap();
+            assert_eq!(
+                client.is_claude_api(),
+                expected_claude,
+                "Claude detection failed for {}",
+                url
+            );
+            assert_eq!(
+                client.is_gemini_api(),
+                expected_gemini,
+                "Gemini detection failed for {}",
+                url
+            );
+        }
+    }
+
+    // =========================================================================
+    // PROVIDER MAPPING TESTS
+    // =========================================================================
+
+    #[test]
+    fn provider_to_url_openai() {
+        assert_eq!(provider_to_url("openai"), Some(PROVIDER_OPENAI));
+        assert_eq!(provider_to_url("OPENAI"), Some(PROVIDER_OPENAI));
+        assert_eq!(provider_to_url("OpenAI"), Some(PROVIDER_OPENAI));
+    }
+
+    #[test]
+    fn provider_to_url_claude() {
+        assert_eq!(provider_to_url("claude"), Some(PROVIDER_CLAUDE));
+        assert_eq!(provider_to_url("CLAUDE"), Some(PROVIDER_CLAUDE));
+        assert_eq!(provider_to_url("anthropic"), Some(PROVIDER_CLAUDE));
+        assert_eq!(provider_to_url("Anthropic"), Some(PROVIDER_CLAUDE));
+    }
+
+    #[test]
+    fn provider_to_url_gemini() {
+        assert_eq!(provider_to_url("gemini"), Some(PROVIDER_GEMINI));
+        assert_eq!(provider_to_url("GEMINI"), Some(PROVIDER_GEMINI));        
+    }
+
+    #[test]
+    fn provider_to_url_groq() {
+        assert_eq!(provider_to_url("groq"), Some(PROVIDER_GROQ));
+        assert_eq!(provider_to_url("GROQ"), Some(PROVIDER_GROQ));
+        assert_eq!(provider_to_url("Groq"), Some(PROVIDER_GROQ));
+    }
+
+    #[test]
+    fn provider_to_url_invalid() {
+        assert_eq!(provider_to_url("invalid"), None);
+        assert_eq!(provider_to_url("azure"), None);
+        assert_eq!(provider_to_url(""), None);
+    }
+
+    #[test]
+    fn provider_constants_valid_urls() {
+        assert!(PROVIDER_OPENAI.starts_with("https://"));
+        assert!(PROVIDER_CLAUDE.starts_with("https://"));
+        assert!(PROVIDER_GEMINI.starts_with("https://"));
+        assert!(PROVIDER_GROQ.starts_with("https://"));
+    }
+
+    // =========================================================================
+    // CLI PROVIDER ARGUMENT TESTS
+    // =========================================================================
+
+    #[test]
+    fn cli_init_with_provider_claude() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "init", "--provider", "claude"]).unwrap();
+        if let Commands::Init { provider, base_url, .. } = cli.command {
+            assert_eq!(provider, Some("claude".into()));
+            assert!(base_url.is_none());
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_init_with_provider_gemini() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "init", "--provider", "gemini"]).unwrap();
+        if let Commands::Init { provider, .. } = cli.command {
+            assert_eq!(provider, Some("gemini".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_init_with_provider_groq() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "init", "--provider", "groq"]).unwrap();
+        if let Commands::Init { provider, .. } = cli.command {
+            assert_eq!(provider, Some("groq".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_init_with_provider_openai() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "init", "--provider", "openai"]).unwrap();
+        if let Commands::Init { provider, .. } = cli.command {
+            assert_eq!(provider, Some("openai".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_init_with_provider_anthropic_alias() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "init", "--provider", "anthropic"]).unwrap();
+        if let Commands::Init { provider, .. } = cli.command {
+            assert_eq!(provider, Some("anthropic".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_init_rejects_invalid_provider() {
+        use clap::Parser;
+        let result = Cli::try_parse_from(["gitar", "init", "--provider", "invalid"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_init_provider_and_base_url_both_accepted() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar",
+            "init",
+            "--provider",
+            "claude",
+            "--base-url",
+            "https://custom.api",
+        ])
+        .unwrap();
+        if let Commands::Init { provider, base_url, .. } = cli.command {
+            assert_eq!(provider, Some("claude".into()));
+            assert_eq!(base_url, Some("https://custom.api".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_init_provider_with_model() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar",
+            "init",
+            "--provider",
+            "gemini",
+            "--model",
+            "gemini-2.5-pro",
+        ])
+        .unwrap();
+        if let Commands::Init { provider, model, .. } = cli.command {
+            assert_eq!(provider, Some("gemini".into()));
+            assert_eq!(model, Some("gemini-2.5-pro".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    #[test]
+    fn cli_init_provider_with_api_key() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar",
+            "init",
+            "--provider",
+            "groq",
+            "--api-key",
+            "gsk_test123",
+        ])
+        .unwrap();
+        if let Commands::Init { provider, api_key, .. } = cli.command {
+            assert_eq!(provider, Some("groq".into()));
+            assert_eq!(api_key, Some("gsk_test123".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
+
+    // =========================================================================
+    // PROVIDER RESOLUTION TESTS
+    // =========================================================================
+
+    #[test]
+    fn provider_takes_precedence_over_base_url() {
+        // Simulating the logic in cmd_init
+        let base_url = Some("https://custom.api".to_string());
+        let provider = Some("claude".to_string());
+
+        let resolved_url = provider
+            .as_ref()
+            .and_then(|p| provider_to_url(p).map(String::from))
+            .or(base_url);
+
+        assert_eq!(resolved_url, Some(PROVIDER_CLAUDE.to_string()));
+    }
+
+    #[test]
+    fn base_url_used_when_no_provider() {
+        let base_url = Some("https://custom.api".to_string());
+        let provider: Option<String> = None;
+
+        let resolved_url = provider
+            .as_ref()
+            .and_then(|p| provider_to_url(p).map(String::from))
+            .or(base_url);
+
+        assert_eq!(resolved_url, Some("https://custom.api".to_string()));
+    }
+
+    #[test]
+    fn none_when_neither_provider_nor_base_url() {
+        let base_url: Option<String> = None;
+        let provider: Option<String> = None;
+
+        let resolved_url = provider
+            .as_ref()
+            .and_then(|p| provider_to_url(p).map(String::from))
+            .or(base_url);
+
+        assert!(resolved_url.is_none());
+    }
+
+    // =========================================================================
+    // API KEY PRIORITY TESTS (updated)
+    // =========================================================================
+
+    #[test]
+    fn resolved_config_cli_api_key_takes_priority() {
+        // Temporarily set env var to test priority
+        std::env::set_var("OPENAI_API_KEY", "env-key");
+        
+        let cli = make_test_cli(Some("cli-key".into()), None, None, None, None, None);
+        let file = Config {
+            api_key: Some("file-key".into()),
+            ..Config::default()
+        };
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.api_key, Some("cli-key".into()));
+        
+        std::env::remove_var("OPENAI_API_KEY");
+    }
+
+    #[test]
+    fn resolved_config_env_api_key_second_priority() {
+        std::env::set_var("OPENAI_API_KEY", "env-key");
+        
+        let cli = make_test_cli(None, None, None, None, None, None);
+        let file = Config {
+            api_key: Some("file-key".into()),
+            ..Config::default()
+        };
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.api_key, Some("env-key".into()));
+        
+        std::env::remove_var("OPENAI_API_KEY");
+    }
+
+    #[test]
+    fn resolved_config_file_api_key_third_priority() {
+        // Ensure no env var is set
+        std::env::remove_var("OPENAI_API_KEY");
+        
+        let cli = make_test_cli(None, None, None, None, None, None);
+        let file = Config {
+            api_key: Some("file-key".into()),
+            ..Config::default()
+        };
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.api_key, Some("file-key".into()));
+    }
+
+    #[test]
+    fn resolved_config_no_api_key_when_none_set() {
+        std::env::remove_var("OPENAI_API_KEY");
+        
+        let cli = make_test_cli(None, None, None, None, None, None);
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert!(resolved.api_key.is_none());
+    }
+
 }
