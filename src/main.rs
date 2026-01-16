@@ -165,7 +165,7 @@ struct GeminiModelsResponse {
 
 #[derive(Debug, Deserialize)]
 struct GeminiModelInfo {
-    name: String, // e.g. "models/gemini-2.0-flash"
+    name: String, // e.g. "models/gemini-2.5-flash"
 }
 
 // =============================================================================
@@ -539,7 +539,7 @@ impl ResolvedConfig {
         let default_model = if is_claude {
             "claude-sonnet-4-5-20250929"
         } else if is_gemini {
-            "gemini-2.0-flash"
+            "gemini-2.5-flash"
         } else {
             "gpt-5-chat-latest"
         };
@@ -554,7 +554,6 @@ impl ResolvedConfig {
                         .or_else(|| std::env::var("OPENAI_API_KEY").ok())
                 } else if is_gemini {
                     std::env::var("GEMINI_API_KEY").ok()
-                        .or_else(|| std::env::var("GOOGLE_API_KEY").ok())
                 } else {
                     std::env::var("OPENAI_API_KEY").ok()
                 }
@@ -939,7 +938,7 @@ impl LlmClient {
             .context("Failed to parse Gemini models response")?;
 
         Ok(resp.models.into_iter().map(|m| {
-            // convert "models/gemini-2.0-flash" -> "gemini-2.0-flash"
+            // convert "models/gemini-2.5-flash" -> "gemini-2.5-flash"
             m.name.strip_prefix("models/").unwrap_or(&m.name).to_string()
         }).collect())
     }
@@ -1602,7 +1601,7 @@ fn cmd_config() -> Result<()> {
         } else if is_groq {
             "GROQ_API_KEY (fallback: OPENAI_API_KEY)"
         } else if is_gemini {
-            "GEMINI_API_KEY (fallback: GOOGLE_API_KEY)"
+            "GEMINI_API_KEY"
         } else {
             "OPENAI_API_KEY"
         }
