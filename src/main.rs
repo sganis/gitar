@@ -108,6 +108,26 @@ struct ApiErrorDetail {
     message: Option<String>,
 }
 
+#[derive(Debug, Serialize)]
+struct ClaudeRequest {
+    model: String,
+    messages: Vec<ChatMessage>,
+    system: String,
+    max_tokens: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    temperature: Option<f32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeResponse {
+    content: Vec<ClaudeContent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ClaudeContent {
+    text: Option<String>,
+}
+
 // =============================================================================
 // PROMPTS
 // =============================================================================
@@ -300,8 +320,8 @@ const VERSION_USER_PROMPT: &str = r#"Recommend version bump.
     gitar version v1.0.0            # Version bump since tag"
 )]
 struct Cli {
-    /// API key (or set OPENAI_API_KEY env var)
-    #[arg(long, env = "OPENAI_API_KEY", global = true)]
+    /// API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY env var)
+    #[arg(long, global = true)]  
     api_key: Option<String>,
 
     /// Model name [default: gpt-5-chat-latest]
@@ -459,18 +479,41 @@ struct ResolvedConfig {
     base_branch: String,
 }
 
+// Update ResolvedConfig to be smarter about API key selection
 impl ResolvedConfig {
     fn new(cli: &Cli, file: &Config) -> Self {
+        let base_url = cli.base_url.clone()
+            .or_else(|| file.base_url.clone())
+            .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+
+        let is_claude = base_url.contains("anthropic.com");
+
+        let default_model = if is_claude {
+            "claude-sonnet-4-5-20250929"
+        } else {
+            "gpt-5-chat-latest"
+        };
+
+        // Priority: CLI arg > config file > env var (auto-selected)
+        let api_key = cli.api_key.clone()
+            .or_else(|| file.api_key.clone())
+            .or_else(|| {
+                if is_claude {
+                    std::env::var("ANTHROPIC_API_KEY").ok()
+                        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
+                } else {
+                    std::env::var("OPENAI_API_KEY").ok()
+                }
+            });
+
         Self {
-            api_key: cli.api_key.clone().or_else(|| file.api_key.clone()),
+            api_key,
             model: cli.model.clone()
                 .or_else(|| file.model.clone())
-                .unwrap_or_else(|| "gpt-5-chat-latest".to_string()),
+                .unwrap_or_else(|| default_model.to_string()),
             max_tokens: cli.max_tokens.or(file.max_tokens).unwrap_or(500),
             temperature: cli.temperature.or(file.temperature).unwrap_or(0.5),
-            base_url: cli.base_url.clone()
-                .or_else(|| file.base_url.clone())
-                .unwrap_or_else(|| "https://api.openai.com/v1".to_string()),
+            base_url,
             base_branch: cli.base_branch.clone()
                 .or_else(|| file.base_branch.clone())
                 .unwrap_or_else(get_default_branch),
@@ -515,8 +558,16 @@ impl LlmClient {
             temperature: config.temperature,
         })
     }
-
+    
+    fn is_claude_api(&self) -> bool {
+        self.base_url.contains("anthropic.com")
+    }
+    
     async fn chat(&self, system: &str, user: &str) -> Result<String> {
+        if self.is_claude_api() {
+            return self.chat_claude(system, user).await;
+        }
+
         let url = format!("{}/chat/completions", self.base_url);
 
         let is_reasoning_model = REASONING_MODELS
@@ -571,6 +622,59 @@ impl LlmClient {
         response
     }
 
+    async fn chat_claude(&self, system: &str, user: &str) -> Result<String> {
+        let url = format!("{}/messages", self.base_url);
+
+        let request = ClaudeRequest {
+            model: self.model.clone(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: user.to_string(),
+            }],
+            system: system.to_string(),
+            max_tokens: self.max_tokens,
+            temperature: Some(self.temperature),
+        };
+
+        let mut req_builder = self.http
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("anthropic-version", "2023-06-01");
+
+        if let Some(ref api_key) = self.api_key {
+            req_builder = req_builder.header("x-api-key", api_key);
+        }
+
+        let response = req_builder
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send request")?;
+
+        let status = response.status();
+        let body = response.text().await.context("Failed to read response body")?;
+
+        if !status.is_success() {
+            if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
+                if let Some(detail) = err.error {
+                    if let Some(msg) = detail.message {
+                        bail!("API error ({}): {}", status, msg);
+                    }
+                }
+            }
+            bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
+        }
+
+        let resp: ClaudeResponse = serde_json::from_str(&body)
+            .context("Failed to parse Claude response")?;
+
+        resp.content
+            .first()
+            .and_then(|c| c.text.as_ref())
+            .map(|s| s.trim().to_string())
+            .context("No response content from Claude API")
+    }
+
     async fn send_chat_request(&self, url: &str, request: &ChatCompletionRequest) -> Result<String> {
         let mut req_builder = self.http
             .post(url)
@@ -619,7 +723,13 @@ impl LlmClient {
             .header("Accept", "application/json");
 
         if let Some(ref api_key) = self.api_key {
-            req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
+            if self.is_claude_api() {
+                req_builder = req_builder
+                    .header("x-api-key", api_key)
+                    .header("anthropic-version", "2023-06-01");
+            } else {
+                req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
+            }
         }
 
         let response = req_builder
@@ -1253,11 +1363,15 @@ fn cmd_init(
     config.save()
 }
 
+// Update cmd_config to show which env vars are checked
 fn cmd_config() -> Result<()> {
     let config = Config::load();
     let path = Config::path()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "(unknown)".into());
+
+    let base_url = config.base_url.as_deref().unwrap_or("https://api.openai.com/v1");
+    let is_claude = base_url.contains("anthropic.com");
 
     println!("Config file: {}\n", path);
     println!("api_key:     {}", config.api_key.as_deref()
@@ -1272,6 +1386,13 @@ fn cmd_config() -> Result<()> {
         .unwrap_or_else(|| "(not set)".into()));
     println!("base_url:    {}", config.base_url.as_deref().unwrap_or("(not set)"));
     println!("base_branch: {}", config.base_branch.as_deref().unwrap_or("(not set)"));
+
+    println!("\nPriority: --api-key > config file > env var");
+    println!("Env vars checked: {}", if is_claude {
+        "ANTHROPIC_API_KEY"
+    } else {
+        "OPENAI_API_KEY"
+    });
 
     Ok(())
 }
