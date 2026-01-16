@@ -1,3 +1,18 @@
+# v1.0.3
+
+## Features
+
+- Add support for Groq API integration with dedicated GROQ_API_KEY environment variable
+- Add fallback logic for detached HEAD states in git branch detection
+- Environment variable fallback: GROQ_API_KEY now falls back to OPENAI_API_KEY if not set
+
+## Improvements
+
+- Make get_current_branch function public for external use
+- Update README branding with guitar emoji in title
+- Add SSH tunnel proxy documentation for Groq API usage
+
+
 # v1.0.2
 
 ## Features
