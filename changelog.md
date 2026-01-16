@@ -1,3 +1,15 @@
+# v1.0.4
+
+## Features
+- Added Google Gemini support with provider recommendations.
+
+## Improvements
+- Updated default Gemini model to 2.5-flash.
+
+## Documentation
+- Revamped README with detailed features, setup, model recommendations, and usage examples.
+
+
 # v1.0.3
 
 ## Features

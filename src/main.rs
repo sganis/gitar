@@ -1415,7 +1415,6 @@ async fn cmd_pr(
     Ok(())
 }
 
-// Update cmd_changelog function signature and implementation
 async fn cmd_changelog(
     client: &LlmClient,
     from: Option<String>,
@@ -1441,7 +1440,7 @@ async fn cmd_changelog(
         (None, None, Some(s), Some(u)) => format!("--since {} --until {}", s, u),
         (None, None, Some(s), None) => format!("--since {}", s),
         (None, None, None, Some(u)) => format!("--until {}", u),
-        (None, None, None, None) => "recent (last 50)".into(),
+        (None, None, None, None) => "recent (last 50 commits)".into(),
     };
 
     println!("Changelog for {}...\n", display);
@@ -1481,22 +1480,45 @@ async fn cmd_explain(
     base_branch: &str,
     staged: bool,
 ) -> Result<()> {
-    println!("Explaining changes...\n");
+    // Build display string (same logic as cmd_changelog)
+    let display = match (&from, &to, &since, &until) {
+        (Some(r), Some(t), _, _) => format!("{}..{}", r, t),
+        (Some(r), None, _, _) => format!("{}..HEAD", r),
+        (None, Some(t), _, _) => format!("..{}", t),
+        (None, None, Some(s), Some(u)) => format!("--since {} --until {}", s, u),
+        (None, None, Some(s), None) => format!("--since {}", s),
+        (None, None, None, Some(u)) => format!("--until {}", u),
+        (None, None, None, None) => "working tree vs HEAD".into(),
+    };
+
+    let mut commit_count: Option<usize> = None;
 
     let (diff, stats) = if staged {
+        println!("Explaining staged changes...\n");
         (get_diff(None, true, 15000)?, get_diff_stats(None, true)?)
     } else {
         let effective_from = match (&from, &since, &until) {
             (Some(_), _, _) => from.clone(),
             (None, Some(_), _) | (None, None, Some(_)) => {
                 let commits = get_commit_logs(None, since.as_deref(), until.as_deref(), None)?;
+                commit_count = Some(commits.len());
                 commits.last().map(|c| c.hash.clone())
             }
             _ => None,
         };
 
+        match commit_count {
+            Some(n) => println!("Explaining changes for {} ({} commits)...\n", display, n),
+            None => println!("Explaining changes for {}...\n", display),
+        }
+
         let diff_target = build_diff_target(effective_from.as_deref(), to.as_deref(), base_branch);
-        let diff_target_ref = if diff_target.is_empty() { None } else { Some(diff_target.as_str()) };
+        let diff_target_ref = if diff_target.is_empty() {
+            None
+        } else {
+            Some(diff_target.as_str())
+        };
+
         (
             get_diff(diff_target_ref, false, 15000)?,
             get_diff_stats(diff_target_ref, false)?,
@@ -1509,6 +1531,7 @@ async fn cmd_explain(
     }
 
     let prompt = EXPLAIN_USER_PROMPT
+        .replace("{range}", if staged { "staged" } else { &display })
         .replace("{stats}", &stats)
         .replace("{diff}", &diff);
 
@@ -1517,6 +1540,7 @@ async fn cmd_explain(
 
     Ok(())
 }
+
 
 async fn cmd_version(
     client: &LlmClient,
