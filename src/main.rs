@@ -498,6 +498,7 @@ impl ResolvedConfig {
             .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
 
         let is_claude = base_url.contains("anthropic.com");
+        let is_groq = base_url.contains("api.groq.com");
 
         let default_model = if is_claude {
             "claude-sonnet-4-5-20250929"
@@ -511,7 +512,9 @@ impl ResolvedConfig {
             .or_else(|| {
                 if is_claude {
                     std::env::var("ANTHROPIC_API_KEY").ok()
-                        .or_else(|| std::env::var("ANTHROPIC_API_KEY").ok())
+                } else if is_groq {
+                    std::env::var("GROQ_API_KEY").ok()
+                        .or_else(|| std::env::var("OPENAI_API_KEY").ok())
                 } else {
                     std::env::var("OPENAI_API_KEY").ok()
                 }
@@ -1402,6 +1405,7 @@ fn cmd_config() -> Result<()> {
 
     let base_url = config.base_url.as_deref().unwrap_or("https://api.openai.com/v1");
     let is_claude = base_url.contains("anthropic.com");
+    let is_groq = base_url.contains("api.groq.com");
 
     println!("Config file: {}\n", path);
     println!("api_key:     {}", config.api_key.as_deref()
@@ -1418,11 +1422,16 @@ fn cmd_config() -> Result<()> {
     println!("base_branch: {}", config.base_branch.as_deref().unwrap_or("(not set)"));
 
     println!("\nPriority: --api-key > config file > env var");
-    println!("Env vars checked: {}", if is_claude {
-        "ANTHROPIC_API_KEY"
-    } else {
-        "OPENAI_API_KEY"
-    });
+    println!(
+        "Env vars checked: {}",
+        if is_claude {
+            "ANTHROPIC_API_KEY"
+        } else if is_groq {
+            "GROQ_API_KEY (fallback: OPENAI_API_KEY)"
+        } else {
+            "OPENAI_API_KEY"
+        }
+    );
 
     Ok(())
 }
