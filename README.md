@@ -50,10 +50,10 @@ Download the latest release for your platform from the [Releases page](https://g
 #### Linux / macOS
 ```bash
 # Download (replace URL with latest release)
-curl -LO https://github.com/sganis/gitar/releases/latest/download/gitar-linux-x86_64.tar.gz
+curl -LO https://github.com/sganis/gitar/releases/latest/download/gitar-linux-x64-1.0.0.tar.gz
 
 # Extract
-tar -xzf gitar-linux-x86_64.tar.gz
+tar -xzf gitar-linux-x64-1.0.0.tar.gz
 
 # Make executable and move to PATH
 chmod +x gitar
@@ -65,15 +65,15 @@ gitar --version
 
 #### macOS (Apple Silicon)
 ```bash
-curl -LO https://github.com/sganis/gitar/releases/latest/download/gitar-darwin-aarch64.tar.gz
-tar -xzf gitar-darwin-aarch64.tar.gz
+curl -LO https://github.com/sganis/gitar/releases/latest/download/gitar-arm64-1.0.0.tar.gz
+tar -xzf gitar-macos-arm64-1.0.0.tar.gz
 chmod +x gitar
 sudo mv gitar /usr/local/bin/
 ```
 
 #### Windows
 
-1. Download `gitar-windows-x86_64.zip` from [Releases](https://github.com/sganis/gitar/releases)
+1. Download `gitar-windows-x64-1.0.0.zip` from [Releases](https://github.com/sganis/gitar/releases)
 2. Extract the zip file
 3. Move `gitar.exe` to a folder in your PATH, or add its location to PATH
 4. Open a new terminal and run `gitar --version`
