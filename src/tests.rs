@@ -1,3 +1,4 @@
+// tests.rs
 #[cfg(test)]
 mod tests {
     use crate::*;
@@ -234,7 +235,6 @@ mod tests {
         );
         let result = truncate_diff(diff, 150);
         assert!(result.contains("[... truncated ...]"));
-        // Should try to cut at file boundary
         assert!(result.contains("diff --git a/file1.rs"));
     }
 
@@ -267,54 +267,62 @@ mod tests {
 
     #[test]
     fn truncate_diff_no_file_boundary_in_first_half() {
-        // File boundary too early should not be used
         let diff = format!(
             "diff --git a/file1.rs\n{}\n{}",
-            "a".repeat(10),  // boundary at ~30
-            "b".repeat(200)  // most content after
+            "a".repeat(10),
+            "b".repeat(200)
         );
         let result = truncate_diff(diff, 100);
         assert!(result.contains("[... truncated ...]"));
     }
 
     // =========================================================================
-    // BUILD RANGE TESTS
+    // BUILD RANGE TESTS (updated for --to option)
     // =========================================================================
 
     #[test]
     fn build_range_with_ref() {
-        let result = build_range(Some("v1.0.0"), "main");
+        let result = build_range(Some("v1.0.0"), None, "main");
         assert_eq!(result, Some("v1.0.0..HEAD".to_string()));
     }
 
     #[test]
+    fn build_range_with_ref_and_to() {
+        let result = build_range(Some("v1.0.0"), Some("v1.0.1"), "main");
+        assert_eq!(result, Some("v1.0.0..v1.0.1".to_string()));
+    }
+
+    #[test]
     fn build_range_with_commit_hash() {
-        let result = build_range(Some("abc123"), "main");
+        let result = build_range(Some("abc123"), None, "main");
         assert_eq!(result, Some("abc123..HEAD".to_string()));
     }
 
     #[test]
     fn build_range_none_on_base_branch() {
-        // When on the base branch with no ref, should return None
-        // This tests the logic but depends on get_current_branch()
-        let result = build_range(None, "nonexistent-branch-xyz");
-        // Will compare current branch to "nonexistent-branch-xyz"
-        assert!(result.is_some() || result.is_none()); // depends on current branch
+        let result = build_range(None, None, "nonexistent-branch-xyz");
+        assert!(result.is_some() || result.is_none());
     }
 
     // =========================================================================
-    // BUILD DIFF TARGET TESTS
+    // BUILD DIFF TARGET TESTS (updated for --to option)
     // =========================================================================
 
     #[test]
     fn build_diff_target_with_ref() {
-        let result = build_diff_target(Some("v1.0.0"), "main");
+        let result = build_diff_target(Some("v1.0.0"), None, "main");
         assert_eq!(result, "v1.0.0..HEAD");
     }
 
     #[test]
+    fn build_diff_target_with_ref_and_to() {
+        let result = build_diff_target(Some("v1.0.0"), Some("v1.0.1"), "main");
+        assert_eq!(result, "v1.0.0..v1.0.1");
+    }
+
+    #[test]
     fn build_diff_target_with_commit() {
-        let result = build_diff_target(Some("abc123def"), "main");
+        let result = build_diff_target(Some("abc123def"), None, "main");
         assert_eq!(result, "abc123def..HEAD");
     }
 
@@ -341,7 +349,7 @@ mod tests {
         let line = "abc123def|John Doe|2024-01-15 10:30:00|Fix bug in parser";
         let parts: Vec<&str> = line.splitn(4, '|').collect();
         assert_eq!(parts.len(), 4);
-        
+
         let info = CommitInfo {
             hash: parts[0].into(),
             author: parts[1].into(),
@@ -575,7 +583,6 @@ mod tests {
 
     #[test]
     fn run_git_returns_result() {
-        // This will fail if not in a git repo, but tests the function signature
         let result = run_git(&["--version"]);
         assert!(result.is_ok());
         assert!(result.unwrap().contains("git version"));
@@ -602,36 +609,30 @@ mod tests {
 
     #[test]
     fn is_git_repo_detects_repo() {
-        // This test file should be in a git repo
         let result = is_git_repo();
-        // We can't assert true because CI might not have git initialized
-        // Just verify the function runs without panic
         let _ = result;
     }
 
     #[test]
     fn get_current_branch_returns_string() {
         let branch = get_current_branch();
-        // Should return something (either branch name or "HEAD")
         assert!(!branch.is_empty());
     }
 
     #[test]
     fn get_default_branch_returns_valid() {
         let branch = get_default_branch();
-        // Should be "main" or "master"
         assert!(branch == "main" || branch == "master");
     }
 
     #[test]
     fn get_current_version_returns_string() {
         let version = get_current_version();
-        // Should return something (version tag or "0.0.0")
         assert!(!version.is_empty());
     }
 
     // =========================================================================
-    // CLI STRUCTURE TESTS
+    // CLI STRUCTURE TESTS (updated for --to option)
     // =========================================================================
 
     #[test]
@@ -671,8 +672,22 @@ mod tests {
     fn cli_parses_pr_with_base() {
         use clap::Parser;
         let cli = Cli::try_parse_from(["gitar", "pr", "develop"]).unwrap();
-        if let Commands::Pr { base, staged } = cli.command {
+        if let Commands::Pr { base, to, staged } = cli.command {
             assert_eq!(base, Some("develop".into()));
+            assert!(to.is_none());
+            assert!(!staged);
+        } else {
+            panic!("Expected Pr command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_pr_with_to() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "pr", "main", "--to", "feature/oauth"]).unwrap();
+        if let Commands::Pr { base, to, staged } = cli.command {
+            assert_eq!(base, Some("main".into()));
+            assert_eq!(to, Some("feature/oauth".into()));
             assert!(!staged);
         } else {
             panic!("Expected Pr command");
@@ -683,8 +698,21 @@ mod tests {
     fn cli_parses_changelog_with_ref() {
         use clap::Parser;
         let cli = Cli::try_parse_from(["gitar", "changelog", "v1.0.0"]).unwrap();
-        if let Commands::Changelog { from, .. } = cli.command {
+        if let Commands::Changelog { from, to, .. } = cli.command {
             assert_eq!(from, Some("v1.0.0".into()));
+            assert!(to.is_none());
+        } else {
+            panic!("Expected Changelog command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_changelog_with_to() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "changelog", "v1.0.0", "--to", "v1.0.1"]).unwrap();
+        if let Commands::Changelog { from, to, .. } = cli.command {
+            assert_eq!(from, Some("v1.0.0".into()));
+            assert_eq!(to, Some("v1.0.1".into()));
         } else {
             panic!("Expected Changelog command");
         }
@@ -694,16 +722,43 @@ mod tests {
     fn cli_parses_commits_with_options() {
         use clap::Parser;
         let cli = Cli::try_parse_from([
-            "gitar", "history", "v1.0.0", 
-            "--since", "2024-01-01",
-            "-n", "10",
-            "--delay", "1000"
-        ]).unwrap();
-        if let Commands::History { from, since, limit, delay, .. } = cli.command {
+            "gitar",
+            "history",
+            "v1.0.0",
+            "--since",
+            "2024-01-01",
+            "-n",
+            "10",
+            "--delay",
+            "1000",
+        ])
+        .unwrap();
+        if let Commands::History {
+            from,
+            to,
+            since,
+            limit,
+            delay,
+            ..
+        } = cli.command
+        {
             assert_eq!(from, Some("v1.0.0".into()));
+            assert!(to.is_none());
             assert_eq!(since, Some("2024-01-01".into()));
             assert_eq!(limit, Some(10));
             assert_eq!(delay, 1000);
+        } else {
+            panic!("Expected History command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_history_with_to() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "history", "v1.0.0", "--to", "v1.0.1"]).unwrap();
+        if let Commands::History { from, to, .. } = cli.command {
+            assert_eq!(from, Some("v1.0.0".into()));
+            assert_eq!(to, Some("v1.0.1".into()));
         } else {
             panic!("Expected History command");
         }
@@ -714,11 +769,15 @@ mod tests {
         use clap::Parser;
         let cli = Cli::try_parse_from([
             "gitar",
-            "--model", "gpt-4",
-            "--max-tokens", "2048",
-            "--temperature", "0.5",
-            "staged"
-        ]).unwrap();
+            "--model",
+            "gpt-4",
+            "--max-tokens",
+            "2048",
+            "--temperature",
+            "0.5",
+            "staged",
+        ])
+        .unwrap();
         assert_eq!(cli.model, Some("gpt-4".into()));
         assert_eq!(cli.max_tokens, Some(2048));
         assert_eq!(cli.temperature, Some(0.5));
@@ -727,10 +786,25 @@ mod tests {
     #[test]
     fn cli_parses_version_command() {
         use clap::Parser;
-        let cli = Cli::try_parse_from(["gitar", "version", "v1.0.0", "--current", "1.2.3"]).unwrap();
-        if let Commands::Version { base, current } = cli.command {
+        let cli =
+            Cli::try_parse_from(["gitar", "version", "v1.0.0", "--current", "1.2.3"]).unwrap();
+        if let Commands::Version { base, to, current } = cli.command {
             assert_eq!(base, Some("v1.0.0".into()));
+            assert!(to.is_none());
             assert_eq!(current, Some("1.2.3".into()));
+        } else {
+            panic!("Expected Version command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_version_with_to() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "version", "v1.0.0", "--to", "v1.0.1"]).unwrap();
+        if let Commands::Version { base, to, current } = cli.command {
+            assert_eq!(base, Some("v1.0.0".into()));
+            assert_eq!(to, Some("v1.0.1".into()));
+            assert!(current.is_none());
         } else {
             panic!("Expected Version command");
         }
@@ -740,8 +814,16 @@ mod tests {
     fn cli_parses_explain_command() {
         use clap::Parser;
         let cli = Cli::try_parse_from(["gitar", "explain", "--staged"]).unwrap();
-        if let Commands::Explain { from, since, until, staged } = cli.command {
+        if let Commands::Explain {
+            from,
+            to,
+            since,
+            until,
+            staged,
+        } = cli.command
+        {
             assert!(from.is_none());
+            assert!(to.is_none());
             assert!(since.is_none());
             assert!(until.is_none());
             assert!(staged);
@@ -749,17 +831,30 @@ mod tests {
             panic!("Expected Explain command");
         }
     }
-    
+
     #[test]
     fn cli_parses_explain_with_date_filters() {
         use clap::Parser;
         let cli = Cli::try_parse_from([
-            "gitar", "explain", "v1.0.0",
-            "--since", "2024-01-01",
-            "--until", "2024-12-31"
-        ]).unwrap();
-        if let Commands::Explain { from, since, until, staged } = cli.command {
+            "gitar",
+            "explain",
+            "v1.0.0",
+            "--since",
+            "2024-01-01",
+            "--until",
+            "2024-12-31",
+        ])
+        .unwrap();
+        if let Commands::Explain {
+            from,
+            to,
+            since,
+            until,
+            staged,
+        } = cli.command
+        {
             assert_eq!(from, Some("v1.0.0".into()));
+            assert!(to.is_none());
             assert_eq!(since, Some("2024-01-01".into()));
             assert_eq!(until, Some("2024-12-31".into()));
             assert!(!staged);
@@ -769,13 +864,23 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_explain_with_to() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from(["gitar", "explain", "v1.0.0", "--to", "v1.0.1"]).unwrap();
+        if let Commands::Explain { from, to, staged, .. } = cli.command {
+            assert_eq!(from, Some("v1.0.0".into()));
+            assert_eq!(to, Some("v1.0.1".into()));
+            assert!(!staged);
+        } else {
+            panic!("Expected Explain command");
+        }
+    }
+
+    #[test]
     fn cli_parses_init_command() {
         use clap::Parser;
-        let cli = Cli::try_parse_from([
-            "gitar", "init",
-            "--model", "claude-3",
-            "--base-branch", "develop"
-        ]).unwrap();
+        let cli = Cli::try_parse_from(["gitar", "init", "--model", "claude-3", "--base-branch", "develop"])
+            .unwrap();
         if let Commands::Init { model, base_branch, .. } = cli.command {
             assert_eq!(model, Some("claude-3".into()));
             assert_eq!(base_branch, Some("develop".into()));
@@ -803,8 +908,8 @@ mod tests {
         use clap::Parser;
         let cli = Cli::try_parse_from(["gitar", "commit", "--no-tag"]).unwrap();
         if let Commands::Commit { tag, no_tag, .. } = cli.command {
-            assert!(tag); // default is true
-            assert!(no_tag); // explicitly set
+            assert!(tag);
+            assert!(no_tag);
         } else {
             panic!("Expected Commit command");
         }
@@ -849,7 +954,6 @@ mod tests {
         assert!(json.contains("\"temperature\":0.7"));
         assert!(json.contains("\"role\":\"system\""));
         assert!(json.contains("\"role\":\"user\""));
-        // Verify None fields are skipped
         assert!(!json.contains("max_completion_tokens"));
     }
 
@@ -857,11 +961,7 @@ mod tests {
     fn chat_completion_response_deserializes() {
         let json = r#"{
             "choices": [
-                {
-                    "message": {
-                        "content": "Hello! How can I help?"
-                    }
-                }
+                { "message": { "content": "Hello! How can I help?" } }
             ]
         }"#;
         let resp: ChatCompletionResponse = serde_json::from_str(json).unwrap();
@@ -876,11 +976,7 @@ mod tests {
     fn chat_completion_response_handles_null_content() {
         let json = r#"{
             "choices": [
-                {
-                    "message": {
-                        "content": null
-                    }
-                }
+                { "message": { "content": null } }
             ]
         }"#;
         let resp: ChatCompletionResponse = serde_json::from_str(json).unwrap();
@@ -914,9 +1010,7 @@ mod tests {
     #[test]
     fn api_error_deserializes() {
         let json = r#"{
-            "error": {
-                "message": "Invalid API key"
-            }
+            "error": { "message": "Invalid API key" }
         }"#;
         let err: ApiError = serde_json::from_str(json).unwrap();
         assert!(err.error.is_some());
@@ -937,8 +1031,6 @@ mod tests {
         let err: ApiError = serde_json::from_str(json).unwrap();
         assert!(err.error.is_none());
     }
-
-    
 
     // =========================================================================
     // CLAUDE API TYPES TESTS
@@ -981,10 +1073,7 @@ mod tests {
     fn claude_response_deserializes() {
         let json = r#"{
             "content": [
-                {
-                    "type": "text",
-                    "text": "Hello! How can I help?"
-                }
+                { "type": "text", "text": "Hello! How can I help?" }
             ]
         }"#;
         let resp: ClaudeResponse = serde_json::from_str(json).unwrap();
@@ -996,10 +1085,7 @@ mod tests {
     fn claude_response_handles_null_text() {
         let json = r#"{
             "content": [
-                {
-                    "type": "text",
-                    "text": null
-                }
+                { "type": "text", "text": null }
             ]
         }"#;
         let resp: ClaudeResponse = serde_json::from_str(json).unwrap();
@@ -1079,7 +1165,14 @@ mod tests {
 
     #[test]
     fn resolved_config_uses_claude_default_model() {
-        let cli = make_test_cli(None, None, None, None, Some("https://api.anthropic.com/v1".into()), None);
+        let cli = make_test_cli(
+            None,
+            None,
+            None,
+            None,
+            Some("https://api.anthropic.com/v1".into()),
+            None,
+        );
         let file = Config::default();
         let resolved = ResolvedConfig::new(&cli, &file);
 
@@ -1115,7 +1208,14 @@ mod tests {
 
     #[test]
     fn resolved_config_file_model_overrides_claude_default() {
-        let cli = make_test_cli(None, None, None, None, Some("https://api.anthropic.com/v1".into()), None);
+        let cli = make_test_cli(
+            None,
+            None,
+            None,
+            None,
+            Some("https://api.anthropic.com/v1".into()),
+            None,
+        );
         let file = Config {
             model: Some("claude-haiku-4-5-20251001".into()),
             ..Config::default()
@@ -1192,22 +1292,14 @@ mod tests {
     #[test]
     fn cli_parses_anthropic_base_url() {
         use clap::Parser;
-        let cli = Cli::try_parse_from([
-            "gitar",
-            "--base-url", "https://api.anthropic.com/v1",
-            "staged"
-        ]).unwrap();
+        let cli = Cli::try_parse_from(["gitar", "--base-url", "https://api.anthropic.com/v1", "staged"]).unwrap();
         assert_eq!(cli.base_url, Some("https://api.anthropic.com/v1".into()));
     }
 
     #[test]
     fn cli_parses_claude_model() {
         use clap::Parser;
-        let cli = Cli::try_parse_from([
-            "gitar",
-            "--model", "claude-sonnet-4-5-20250929",
-            "staged"
-        ]).unwrap();
+        let cli = Cli::try_parse_from(["gitar", "--model", "claude-sonnet-4-5-20250929", "staged"]).unwrap();
         assert_eq!(cli.model, Some("claude-sonnet-4-5-20250929".into()));
     }
 
@@ -1215,10 +1307,14 @@ mod tests {
     fn cli_init_with_claude_config() {
         use clap::Parser;
         let cli = Cli::try_parse_from([
-            "gitar", "init",
-            "--base-url", "https://api.anthropic.com/v1",
-            "--model", "claude-opus-4-5-20251101",
-        ]).unwrap();
+            "gitar",
+            "init",
+            "--base-url",
+            "https://api.anthropic.com/v1",
+            "--model",
+            "claude-opus-4-5-20251101",
+        ])
+        .unwrap();
         if let Commands::Init { base_url, model, .. } = cli.command {
             assert_eq!(base_url, Some("https://api.anthropic.com/v1".into()));
             assert_eq!(model, Some("claude-opus-4-5-20251101".into()));

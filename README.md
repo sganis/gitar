@@ -101,6 +101,62 @@ gitar config
 | Ollama | `http://localhost:11434/v1` | (specify with `--model`) |
 | Any OpenAI-compatible | Custom URL | (specify with `--model`) |
 
+## Provider Recommendations
+
+Based on cost and quality research:
+
+| Tier | Provider | Notes |
+|------|----------|-------|
+| **FREE** | Ollama | Local, no API costs, requires GPU |
+| **VERY CHEAP** | Groq | Fast inference, generous free tier |
+| | OpenRouter | Aggregates many models, free tier available |
+| | Together.ai | Good model selection, competitive pricing |
+| | DeepInfra | Pay-per-token, no minimums |
+| **MID-RANGE** | Mistral | European provider, good quality/price |
+| | Fireworks | Fast inference, reasonable pricing |
+| | xAI (Grok) | Competitive pricing |
+| **PREMIUM** | OpenAI (Gpt) | Best ecosystem, highest cost |
+| | Anthropic (Claude) | Excellent for code, premium pricing |
+| | Google (Gemini) | Large context windows, premium pricing |
+
+### Recommendation
+
+- **Best local model**: **Ollama** with `qwen2.5-coder:14b-instruct` - excellent for code, free
+- **Budget-conscious**: Start with **Groq** or **OpenRouter** free tiers
+- **Best quality**: **Claude** (claude-sonnet-4-5) or **OpenAI** (gpt-5-chat-latest)
+- **Balanced**: **Mistral** or **Together.ai** for good quality at lower cost
+
+### Setup Examples
+```bash
+# Ollama (free, local) - RECOMMENDED
+ollama pull qwen2.5-coder:14b
+gitar init --base-url "http://localhost:11434/v1" --model "qwen2.5-coder:14b-instruct"
+
+# Groq (very cheap)
+gitar init --base-url "https://api.groq.com/openai/v1" --model "llama-3.3-70b-versatile"
+export OPENAI_API_KEY="gsk_..."
+
+# OpenRouter (aggregator)
+gitar init --base-url "https://openrouter.ai/api/v1" --model "meta-llama/llama-3-70b-instruct"
+export OPENAI_API_KEY="sk-or-..."
+
+# Together.ai
+gitar init --base-url "https://api.together.xyz/v1" --model "meta-llama/Llama-3-70b-chat-hf"
+export OPENAI_API_KEY="..."
+
+# Mistral
+gitar init --base-url "https://api.mistral.ai/v1" --model "mistral-large-latest"
+export OPENAI_API_KEY="..."
+
+# OpenAI (premium)
+gitar init --model "gpt-5-chat-latest"
+export OPENAI_API_KEY="sk-..."
+
+# Anthropic (premium)
+gitar init --base-url "https://api.anthropic.com/v1" --model "claude-sonnet-4-5-20250929"
+export ANTHROPIC_API_KEY="sk-ant-..."
+```
+
 ## Usage
 
 All commands support flexible range selection with `[REF]` (start) and `--to` (end).
@@ -108,27 +164,27 @@ All commands support flexible range selection with `[REF]` (start) and `--to` (e
 ### Quick reference
 
 ```bash
-gitar commit                    # Interactive commit with AI message
-gitar commit -a -p              # Stage all, commit, and push
+gitar commit                        # Interactive commit with AI message
+gitar commit -a -p                  # Stage all, commit, and push
 
-gitar staged                    # Generate message for staged changes
-gitar unstaged                  # Generate message for unstaged changes
+gitar staged                        # Generate message for staged changes
+gitar unstaged                      # Generate message for unstaged changes
 
-gitar history v1.0.0            # Commit history since tag
-gitar history v1.0.0 --to v1.1.0  # History between two tags
+gitar history v1.0.0                # Commit history since tag
+gitar history v1.0.0 --to v1.1.0    # History between two tags
 
-gitar changelog v1.0.0          # Release notes since tag
+gitar changelog v1.0.0              # Release notes since tag
 gitar changelog v1.0.0 --to v1.1.0  # Release notes between tags
 
-gitar pr                        # PR description vs main
-gitar pr develop                # PR description vs develop
+gitar pr                            # PR description vs main
+gitar pr develop                    # PR description vs develop
 
-gitar explain v1.0.0            # Explain changes since tag
-gitar explain --staged          # Explain staged changes
+gitar explain v1.0.0                # Explain changes since tag
+gitar explain --staged              # Explain staged changes
 
-gitar version                   # Suggest version bump
+gitar version                       # Suggest version bump
 
-gitar models                    # List available models
+gitar models                        # List available models
 ```
 
 ---
@@ -234,11 +290,11 @@ gitar history [REF] [OPTIONS]
 **Examples:**
 
 ```bash
-gitar history                   # Last 50 commits
-gitar history -n 10             # Last 10 commits
-gitar history v1.0.0            # All commits since tag to HEAD
-gitar history v1.0.0 --to v1.1.0  # Commits between two tags
-gitar history HEAD~5            # Last 5 commits
+gitar history                      # Last 50 commits
+gitar history -n 10                # Last 10 commits
+gitar history v1.0.0               # All commits since tag to HEAD
+gitar history v1.0.0 --to v1.1.0   # Commits between two tags
+gitar history HEAD~5               # Last 5 commits
 gitar history --since "1 week ago"
 ```
 
@@ -277,10 +333,10 @@ gitar pr [REF] [OPTIONS]
 **Examples:**
 
 ```bash
-gitar pr                        # Current branch vs main
-gitar pr develop                # Current branch vs develop
+gitar pr                          # Current branch vs main
+gitar pr develop                  # Current branch vs develop
 gitar pr main --to feature/oauth  # feature/oauth vs main
-gitar pr --staged               # PR from staged changes only
+gitar pr --staged                 # PR from staged changes only
 ```
 
 **Output:**
@@ -335,12 +391,12 @@ gitar changelog [REF] [OPTIONS]
 **Examples:**
 
 ```bash
-gitar changelog v1.0.0          # v1.0.0 to HEAD
-gitar changelog v1.0.0 --to v1.0.1  # v1.0.0 to v1.0.1
-gitar changelog v1.0.0 --to v2.0.0  # v1.0.0 to v2.0.0
-gitar changelog                 # Recent 50 commits
-gitar changelog --since "1 week ago"
-gitar changelog v1.0.0 -n 100   # Max 100 commits since tag
+gitar changelog v1.0.0               # v1.0.0 to HEAD
+gitar changelog v1.0.0 --to v1.0.1   # v1.0.0 to v1.0.1
+gitar changelog v1.0.0 --to v2.0.0   # v1.0.0 to v2.0.0
+gitar changelog                      # Recent 50 commits
+gitar changelog --since "1 week ago" # Relative human time
+gitar changelog v1.0.0 -n 100        # Max 100 commits since tag
 ```
 
 **Output:**
@@ -390,10 +446,10 @@ gitar explain [REF] [OPTIONS]
 **Examples:**
 
 ```bash
-gitar explain                   # Current branch vs main
-gitar explain v1.0.0            # Changes since tag to HEAD
-gitar explain v1.0.0 --to v1.1.0  # Changes between two tags
-gitar explain --staged          # Explain staged changes only
+gitar explain                      # Current branch vs main
+gitar explain v1.0.0               # Changes since tag to HEAD
+gitar explain v1.0.0 --to v1.1.0   # Changes between two tags
+gitar explain --staged             # Explain staged changes only
 gitar explain --since "1 week ago"
 ```
 
@@ -439,10 +495,10 @@ gitar version [REF] [OPTIONS]
 **Examples:**
 
 ```bash
-gitar version                   # Analyze vs main
-gitar version v1.0.0            # Analyze since tag to HEAD
+gitar version                     # Analyze vs main
+gitar version v1.0.0              # Analyze since tag to HEAD
 gitar version v1.0.0 --to v1.1.0  # Analyze between two tags
-gitar version --current 1.2.3   # Specify current version
+gitar version --current 1.2.3     # Specify current version
 ```
 
 **Output:**
@@ -472,9 +528,8 @@ gitar models
 Fetching available models...
 
 Available models:
-  gpt-5-chat-latest
+  gpt-5.2
   gpt-4o
-  gpt-4o-mini
   ...
 ```
 
@@ -674,3 +729,4 @@ gitar models
 ## License
 
 MIT
+
