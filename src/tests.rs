@@ -937,4 +937,293 @@ mod tests {
         let err: ApiError = serde_json::from_str(json).unwrap();
         assert!(err.error.is_none());
     }
+
+    
+
+    // =========================================================================
+    // CLAUDE API TYPES TESTS
+    // =========================================================================
+
+    #[test]
+    fn claude_request_serializes() {
+        let req = ClaudeRequest {
+            model: "claude-sonnet-4-5-20250929".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+            }],
+            system: "You are helpful.".to_string(),
+            max_tokens: 1024,
+            temperature: Some(0.7),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"model\":\"claude-sonnet-4-5-20250929\""));
+        assert!(json.contains("\"system\":\"You are helpful.\""));
+        assert!(json.contains("\"max_tokens\":1024"));
+        assert!(json.contains("\"temperature\":0.7"));
+        assert!(json.contains("\"role\":\"user\""));
+    }
+
+    #[test]
+    fn claude_request_skips_none_temperature() {
+        let req = ClaudeRequest {
+            model: "claude-sonnet-4-5-20250929".to_string(),
+            messages: vec![],
+            system: "test".to_string(),
+            max_tokens: 500,
+            temperature: None,
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(!json.contains("temperature"));
+    }
+
+    #[test]
+    fn claude_response_deserializes() {
+        let json = r#"{
+            "content": [
+                {
+                    "type": "text",
+                    "text": "Hello! How can I help?"
+                }
+            ]
+        }"#;
+        let resp: ClaudeResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.content.len(), 1);
+        assert_eq!(resp.content[0].text, Some("Hello! How can I help?".to_string()));
+    }
+
+    #[test]
+    fn claude_response_handles_null_text() {
+        let json = r#"{
+            "content": [
+                {
+                    "type": "text",
+                    "text": null
+                }
+            ]
+        }"#;
+        let resp: ClaudeResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.content[0].text.is_none());
+    }
+
+    #[test]
+    fn claude_response_handles_empty_content() {
+        let json = r#"{"content": []}"#;
+        let resp: ClaudeResponse = serde_json::from_str(json).unwrap();
+        assert!(resp.content.is_empty());
+    }
+
+    #[test]
+    fn claude_response_handles_multiple_content_blocks() {
+        let json = r#"{
+            "content": [
+                {"text": "First part"},
+                {"text": "Second part"}
+            ]
+        }"#;
+        let resp: ClaudeResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(resp.content.len(), 2);
+        assert_eq!(resp.content[0].text, Some("First part".to_string()));
+        assert_eq!(resp.content[1].text, Some("Second part".to_string()));
+    }
+
+    // =========================================================================
+    // CLAUDE API DETECTION TESTS
+    // =========================================================================
+
+    #[test]
+    fn is_claude_api_detects_anthropic_url() {
+        let config = ResolvedConfig {
+            api_key: None,
+            model: "claude-sonnet-4-5-20250929".into(),
+            max_tokens: 500,
+            temperature: 0.5,
+            base_url: "https://api.anthropic.com/v1".into(),
+            base_branch: "main".into(),
+        };
+        let client = LlmClient::new(&config).unwrap();
+        assert!(client.is_claude_api());
+    }
+
+    #[test]
+    fn is_claude_api_false_for_openai() {
+        let config = ResolvedConfig {
+            api_key: None,
+            model: "gpt-5-chat-latest".into(),
+            max_tokens: 500,
+            temperature: 0.5,
+            base_url: "https://api.openai.com/v1".into(),
+            base_branch: "main".into(),
+        };
+        let client = LlmClient::new(&config).unwrap();
+        assert!(!client.is_claude_api());
+    }
+
+    #[test]
+    fn is_claude_api_false_for_custom_url() {
+        let config = ResolvedConfig {
+            api_key: None,
+            model: "local-model".into(),
+            max_tokens: 500,
+            temperature: 0.5,
+            base_url: "http://localhost:8080".into(),
+            base_branch: "main".into(),
+        };
+        let client = LlmClient::new(&config).unwrap();
+        assert!(!client.is_claude_api());
+    }
+
+    // =========================================================================
+    // RESOLVED CONFIG CLAUDE TESTS
+    // =========================================================================
+
+    #[test]
+    fn resolved_config_uses_claude_default_model() {
+        let cli = make_test_cli(None, None, None, None, Some("https://api.anthropic.com/v1".into()), None);
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "claude-sonnet-4-5-20250929");
+        assert_eq!(resolved.base_url, "https://api.anthropic.com/v1");
+    }
+
+    #[test]
+    fn resolved_config_uses_openai_default_model() {
+        let cli = make_test_cli(None, None, None, None, None, None);
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "gpt-5-chat-latest");
+        assert_eq!(resolved.base_url, "https://api.openai.com/v1");
+    }
+
+    #[test]
+    fn resolved_config_cli_model_overrides_claude_default() {
+        let cli = make_test_cli(
+            None,
+            Some("claude-opus-4-5-20251101".into()),
+            None,
+            None,
+            Some("https://api.anthropic.com/v1".into()),
+            None,
+        );
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "claude-opus-4-5-20251101");
+    }
+
+    #[test]
+    fn resolved_config_file_model_overrides_claude_default() {
+        let cli = make_test_cli(None, None, None, None, Some("https://api.anthropic.com/v1".into()), None);
+        let file = Config {
+            model: Some("claude-haiku-4-5-20251001".into()),
+            ..Config::default()
+        };
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "claude-haiku-4-5-20251001");
+    }
+
+    #[test]
+    fn resolved_config_file_url_determines_default_model() {
+        let cli = make_test_cli(None, None, None, None, None, None);
+        let file = Config {
+            base_url: Some("https://api.anthropic.com/v1".into()),
+            ..Config::default()
+        };
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.model, "claude-sonnet-4-5-20250929");
+    }
+
+    // =========================================================================
+    // API KEY SELECTION TESTS
+    // =========================================================================
+
+    #[test]
+    fn resolved_config_cli_api_key_takes_priority() {
+        let cli = make_test_cli(Some("cli-key".into()), None, None, None, None, None);
+        let file = Config {
+            api_key: Some("file-key".into()),
+            ..Config::default()
+        };
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.api_key, Some("cli-key".into()));
+    }
+
+    #[test]
+    fn resolved_config_file_api_key_second_priority() {
+        let cli = make_test_cli(None, None, None, None, None, None);
+        let file = Config {
+            api_key: Some("file-key".into()),
+            ..Config::default()
+        };
+        let resolved = ResolvedConfig::new(&cli, &file);
+
+        assert_eq!(resolved.api_key, Some("file-key".into()));
+    }
+
+    // =========================================================================
+    // CLAUDE MODEL ID TESTS
+    // =========================================================================
+
+    #[test]
+    fn claude_model_ids_valid_format() {
+        let valid_models = [
+            "claude-opus-4-5-20251101",
+            "claude-sonnet-4-5-20250929",
+            "claude-haiku-4-5-20251001",
+            "claude-opus-4-1-20250805",
+            "claude-sonnet-4-20250514",
+            "claude-opus-4-20250514",
+        ];
+        for model in valid_models {
+            assert!(model.starts_with("claude-"), "Model should start with 'claude-': {}", model);
+            assert!(model.contains("-202"), "Model should contain date suffix: {}", model);
+        }
+    }
+
+    // =========================================================================
+    // CLI CLAUDE-RELATED TESTS
+    // =========================================================================
+
+    #[test]
+    fn cli_parses_anthropic_base_url() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar",
+            "--base-url", "https://api.anthropic.com/v1",
+            "staged"
+        ]).unwrap();
+        assert_eq!(cli.base_url, Some("https://api.anthropic.com/v1".into()));
+    }
+
+    #[test]
+    fn cli_parses_claude_model() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar",
+            "--model", "claude-sonnet-4-5-20250929",
+            "staged"
+        ]).unwrap();
+        assert_eq!(cli.model, Some("claude-sonnet-4-5-20250929".into()));
+    }
+
+    #[test]
+    fn cli_init_with_claude_config() {
+        use clap::Parser;
+        let cli = Cli::try_parse_from([
+            "gitar", "init",
+            "--base-url", "https://api.anthropic.com/v1",
+            "--model", "claude-opus-4-5-20251101",
+        ]).unwrap();
+        if let Commands::Init { base_url, model, .. } = cli.command {
+            assert_eq!(base_url, Some("https://api.anthropic.com/v1".into()));
+            assert_eq!(model, Some("claude-opus-4-5-20251101".into()));
+        } else {
+            panic!("Expected Init command");
+        }
+    }
 }
