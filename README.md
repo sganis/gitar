@@ -2,56 +2,89 @@
 
 # gitar
 
-AI-powered Git assistant that generates commit messages, PR descriptions, changelogs, and more using OpenAI-compatible APIs.
+AI-powered Git assistant that generates commit messages, PR descriptions, changelogs, and more using OpenAI and Anthropic (Claude) APIs. The name combines **git** + **AI** + **Rust** (and happens to sound like guitar 🎸).
 
 ## Features
 
 - **commit** - Interactive commit with AI-generated message
+- **staged / unstaged** - Generate commit message for staged or unstaged changes
 - **history** - Generate meaningful messages for existing commit history
 - **pr** - Generate PR descriptions from branch changes
 - **changelog** - Generate release notes from commits
 - **explain** - Explain changes in plain English for non-technical stakeholders
 - **version** - Suggest semantic version bumps based on changes
+- **models** - List available models from the API
+
+## Why Rust?
+
+gitar is built with Rust for:
+
+- **Performance** - Fast startup and low memory footprint, no runtime overhead
+- **Single binary** - No dependencies, no Python/Node.js runtime required
+- **Cross-platform** - Compiles to native binaries for Linux, macOS, and Windows
+- **Reliability** - Memory safety guarantees without garbage collection
 
 ## Installation
 
 ### From source
 
 ```bash
-git clone https://github.com/yourusername/gitar.git
+git clone https://github.com/sganis/gitar.git
 cd gitar
 cargo build --release
 ```
 
 The binary will be at `target/release/gitar`. Add it to your PATH or copy to `/usr/local/bin/`.
 
-
 ## Configuration
 
-### Environment variable
+### Environment variables
 
 ```bash
+# For OpenAI
 export OPENAI_API_KEY="sk-..."
+
+# For Anthropic (Claude)
+export ANTHROPIC_API_KEY="sk-ant-..."
 ```
+
+The appropriate env var is auto-selected based on your `base_url`.
 
 ### Config file
 
 Create a config file at `~/.gitar.toml`:
 
 ```bash
-gitar init --api-key "sk-..." --model "gpt-4o" --base-branch "main"
+# For OpenAI
+gitar init --api-key "sk-..." --model "gpt-5-chat-latest" --base-branch "main"
+
+# For Anthropic
+gitar init --api-key "sk-ant-..." --base-url "https://api.anthropic.com/v1" --model "claude-sonnet-4-5-20250929"
 ```
 
 Or manually create `~/.gitar.toml`:
 
 ```toml
 api_key = "sk-..."
-model = "gpt-4o"
-max_tokens = 4096
-temperature = 0.7
+model = "gpt-5-chat-latest"
+max_tokens = 500
+temperature = 0.5
 base_branch = "main"
-# base_url = "https://api.openai.com/v1"  # For OpenAI-compatible APIs
+# base_url = "https://api.openai.com/v1"      # OpenAI (default)
+# base_url = "https://api.anthropic.com/v1"   # Anthropic (Claude)
 ```
+
+### Configuration priority
+
+| Priority | Source | Notes |
+|----------|--------|-------|
+| 1 (highest) | `--api-key` | CLI argument |
+| 2 | `~/.gitar.toml` | Config file |
+| 3 (lowest) | Environment variable | Auto-selected based on API |
+
+Environment variables checked:
+- **OpenAI API**: `OPENAI_API_KEY`
+- **Anthropic API**: `ANTHROPIC_API_KEY`
 
 ### View current config
 
@@ -59,14 +92,29 @@ base_branch = "main"
 gitar config
 ```
 
-### OpenAI-compatible APIs
-
-Use `--base-url` for alternative providers:
-
-```bash
-gitar init --base-url "https://api.anthropic.com/v1"
-gitar init --base-url "http://localhost:11434/v1"  # Ollama
+**Output:**
 ```
+Config file: /home/user/.gitar.toml
+
+api_key:     sk-abc12...
+model:       gpt-5-chat-latest
+max_tokens:  500
+temperature: 0.5
+base_url:    (not set)
+base_branch: main
+
+Priority: --api-key > config file > env var
+Env vars checked: OPENAI_API_KEY
+```
+
+### Supported APIs
+
+| Provider | Base URL | Default Model |
+|----------|----------|---------------|
+| OpenAI | `https://api.openai.com/v1` (default) | `gpt-5-chat-latest` |
+| Anthropic | `https://api.anthropic.com/v1` | `claude-sonnet-4-5-20250929` |
+| Ollama | `http://localhost:11434/v1` | (specify with `--model`) |
+| Any OpenAI-compatible | Custom URL | (specify with `--model`) |
 
 ## Usage
 
@@ -78,7 +126,10 @@ All commands accept an optional `[REF]` argument (tag, commit, branch) as the st
 gitar commit                    # Interactive commit with AI message
 gitar commit -a -p              # Stage all, commit, and push
 
-gitar history v1.0.0            # Commit history since tab
+gitar staged                    # Generate message for staged changes
+gitar unstaged                  # Generate message for unstaged changes
+
+gitar history v1.0.0            # Commit history since tag
 gitar history --since "1 week ago"
 
 gitar changelog v1.0.0          # Release notes since tag
@@ -91,6 +142,8 @@ gitar explain v1.0.0            # Explain changes since tag
 gitar explain --staged          # Explain staged changes
 
 gitar version                   # Suggest version bump
+
+gitar models                    # List available models
 ```
 
 ---
@@ -151,12 +204,12 @@ gitar staged | xclip            # Linux
 
 ---
 
-### commits
+### history
 
 Generate meaningful commit messages for existing commit history.
 
 ```bash
-gitar commits [REF] [OPTIONS]
+gitar history [REF] [OPTIONS]
 ```
 
 **Arguments:**
@@ -321,6 +374,8 @@ gitar explain [REF] [OPTIONS]
 **Options:**
 | Option | Description |
 |--------|-------------|
+| `--since <DATE>` | Changes newer than date |
+| `--until <DATE>` | Changes older than date |
 | `--staged` | Use only staged changes |
 
 **Examples:**
@@ -330,6 +385,7 @@ gitar explain                   # Explain current branch vs main
 gitar explain v1.0.0            # Explain changes since tag
 gitar explain HEAD~5            # Explain last 5 commits
 gitar explain --staged          # Explain staged changes only
+gitar explain --since "1 week ago"
 ```
 
 **Output:**
@@ -392,6 +448,42 @@ Breaking changes: No
 
 ---
 
+### models
+
+List available models from the configured API.
+
+```bash
+gitar models
+```
+
+**Output (OpenAI):**
+```
+Fetching available models...
+
+Available models:
+  gpt-5-chat-latest
+  gpt-5-chat-latest
+  gpt-5-chat-latest-mini
+  gpt-4-turbo
+  ...
+```
+
+**Output (Anthropic):**
+```
+Fetching available models...
+
+Available models:
+  claude-opus-4-5-20251101
+  claude-sonnet-4-5-20250929
+  claude-haiku-4-5-20251001
+  claude-opus-4-1-20250805
+  claude-sonnet-4-20250514
+  claude-opus-4-20250514
+  ...
+```
+
+---
+
 ### init
 
 Save configuration to `~/.gitar.toml`.
@@ -403,19 +495,26 @@ gitar init [OPTIONS]
 **Options:**
 | Option | Description |
 |--------|-------------|
-| `--api-key <KEY>` | OpenAI API key |
-| `--model <MODEL>` | Model name (default: gpt-4o) |
-| `--max-tokens <N>` | Max tokens (default: 4096) |
-| `--temperature <F>` | Temperature 0.0-2.0 (default: 0.7) |
+| `--api-key <KEY>` | API key |
+| `--model <MODEL>` | Model name |
+| `--max-tokens <N>` | Max tokens (default: 500) |
+| `--temperature <F>` | Temperature 0.0-2.0 (default: 0.5) |
 | `--base-url <URL>` | API base URL |
 | `--base-branch <BRANCH>` | Default base branch (default: main) |
 
 **Examples:**
 
 ```bash
+# OpenAI setup
 gitar init --api-key "sk-..."
 gitar init --model "gpt-5-chat-latest" --base-branch "develop"
-gitar init --base-url "http://localhost:11434/v1"  # Ollama
+
+# Anthropic (Claude) setup
+gitar init --base-url "https://api.anthropic.com/v1" --api-key "sk-ant-..."
+gitar init --base-url "https://api.anthropic.com/v1" --model "claude-opus-4-5-20251101"
+
+# Local LLM (Ollama)
+gitar init --base-url "http://localhost:11434/v1" --model "llama3"
 ```
 
 ---
@@ -426,28 +525,6 @@ Display current configuration.
 
 ```bash
 gitar config
-```
-
-**Output:**
-```
-Config file: /home/user/.gitar.toml
-
-api_key:     sk-abc12...
-model:       gpt-4o
-max_tokens:  4096
-temperature: 0.7
-base_url:    (not set)
-base_branch: main
-```
-
----
-
-### models
-
-List available models from the API.
-
-```bash
-gitar models
 ```
 
 ---
@@ -470,6 +547,7 @@ These options can be used with any command:
 ```bash
 gitar --model gpt-5-chat-latest changelog v1.0.0
 gitar --base-branch develop pr
+gitar --base-url "https://api.anthropic.com/v1" --model claude-sonnet-4-5-20250929 staged
 ```
 
 ---
@@ -481,9 +559,9 @@ All commands follow a consistent pattern mirroring Git's interface:
 | Argument | Description | Commands |
 |----------|-------------|----------|
 | `[REF]` | Starting point (tag, commit, branch) | All |
-| `--since` | Date filter (like `git log --since`) | changelog, commits |
-| `--until` | Date filter (like `git log --until`) | changelog, commits |
-| `-n, --limit` | Max items | changelog, commits |
+| `--since` | Date filter (like `git log --since`) | changelog, history, explain |
+| `--until` | Date filter (like `git log --until`) | changelog, history, explain |
+| `-n, --limit` | Max items | changelog, history |
 | `--staged` | Use staged changes only | pr, explain |
 
 **Date formats** (same as Git):
@@ -535,8 +613,32 @@ gitar commit -a -p
 gitar changelog --since "yesterday"
 
 # Review recent commit quality
-gitar commits -n 5
+gitar history -n 5
 ```
+
+### Using different providers
+
+```bash
+# Use Claude for a single command
+gitar --base-url "https://api.anthropic.com/v1" --model claude-sonnet-4-5-20250929 commit
+
+# Switch default provider
+gitar init --base-url "https://api.anthropic.com/v1"
+
+# List available models
+gitar models
+```
+
+---
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `OPENAI_API_KEY` | OpenAI API key (used when base_url is OpenAI) |
+| `ANTHROPIC_API_KEY` | Anthropic API key (used when base_url is Anthropic) |
+| `OPENAI_BASE_URL` | Override default base URL |
+| `GITAR_PROXY` | HTTP proxy for API requests |
 
 ---
 
