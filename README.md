@@ -42,7 +42,53 @@ gitar is built with Rust for:
 
 ## Installation
 
-### From source
+### Download pre-built binary (recommended)
+
+Download the latest release for your platform from the [Releases page](https://github.com/sganis/gitar/releases):
+
+| Platform       | Download                                                                 |
+| -------------- | ------------------------------------------------------------------------ |
+| Linux (x64)    | `gitar-linux-x86_64.tar.gz`                                              |
+| macOS (Intel)  | `gitar-darwin-x86_64.tar.gz`                                             |
+| macOS (Apple)  | `gitar-darwin-aarch64.tar.gz`                                            |
+| Windows (x64)  | `gitar-windows-x86_64.zip`                                               |
+
+#### Linux / macOS
+```bash
+# Download (replace URL with latest release)
+curl -LO https://github.com/sganis/gitar/releases/latest/download/gitar-linux-x86_64.tar.gz
+
+# Extract
+tar -xzf gitar-linux-x86_64.tar.gz
+
+# Make executable and move to PATH
+chmod +x gitar
+sudo mv gitar /usr/local/bin/
+
+# Verify installation
+gitar --version
+```
+
+#### macOS (Apple Silicon)
+```bash
+curl -LO https://github.com/sganis/gitar/releases/latest/download/gitar-darwin-aarch64.tar.gz
+tar -xzf gitar-darwin-aarch64.tar.gz
+chmod +x gitar
+sudo mv gitar /usr/local/bin/
+```
+
+#### Windows
+
+1. Download `gitar-windows-x86_64.zip` from [Releases](https://github.com/sganis/gitar/releases)
+2. Extract the zip file
+3. Move `gitar.exe` to a folder in your PATH, or add its location to PATH
+4. Open a new terminal and run `gitar --version`
+
+---
+
+### Build from source
+
+Requires [Rust](https://rustup.rs/) toolchain.
 ```bash
 git clone https://github.com/sganis/gitar.git
 cd gitar
@@ -57,6 +103,14 @@ target/release/gitar
 Add it to your PATH or copy to `/usr/local/bin`.
 
 ---
+
+### Install via Cargo
+```bash
+cargo install --git https://github.com/sganis/gitar.git
+```
+
+---
+
 
 ## Quick Start
 
