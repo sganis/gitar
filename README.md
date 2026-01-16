@@ -44,14 +44,8 @@ gitar is built with Rust for:
 
 ### Download pre-built binary (recommended)
 
-Download the latest release for your platform from the [Releases page](https://github.com/sganis/gitar/releases):
+Download the latest release for your platform from the [Releases page](https://github.com/sganis/gitar/releases).
 
-| Platform       | Download                                                                 |
-| -------------- | ------------------------------------------------------------------------ |
-| Linux (x64)    | `gitar-linux-x86_64.tar.gz`                                              |
-| macOS (Intel)  | `gitar-darwin-x86_64.tar.gz`                                             |
-| macOS (Apple)  | `gitar-darwin-aarch64.tar.gz`                                            |
-| Windows (x64)  | `gitar-windows-x86_64.zip`                                               |
 
 #### Linux / macOS
 ```bash
