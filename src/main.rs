@@ -352,16 +352,12 @@ struct Cli {
 enum Commands {
     /// Interactive commit with AI message
     Commit {
-        /// Push after commit
         #[arg(short = 'p', long)]
         push: bool,
-        /// Stage all changes
         #[arg(short = 'a', long)]
         all: bool,
-        /// Add [AI:model] tag to message
         #[arg(long, default_value = "true")]
         tag: bool,
-        /// Don't add AI tag
         #[arg(long = "no-tag")]
         no_tag: bool,
     },
@@ -377,6 +373,9 @@ enum Commands {
         /// Starting point (tag, commit, branch)
         #[arg(value_name = "REF")]
         from: Option<String>,
+        /// Ending point (default: HEAD)
+        #[arg(long)]
+        to: Option<String>,
         /// Commits newer than date
         #[arg(long)]
         since: Option<String>,
@@ -396,6 +395,9 @@ enum Commands {
         /// Base ref to compare against (tag, commit, branch)
         #[arg(value_name = "REF")]
         base: Option<String>,
+        /// Ending point (default: current branch)
+        #[arg(long)]
+        to: Option<String>,
         /// Use staged changes only
         #[arg(long)]
         staged: bool,
@@ -406,6 +408,9 @@ enum Commands {
         /// Starting point (tag, commit, branch)
         #[arg(value_name = "REF")]
         from: Option<String>,
+        /// Ending point (default: HEAD)
+        #[arg(long)]
+        to: Option<String>,
         /// Commits newer than date
         #[arg(long)]
         since: Option<String>,
@@ -417,11 +422,14 @@ enum Commands {
         limit: Option<usize>,
     },
 
-    // CLI definition - add since/until to Explain
+    /// Explain changes for non-technical stakeholders
     Explain {
         /// Starting point (tag, commit, branch)
         #[arg(value_name = "REF")]
         from: Option<String>,
+        /// Ending point (default: HEAD)
+        #[arg(long)]
+        to: Option<String>,
         /// Changes newer than date
         #[arg(long)]
         since: Option<String>,
@@ -438,6 +446,9 @@ enum Commands {
         /// Base ref to compare against (tag, commit, branch)
         #[arg(value_name = "REF")]
         base: Option<String>,
+        /// Ending point (default: HEAD)
+        #[arg(long)]
+        to: Option<String>,
         /// Current version (default: from tags)
         #[arg(long)]
         current: Option<String>,
@@ -935,31 +946,31 @@ fn truncate_diff(diff: String, max: usize) -> String {
     t
 }
 
-/// Build a range string for git log (e.g., "v1.0.0..HEAD")
-fn build_range(from: Option<&str>, base_branch: &str) -> Option<String> {
-    from.map(|r| format!("{}..HEAD", r))
+fn build_range(from: Option<&str>, to: Option<&str>, base_branch: &str) -> Option<String> {
+    let end = to.unwrap_or("HEAD");
+    from.map(|r| format!("{}..{}", r, end))
         .or_else(|| {
             let branch = get_current_branch();
             if branch != base_branch {
-                Some(format!("{}..{}", base_branch, branch))
+                Some(format!("{}..{}", base_branch, if to.is_some() { end } else { &branch }))
             } else {
                 None
             }
         })
 }
 
-fn build_diff_target(from: Option<&str>, base_branch: &str) -> String {
+fn build_diff_target(from: Option<&str>, to: Option<&str>, base_branch: &str) -> String {
+    let end = to.unwrap_or("HEAD");
     match from {
-        Some(r) => format!("{}..HEAD", r),
+        Some(r) => format!("{}..{}", r, end),
         None => {
             let branch = get_current_branch();
             if branch != base_branch {
-                format!("{}...{}", base_branch, branch)
+                format!("{}...{}", base_branch, if to.is_some() { end } else { &branch })
             } else {
-                // On base branch with no ref: compare against latest tag
                 let tag = get_current_version();
                 if tag != "0.0.0" {
-                    format!("{}..HEAD", tag)
+                    format!("{}..{}", tag, end)
                 } else {
                     String::new()
                 }
@@ -1086,24 +1097,25 @@ async fn cmd_unstaged(client: &LlmClient) -> Result<()> {
 async fn cmd_history(
     client: &LlmClient,
     from: Option<String>,
+    to: Option<String>,
     since: Option<String>,
     until: Option<String>,
     limit: Option<usize>,
     delay: u64,
 ) -> Result<()> {
-    // Determine limit: if ref given and no explicit limit, get all
     let limit = match (&from, limit) {
         (Some(_), None) => None,
         (None, None) => Some(50),
         (_, Some(n)) => Some(n),
     };
 
-    let range = from.as_ref().map(|r| format!("{}..HEAD", r));
+    let end = to.as_deref().unwrap_or("HEAD");
+    let range = from.as_ref().map(|r| format!("{}..{}", r, end));
 
-    // Build display string
-    let display = match (&from, &since, &until) {
-        (Some(r), _, _) => format!("{}..HEAD", r),
-        (None, Some(s), _) => format!("--since {}", s),
+    let display = match (&from, &to, &since, &until) {
+        (Some(r), Some(t), _, _) => format!("{}..{}", r, t),
+        (Some(r), None, _, _) => format!("{}..HEAD", r),
+        (None, None, Some(s), _) => format!("--since {}", s),
         _ => "recent".into(),
     };
 
@@ -1160,10 +1172,11 @@ async fn cmd_history(
 async fn cmd_pr(
     client: &LlmClient,
     base: Option<String>,
+    to: Option<String>,
     base_branch: &str,
     staged: bool,
 ) -> Result<()> {
-    let branch = get_current_branch();
+    let branch = to.clone().unwrap_or_else(get_current_branch);
     let target_base = base.as_deref().unwrap_or(base_branch);
 
     println!("PR: {} -> {}\n", branch, target_base);
@@ -1175,8 +1188,8 @@ async fn cmd_pr(
             "(staged changes)".into(),
         )
     } else {
-        let diff_target = build_diff_target(base.as_deref(), base_branch);
-        let range = build_range(base.as_deref(), base_branch);
+        let diff_target = build_diff_target(base.as_deref(), to.as_deref(), base_branch);
+        let range = build_range(base.as_deref(), to.as_deref(), base_branch);
 
         let commits = get_commit_logs(Some(20), None, None, range.as_deref())?;
         let ct = commits
@@ -1211,32 +1224,33 @@ async fn cmd_pr(
     Ok(())
 }
 
+// Update cmd_changelog function signature and implementation
 async fn cmd_changelog(
     client: &LlmClient,
     from: Option<String>,
+    to: Option<String>,
     since: Option<String>,
     until: Option<String>,
     limit: Option<usize>,
 ) -> Result<()> {
-    // Determine limit: if ref given and no explicit limit, get all
     let limit = match (&from, limit) {
         (Some(_), None) => None,
         (None, None) => Some(50),
         (_, Some(n)) => Some(n),
     };
 
-    let range = from.as_ref().map(|r| format!("{}..HEAD", r));
+    let end = to.as_deref().unwrap_or("HEAD");
+    let range = from.as_ref().map(|r| format!("{}..{}", r, end));
 
     // Build display string
-    let display = match (&from, &since, &until) {
-        (Some(r), None, None) => format!("{}..HEAD", r),
-        (Some(r), Some(s), None) => format!("{}..HEAD --since {}", r, s),
-        (Some(r), None, Some(u)) => format!("{}..HEAD --until {}", r, u),
-        (Some(r), Some(s), Some(u)) => format!("{}..HEAD --since {} --until {}", r, s, u),
-        (None, Some(s), Some(u)) => format!("--since {} --until {}", s, u),
-        (None, Some(s), None) => format!("--since {}", s),
-        (None, None, Some(u)) => format!("--until {}", u),
-        (None, None, None) => "recent (last 50)".into(),
+    let display = match (&from, &to, &since, &until) {
+        (Some(r), Some(t), _, _) => format!("{}..{}", r, t),
+        (Some(r), None, _, _) => format!("{}..HEAD", r),
+        (None, Some(t), _, _) => format!("..{}", t),
+        (None, None, Some(s), Some(u)) => format!("--since {} --until {}", s, u),
+        (None, None, Some(s), None) => format!("--since {}", s),
+        (None, None, None, Some(u)) => format!("--until {}", u),
+        (None, None, None, None) => "recent (last 50)".into(),
     };
 
     println!("Changelog for {}...\n", display);
@@ -1267,10 +1281,10 @@ async fn cmd_changelog(
     Ok(())
 }
 
-// cmd_explain - replace the function
 async fn cmd_explain(
     client: &LlmClient,
     from: Option<String>,
+    to: Option<String>,
     since: Option<String>,
     until: Option<String>,
     base_branch: &str,
@@ -1281,7 +1295,6 @@ async fn cmd_explain(
     let (diff, stats) = if staged {
         (get_diff(None, true, 15000)?, get_diff_stats(None, true)?)
     } else {
-        // If since/until provided, find commit range from logs
         let effective_from = match (&from, &since, &until) {
             (Some(_), _, _) => from.clone(),
             (None, Some(_), _) | (None, None, Some(_)) => {
@@ -1291,7 +1304,7 @@ async fn cmd_explain(
             _ => None,
         };
 
-        let diff_target = build_diff_target(effective_from.as_deref(), base_branch);
+        let diff_target = build_diff_target(effective_from.as_deref(), to.as_deref(), base_branch);
         let diff_target_ref = if diff_target.is_empty() { None } else { Some(diff_target.as_str()) };
         (
             get_diff(diff_target_ref, false, 15000)?,
@@ -1317,13 +1330,14 @@ async fn cmd_explain(
 async fn cmd_version(
     client: &LlmClient,
     base: Option<String>,
+    to: Option<String>,
     base_branch: &str,
     current: Option<String>,
 ) -> Result<()> {
     let current = current.unwrap_or_else(get_current_version);
     println!("Version analysis (current: {})...\n", current);
 
-    let diff_target = build_diff_target(base.as_deref(), base_branch);
+    let diff_target = build_diff_target(base.as_deref(), to.as_deref(), base_branch);
     let diff_target_ref = if diff_target.is_empty() { None } else { Some(diff_target.as_str()) };
 
     let diff = get_diff(diff_target_ref, false, 15000)?;
@@ -1454,20 +1468,20 @@ async fn main() -> Result<()> {
         }
         Commands::Staged => cmd_staged(&client).await?,
         Commands::Unstaged => cmd_unstaged(&client).await?,
-        Commands::History { from, since, until, limit, delay } => {
-            cmd_history(&client, from, since, until, limit, delay).await?
+        Commands::History { from, to, since, until, limit, delay } => {
+            cmd_history(&client, from, to, since, until, limit, delay).await?
         }
-        Commands::Pr { base, staged } => {
-            cmd_pr(&client, base, &config.base_branch, staged).await?
+        Commands::Pr { base, to, staged } => {
+            cmd_pr(&client, base, to, &config.base_branch, staged).await?
         }
-        Commands::Changelog { from, since, until, limit } => {
-            cmd_changelog(&client, from, since, until, limit).await?
+        Commands::Changelog { from, to, since, until, limit } => {
+            cmd_changelog(&client, from, to, since, until, limit).await?
         }
-        Commands::Explain { from, since, until, staged } => {
-            cmd_explain(&client, from, since, until, &config.base_branch, staged).await?
+        Commands::Explain { from, to, since, until, staged } => {
+            cmd_explain(&client, from, to, since, until, &config.base_branch, staged).await?
         }
-        Commands::Version { base, current } => {
-            cmd_version(&client, base, &config.base_branch, current).await?
+        Commands::Version { base, to, current } => {
+            cmd_version(&client, base, to, &config.base_branch, current).await?
         }
         Commands::Init { .. } | Commands::Config => unreachable!(),
         Commands::Models => cmd_models(&client).await?,

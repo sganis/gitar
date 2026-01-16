@@ -92,21 +92,6 @@ Environment variables checked:
 gitar config
 ```
 
-**Output:**
-```
-Config file: /home/user/.gitar.toml
-
-api_key:     sk-abc12...
-model:       gpt-5-chat-latest
-max_tokens:  500
-temperature: 0.5
-base_url:    (not set)
-base_branch: main
-
-Priority: --api-key > config file > env var
-Env vars checked: OPENAI_API_KEY
-```
-
 ### Supported APIs
 
 | Provider | Base URL | Default Model |
@@ -118,7 +103,7 @@ Env vars checked: OPENAI_API_KEY
 
 ## Usage
 
-All commands accept an optional `[REF]` argument (tag, commit, branch) as the starting point.
+All commands support flexible range selection with `[REF]` (start) and `--to` (end).
 
 ### Quick reference
 
@@ -130,10 +115,10 @@ gitar staged                    # Generate message for staged changes
 gitar unstaged                  # Generate message for unstaged changes
 
 gitar history v1.0.0            # Commit history since tag
-gitar history --since "1 week ago"
+gitar history v1.0.0 --to v1.1.0  # History between two tags
 
 gitar changelog v1.0.0          # Release notes since tag
-gitar changelog --since "1 week ago"
+gitar changelog v1.0.0 --to v1.1.0  # Release notes between tags
 
 gitar pr                        # PR description vs main
 gitar pr develop                # PR description vs develop
@@ -144,6 +129,26 @@ gitar explain --staged          # Explain staged changes
 gitar version                   # Suggest version bump
 
 gitar models                    # List available models
+```
+
+---
+
+## Range Support
+
+All commands support `--to` for specifying an ending point (default: HEAD):
+
+```bash
+# From v1.0.0 to HEAD (default)
+gitar changelog v1.0.0
+
+# From v1.0.0 to v1.0.1
+gitar changelog v1.0.0 --to v1.0.1
+
+# From v1.0.1 to v2.0.0
+gitar changelog v1.0.1 --to v2.0.0
+
+# From beginning to v1.0.0
+gitar changelog $(git rev-list --max-parents=0 HEAD) --to v1.0.0
 ```
 
 ---
@@ -220,6 +225,7 @@ gitar history [REF] [OPTIONS]
 **Options:**
 | Option | Description |
 |--------|-------------|
+| `--to <REF>` | Ending point (default: HEAD) |
 | `--since <DATE>` | Commits newer than date |
 | `--until <DATE>` | Commits older than date |
 | `-n, --limit <N>` | Max commits (default: 50 if no REF) |
@@ -230,10 +236,10 @@ gitar history [REF] [OPTIONS]
 ```bash
 gitar history                   # Last 50 commits
 gitar history -n 10             # Last 10 commits
-gitar history v1.0.0            # All commits since tag
+gitar history v1.0.0            # All commits since tag to HEAD
+gitar history v1.0.0 --to v1.1.0  # Commits between two tags
 gitar history HEAD~5            # Last 5 commits
 gitar history --since "1 week ago"
-gitar history --since "2024-01-01" --until "2024-06-01"
 ```
 
 **Output:**
@@ -265,14 +271,15 @@ gitar pr [REF] [OPTIONS]
 **Options:**
 | Option | Description |
 |--------|-------------|
+| `--to <REF>` | Source branch/ref (default: current branch) |
 | `--staged` | Use only staged changes |
 
 **Examples:**
 
 ```bash
-gitar pr                        # PR against main (or configured base)
-gitar pr develop                # PR against develop branch
-gitar pr v1.0.0                 # PR against tag
+gitar pr                        # Current branch vs main
+gitar pr develop                # Current branch vs develop
+gitar pr main --to feature/oauth  # feature/oauth vs main
 gitar pr --staged               # PR from staged changes only
 ```
 
@@ -320,18 +327,19 @@ gitar changelog [REF] [OPTIONS]
 **Options:**
 | Option | Description |
 |--------|-------------|
+| `--to <REF>` | Ending point (default: HEAD) |
 | `--since <DATE>` | Commits newer than date |
 | `--until <DATE>` | Commits older than date |
-| `-n, --limit <N>` | Max commits (default: 50 if no REF, unlimited if REF given) |
+| `-n, --limit <N>` | Max commits (default: 50 if no REF) |
 
 **Examples:**
 
 ```bash
-gitar changelog v1.0.0          # All commits since tag
-gitar changelog HEAD~20         # Last 20 commits
+gitar changelog v1.0.0          # v1.0.0 to HEAD
+gitar changelog v1.0.0 --to v1.0.1  # v1.0.0 to v1.0.1
+gitar changelog v1.0.0 --to v2.0.0  # v1.0.0 to v2.0.0
 gitar changelog                 # Recent 50 commits
 gitar changelog --since "1 week ago"
-gitar changelog --since "2024-01-01" --until "2024-03-01"
 gitar changelog v1.0.0 -n 100   # Max 100 commits since tag
 ```
 
@@ -374,6 +382,7 @@ gitar explain [REF] [OPTIONS]
 **Options:**
 | Option | Description |
 |--------|-------------|
+| `--to <REF>` | Ending point (default: HEAD) |
 | `--since <DATE>` | Changes newer than date |
 | `--until <DATE>` | Changes older than date |
 | `--staged` | Use only staged changes |
@@ -381,9 +390,9 @@ gitar explain [REF] [OPTIONS]
 **Examples:**
 
 ```bash
-gitar explain                   # Explain current branch vs main
-gitar explain v1.0.0            # Explain changes since tag
-gitar explain HEAD~5            # Explain last 5 commits
+gitar explain                   # Current branch vs main
+gitar explain v1.0.0            # Changes since tag to HEAD
+gitar explain v1.0.0 --to v1.1.0  # Changes between two tags
 gitar explain --staged          # Explain staged changes only
 gitar explain --since "1 week ago"
 ```
@@ -424,13 +433,15 @@ gitar version [REF] [OPTIONS]
 **Options:**
 | Option | Description |
 |--------|-------------|
+| `--to <REF>` | Ending point (default: HEAD) |
 | `--current <VERSION>` | Current version (default: from git tags) |
 
 **Examples:**
 
 ```bash
 gitar version                   # Analyze vs main
-gitar version v1.0.0            # Analyze since tag
+gitar version v1.0.0            # Analyze since tag to HEAD
+gitar version v1.0.0 --to v1.1.0  # Analyze between two tags
 gitar version --current 1.2.3   # Specify current version
 ```
 
@@ -462,9 +473,8 @@ Fetching available models...
 
 Available models:
   gpt-5-chat-latest
-  gpt-5-chat-latest
-  gpt-5-chat-latest-mini
-  gpt-4-turbo
+  gpt-4o
+  gpt-4o-mini
   ...
 ```
 
@@ -476,9 +486,6 @@ Available models:
   claude-opus-4-5-20251101
   claude-sonnet-4-5-20250929
   claude-haiku-4-5-20251001
-  claude-opus-4-1-20250805
-  claude-sonnet-4-20250514
-  claude-opus-4-20250514
   ...
 ```
 
@@ -527,6 +534,21 @@ Display current configuration.
 gitar config
 ```
 
+**Output:**
+```
+Config file: /home/user/.gitar.toml
+
+api_key:     sk-abc12...
+model:       gpt-5-chat-latest
+max_tokens:  500
+temperature: 0.5
+base_url:    (not set)
+base_branch: main
+
+Priority: --api-key > config file > env var
+Env vars checked: OPENAI_API_KEY
+```
+
 ---
 
 ## Global Options
@@ -558,7 +580,8 @@ All commands follow a consistent pattern mirroring Git's interface:
 
 | Argument | Description | Commands |
 |----------|-------------|----------|
-| `[REF]` | Starting point (tag, commit, branch) | All |
+| `[REF]` | Starting point (tag, commit, branch) | history, changelog, explain, pr, version |
+| `--to` | Ending point (default: HEAD) | history, changelog, explain, pr, version |
 | `--since` | Date filter (like `git log --since`) | changelog, history, explain |
 | `--until` | Date filter (like `git log --until`) | changelog, history, explain |
 | `-n, --limit` | Max items | changelog, history |
@@ -576,15 +599,21 @@ All commands follow a consistent pattern mirroring Git's interface:
 
 ### Release workflow
 
-```bash
-# See what changed since last release
-gitar changelog v1.2.0
+Generate changelogs for each release:
 
-# Generate release notes for CHANGELOG.md
-gitar changelog v1.2.0 > CHANGELOG.md
+```bash
+# First release (from beginning to v1.0.0)
+gitar changelog $(git rev-list --max-parents=0 HEAD) --to v1.0.0 > CHANGELOG-v1.0.0.md
+
+# Subsequent releases
+gitar changelog v1.0.0 --to v1.0.1 > CHANGELOG-v1.0.1.md
+gitar changelog v1.0.1 --to v1.0.2 > CHANGELOG-v1.0.2.md
+
+# Current development (since last tag)
+gitar changelog v1.0.2
 
 # Determine version bump
-gitar version v1.2.0
+gitar version v1.0.2
 ```
 
 ### PR workflow
