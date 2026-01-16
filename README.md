@@ -65,7 +65,7 @@ gitar --version
 
 #### macOS (Apple Silicon)
 ```bash
-curl -LO https://github.com/sganis/gitar/releases/latest/download/gitar-arm64-1.0.0.tar.gz
+curl -LO https://github.com/sganis/gitar/releases/latest/download/gitar-macos-arm64-1.0.0.tar.gz
 tar -xzf gitar-macos-arm64-1.0.0.tar.gz
 chmod +x gitar
 sudo mv gitar /usr/local/bin/
