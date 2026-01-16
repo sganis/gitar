@@ -1,13 +1,14 @@
 # v1.0.4
 
 ## Features
-- Added Google Gemini support with provider recommendations.
+- Added Google Gemini provider support and provider recommendations.
+- Added provider selection via CLI flag with URL resolution for OpenAI, Claude, Gemini, Groq, and Ollama.
 
 ## Improvements
+- Expanded and revamped README with detailed setup, quick start, CLI usage, configuration examples, and model recommendations.
+- Enhanced changelog generation and documentation for new provider support.
+- Improved configuration resolution and added comprehensive provider option tests.
 - Updated default Gemini model to 2.5-flash.
-
-## Documentation
-- Revamped README with detailed features, setup, model recommendations, and usage examples.
 
 
 # v1.0.3
