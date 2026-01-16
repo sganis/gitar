@@ -54,7 +54,6 @@ impl Config {
 // =============================================================================
 // OPENAI API TYPES
 // =============================================================================
-
 #[derive(Debug, Clone, Serialize)]
 struct ChatMessage {
     role: String,
@@ -108,6 +107,7 @@ struct ApiErrorDetail {
     message: Option<String>,
 }
 
+// CLAUDE 
 #[derive(Debug, Serialize)]
 struct ClaudeRequest {
     model: String,
@@ -126,6 +126,46 @@ struct ClaudeResponse {
 #[derive(Debug, Deserialize)]
 struct ClaudeContent {
     text: Option<String>,
+}
+
+// GEMINI
+// === ADD: Gemini API types (place near other API TYPES) ===
+
+#[derive(Debug, Serialize)]
+struct GeminiGenerateContentRequest {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    system_instruction: Option<GeminiContent>,
+    contents: Vec<GeminiContent>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct GeminiContent {
+    parts: Vec<GeminiPart>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+struct GeminiPart {
+    text: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiGenerateContentResponse {
+    candidates: Option<Vec<GeminiCandidate>>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiCandidate {
+    content: Option<GeminiContent>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiModelsResponse {
+    models: Vec<GeminiModelInfo>,
+}
+
+#[derive(Debug, Deserialize)]
+struct GeminiModelInfo {
+    name: String, // e.g. "models/gemini-2.0-flash"
 }
 
 // =============================================================================
@@ -477,10 +517,6 @@ enum Commands {
     Models,
 }
 
-// =============================================================================
-// RESOLVED CONFIG
-// =============================================================================
-
 struct ResolvedConfig {
     api_key: Option<String>,
     model: String,
@@ -490,7 +526,6 @@ struct ResolvedConfig {
     base_branch: String,
 }
 
-// Update ResolvedConfig to be smarter about API key selection
 impl ResolvedConfig {
     fn new(cli: &Cli, file: &Config) -> Self {
         let base_url = cli.base_url.clone()
@@ -499,14 +534,16 @@ impl ResolvedConfig {
 
         let is_claude = base_url.contains("anthropic.com");
         let is_groq = base_url.contains("api.groq.com");
+        let is_gemini = base_url.contains("generativelanguage.googleapis.com");
 
         let default_model = if is_claude {
             "claude-sonnet-4-5-20250929"
+        } else if is_gemini {
+            "gemini-2.0-flash"
         } else {
             "gpt-5-chat-latest"
         };
 
-        // Priority: CLI arg > config file > env var (auto-selected)
         let api_key = cli.api_key.clone()
             .or_else(|| file.api_key.clone())
             .or_else(|| {
@@ -515,6 +552,9 @@ impl ResolvedConfig {
                 } else if is_groq {
                     std::env::var("GROQ_API_KEY").ok()
                         .or_else(|| std::env::var("OPENAI_API_KEY").ok())
+                } else if is_gemini {
+                    std::env::var("GEMINI_API_KEY").ok()
+                        .or_else(|| std::env::var("GOOGLE_API_KEY").ok())
                 } else {
                     std::env::var("OPENAI_API_KEY").ok()
                 }
@@ -534,6 +574,7 @@ impl ResolvedConfig {
         }
     }
 }
+
 
 // =============================================================================
 // LLM CLIENT
@@ -577,9 +618,18 @@ impl LlmClient {
         self.base_url.contains("anthropic.com")
     }
     
+    fn is_gemini_api(&self) -> bool {
+        self.base_url.contains("generativelanguage.googleapis.com")
+    }
+
+    
     async fn chat(&self, system: &str, user: &str) -> Result<String> {
         if self.is_claude_api() {
             return self.chat_claude(system, user).await;
+        }
+
+        if self.is_gemini_api() {
+            return self.chat_gemini(system, user).await;
         }
 
         let url = format!("{}/chat/completions", self.base_url);
@@ -689,6 +739,78 @@ impl LlmClient {
             .context("No response content from Claude API")
     }
 
+    async fn chat_gemini(&self, system: &str, user: &str) -> Result<String> {
+        let base = self.base_url.trim_end_matches('/');
+
+        let base = if base.ends_with("/v1beta") {
+            base.to_string()
+        } else {
+            format!("{}/v1beta", base)
+        };
+
+        let model_path = if self.model.starts_with("models/") {
+            self.model.clone()
+        } else {
+            format!("models/{}", self.model)
+        };
+
+        let url = format!("{}/{}:generateContent", base, model_path);
+
+        let request = GeminiGenerateContentRequest {
+            system_instruction: if system.trim().is_empty() {
+                None
+            } else {
+                Some(GeminiContent {
+                    parts: vec![GeminiPart { text: system.to_string() }],
+                })
+            },
+            contents: vec![GeminiContent {
+                parts: vec![GeminiPart { text: user.to_string() }],
+            }],
+        };
+
+        let mut req_builder = self.http
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json");
+
+        if let Some(ref api_key) = self.api_key {
+            req_builder = req_builder.header("X-goog-api-key", api_key);
+        }
+
+        let response = req_builder
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send request")?;
+
+        let status = response.status();
+        let body = response.text().await.context("Failed to read response body")?;
+
+        if !status.is_success() {
+            if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
+                if let Some(detail) = err.error {
+                    if let Some(msg) = detail.message {
+                        bail!("API error ({}): {}", status, msg);
+                    }
+                }
+            }
+            bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
+        }
+
+        let resp: GeminiGenerateContentResponse = serde_json::from_str(&body)
+            .context("Failed to parse Gemini response")?;
+
+        let text = resp.candidates
+            .as_ref()
+            .and_then(|c| c.first())
+            .and_then(|c| c.content.as_ref())
+            .and_then(|c| c.parts.first())
+            .map(|p| p.text.trim().to_string());
+
+        text.context("No response content from Gemini API")
+    }
+
     async fn send_chat_request(&self, url: &str, request: &ChatCompletionRequest) -> Result<String> {
         let mut req_builder = self.http
             .post(url)
@@ -730,6 +852,10 @@ impl LlmClient {
     }
 
     async fn list_models(&self) -> Result<Vec<String>> {
+        if self.is_gemini_api() {
+            return self.list_models_gemini().await;
+        }
+
         let url = format!("{}/models", self.base_url);
 
         let mut req_builder = self.http
@@ -769,6 +895,53 @@ impl LlmClient {
             .context("Failed to parse models response")?;
 
         Ok(resp.data.into_iter().map(|m| m.id).collect())
+    }
+
+    async fn list_models_gemini(&self) -> Result<Vec<String>> {
+        let base = self.base_url.trim_end_matches('/');
+
+        let base = if base.ends_with("/v1beta") {
+            base.to_string()
+        } else {
+            format!("{}/v1beta", base)
+        };
+
+        let url = format!("{}/models", base);
+
+        let mut req_builder = self.http
+            .get(&url)
+            .header("Accept", "application/json");
+
+        if let Some(ref api_key) = self.api_key {
+            req_builder = req_builder.header("X-goog-api-key", api_key);
+        }
+
+        let response = req_builder
+            .send()
+            .await
+            .context("Failed to send request")?;
+
+        let status = response.status();
+        let body = response.text().await.context("Failed to read response body")?;
+
+        if !status.is_success() {
+            if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
+                if let Some(detail) = err.error {
+                    if let Some(msg) = detail.message {
+                        bail!("API error ({}): {}", status, msg);
+                    }
+                }
+            }
+            bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
+        }
+
+        let resp: GeminiModelsResponse = serde_json::from_str(&body)
+            .context("Failed to parse Gemini models response")?;
+
+        Ok(resp.models.into_iter().map(|m| {
+            // convert "models/gemini-2.0-flash" -> "gemini-2.0-flash"
+            m.name.strip_prefix("models/").unwrap_or(&m.name).to_string()
+        }).collect())
     }
 }
 
@@ -1396,7 +1569,6 @@ fn cmd_init(
     config.save()
 }
 
-// Update cmd_config to show which env vars are checked
 fn cmd_config() -> Result<()> {
     let config = Config::load();
     let path = Config::path()
@@ -1406,6 +1578,7 @@ fn cmd_config() -> Result<()> {
     let base_url = config.base_url.as_deref().unwrap_or("https://api.openai.com/v1");
     let is_claude = base_url.contains("anthropic.com");
     let is_groq = base_url.contains("api.groq.com");
+    let is_gemini = base_url.contains("generativelanguage.googleapis.com");
 
     println!("Config file: {}\n", path);
     println!("api_key:     {}", config.api_key.as_deref()
@@ -1428,6 +1601,8 @@ fn cmd_config() -> Result<()> {
             "ANTHROPIC_API_KEY"
         } else if is_groq {
             "GROQ_API_KEY (fallback: OPENAI_API_KEY)"
+        } else if is_gemini {
+            "GEMINI_API_KEY (fallback: GOOGLE_API_KEY)"
         } else {
             "OPENAI_API_KEY"
         }

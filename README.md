@@ -2,7 +2,7 @@
 
 # 🎸 gitar
 
-AI-powered Git assistant that generates commit messages, PR descriptions, changelogs, and more using OpenAI and Anthropic (Claude) APIs. The name combines **git** + **AI** + **Rust** (and happens to sound like guitar).
+AI-powered Git assistant that generates commit messages, PR descriptions, changelogs, and more. It supports OpenAI ChatGpt, Anthropic Claude, Google Gemini, and any OpenAI-compatible API such as Groq and Ollama. The name combines **git** + **AI** + **Rust** (and happens to sound like guitar).
 
 ## Features
 
@@ -47,6 +47,9 @@ export OPENAI_API_KEY="sk-..."
 # For Anthropic (Claude)
 export ANTHROPIC_API_KEY="sk-ant-..."
 
+# For Google (Gemini)
+export GEMINI_API_KEY="AIza..."
+
 # For Groq
 export GROQ_API_KEY="gsk_..."
 ```
@@ -88,6 +91,8 @@ base_branch = "main"
 Environment variables checked:
 - **OpenAI API**: `OPENAI_API_KEY`
 - **Anthropic API**: `ANTHROPIC_API_KEY`
+- **Gemini API**: `GEMINI_API_KEY`
+- **Groq API**: `GROQ_API_KEY`
 
 ### View current config
 
@@ -97,13 +102,14 @@ gitar config
 
 ### Supported APIs
 
-| Provider | Base URL | Default Model |
-|----------|----------|---------------|
-| OpenAI | `https://api.openai.com/v1` (default) | `gpt-5-chat-latest` |
-| Anthropic | `https://api.anthropic.com/v1` | `claude-sonnet-4-5-20250929` |
-| Groq | `https://api.groq.com/openai/v1` | `openai/gpt-oss-20b` |
-| Ollama | `http://localhost:11434/v1` | (specify with `--model`) |
-| Any OpenAI-compatible | Custom URL | (specify with `--model`) |
+| Provider              | Base URL                                    | Default Model                |
+| --------------------- | ------------------------------------------- | ---------------------------- |
+| OpenAI                | `https://api.openai.com/v1` (default)       | `gpt-5-chat-latest`          |
+| Anthropic             | `https://api.anthropic.com/v1`              | `claude-sonnet-4-5-20250929` |
+| Google Gemini         | `https://generativelanguage.googleapis.com` | `gemini-2.0-flash`           |
+| Groq                  | `https://api.groq.com/openai/v1`            | `openai/gpt-oss-20b`         |
+| Ollama                | `http://localhost:11434/v1`                 | (specify with `--model`)     |
+| Any OpenAI-compatible | Custom URL                                  | (specify with `--model`)     |
 
 ## Provider Recommendations
 
@@ -158,6 +164,11 @@ export OPENAI_API_KEY="sk-..."
 # Anthropic (premium)
 gitar init --base-url "https://api.anthropic.com/v1" --model "claude-sonnet-4-5-20250929"
 export ANTHROPIC_API_KEY="sk-ant-..."
+
+# Google (premium)
+export GEMINI_API_KEY="AIza..."
+gitar init --base-url "https://generativelanguage.googleapis.com" --model "gemini-2.0-flash"
+
 ```
 
 ## Usage
