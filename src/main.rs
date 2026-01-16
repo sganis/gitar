@@ -811,11 +811,27 @@ fn is_git_repo() -> bool {
         .unwrap_or(false)
 }
 
-fn get_current_branch() -> String {
-    run_git(&["branch", "--show-current"])
-        .map(|s| s.trim().to_string())
-        .unwrap_or_else(|_| "HEAD".into())
+pub fn get_current_branch() -> String {
+    // 1) Fast path: works on normal checkouts
+    if let Ok(out) = run_git(&["branch", "--show-current"]) {
+        let b = out.trim().to_string();
+        if !b.is_empty() {
+            return b;
+        }
+    }
+
+    // 2) Fallback: works even when detached (returns "HEAD" in that case)
+    if let Ok(out) = run_git(&["rev-parse", "--abbrev-ref", "HEAD"]) {
+        let b = out.trim().to_string();
+        if !b.is_empty() {
+            return b;
+        }
+    }
+
+    // 3) Last resort: never return empty
+    "HEAD".to_string()
 }
+
 
 fn get_default_branch() -> String {
     for b in ["main", "master"] {
