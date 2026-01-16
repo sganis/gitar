@@ -47,7 +47,7 @@ gitar is built with Rust for:
 Download the latest release for your platform from the [Releases page](https://github.com/sganis/gitar/releases).
 
 
-#### Linux / macOS
+#### Linux
 ```bash
 # Download (replace URL with latest release)
 curl -LO https://github.com/sganis/gitar/releases/latest/download/gitar-linux-x64-1.0.0.tar.gz
