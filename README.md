@@ -8,7 +8,9 @@ It supports:
 - **OpenAI**
 - **Anthropic Claude**
 - **Google Gemini**
-- **Any OpenAI-compatible API** (Groq, Ollama, OpenRouter, Together, Mistral, etc.)
+- **Groq**
+- **Ollama** (local models)
+- **Any OpenAI-compatible API** (OpenRouter, Together, Mistral, etc.)
 
 The name combines **git** + **AI** + **Rust** (and happens to sound like *guitar*).
 
@@ -41,15 +43,13 @@ gitar is built with Rust for:
 ## Installation
 
 ### From source
-
 ```bash
 git clone https://github.com/sganis/gitar.git
 cd gitar
 cargo build --release
-````
+```
 
 Binary will be at:
-
 ```
 target/release/gitar
 ```
@@ -58,10 +58,42 @@ Add it to your PATH or copy to `/usr/local/bin`.
 
 ---
 
+## Quick Start
+
+The easiest way to configure gitar is using the `--provider` option:
+```bash
+# OpenAI
+export OPENAI_API_KEY="sk-..."
+gitar init --provider openai
+
+# Anthropic Claude
+export ANTHROPIC_API_KEY="sk-ant-..."
+gitar init --provider claude
+
+# Google Gemini
+export GEMINI_API_KEY="AIza..."
+gitar init --provider gemini
+
+# Groq
+export GROQ_API_KEY="gsk_..."
+gitar init --provider groq --model llama-3.3-70b-versatile
+
+# Ollama (local, no API key needed)
+gitar init --provider ollama --model llama3.2:latest
+```
+
+Then start using it:
+```bash
+gitar commit      # Interactive commit with AI message
+gitar staged      # Generate message for staged changes
+gitar changelog   # Generate release notes
+```
+
+---
+
 ## Configuration
 
 ### Environment variables
-
 ```bash
 # OpenAI
 export OPENAI_API_KEY="sk-..."
@@ -76,58 +108,108 @@ export GEMINI_API_KEY="AIza..."
 export GROQ_API_KEY="gsk_..."
 ```
 
-The correct variable is auto-selected based on `base_url`.
+The correct variable is auto-selected based on the provider/base URL.
 
 ---
 
 ### Config file
 
-Create config via CLI:
-
+Create config via CLI using `--provider` (recommended):
 ```bash
 # OpenAI
-gitar init --api-key "sk-..." --model "gpt-5-chat-latest" --base-branch "main"
+gitar init --provider openai --model "gpt-5-chat-latest"
 
-# Anthropic
-gitar init --api-key "sk-ant-..." --base-url "https://api.anthropic.com/v1" --model "claude-sonnet-4-5-20250929"
+# Anthropic Claude
+gitar init --provider claude --model "claude-sonnet-4-5-20250929"
+
+# Google Gemini
+gitar init --provider gemini --model "gemini-2.5-flash"
+
+# Groq
+gitar init --provider groq --model "llama-3.3-70b-versatile"
+
+# Ollama (local)
+gitar init --provider ollama --model "llama3.2:latest"
+```
+
+Or using `--base-url` directly:
+```bash
+gitar init --base-url "https://api.anthropic.com/v1" --model "claude-sonnet-4-5-20250929"
 ```
 
 Or create `~/.gitar.toml` manually:
-
 ```toml
 api_key = "sk-..."
 model = "gpt-5-chat-latest"
 max_tokens = 500
 temperature = 0.5
 base_branch = "main"
-# base_url = "https://api.openai.com/v1"      # OpenAI (default)
-# base_url = "https://api.anthropic.com/v1"   # Anthropic
-# base_url = "https://generativelanguage.googleapis.com" # Gemini
+# base_url = "https://api.openai.com/v1"                   # OpenAI (default)
+# base_url = "https://api.anthropic.com/v1"                # Anthropic
+# base_url = "https://generativelanguage.googleapis.com"   # Gemini
+# base_url = "https://api.groq.com/openai/v1"              # Groq
+# base_url = "http://localhost:11434/v1"                   # Ollama
+```
+
+---
+
+### Provider shortcuts
+
+The `--provider` option is a convenient shortcut for setting the base URL:
+
+| Provider     | Aliases              | Base URL                                    |
+| ------------ | -------------------- | ------------------------------------------- |
+| `openai`     |                      | `https://api.openai.com/v1`                 |
+| `claude`     | `anthropic`          | `https://api.anthropic.com/v1`              |
+| `gemini`     |                      | `https://generativelanguage.googleapis.com` |
+| `groq`       |                      | `https://api.groq.com/openai/v1`            |
+| `ollama`     | `local`              | `http://localhost:11434/v1`                 |
+
+Use with any command:
+```bash
+gitar --provider claude staged
+gitar --provider gemini commit -a
+gitar --provider ollama --model codellama:13b history -n 5
 ```
 
 ---
 
 ### Configuration priority
 
-| Priority | Source               | Notes                |
-| -------: | -------------------- | -------------------- |
-|        1 | `--api-key`          | CLI argument         |
-|        2 | `~/.gitar.toml`      | Config file          |
-|        3 | Environment variable | Auto-selected by API |
+| Priority | Source               | Notes                        |
+| -------: | -------------------- | ---------------------------- |
+|        1 | `--api-key`          | CLI argument                 |
+|        2 | Environment variable | Auto-selected by provider    |
+|        3 | `~/.gitar.toml`      | Config file                  |
 
 Environment variables checked:
 
 * OpenAI: `OPENAI_API_KEY`
 * Anthropic: `ANTHROPIC_API_KEY`
-* Gemini: `GEMINI_API_KEY` (fallback: `GOOGLE_API_KEY`)
-* Groq: `GROQ_API_KEY`
+* Gemini: `GEMINI_API_KEY`
+* Groq: `GROQ_API_KEY` (fallback: `OPENAI_API_KEY`)
+* Ollama: (none required)
 
 ---
 
 ### View current config
-
 ```bash
 gitar config
+```
+
+Output shows detected provider:
+```
+Config file: /home/user/.gitar.toml
+
+api_key:     sk-ant-a...
+model:       claude-sonnet-4-5-20250929
+max_tokens:  500
+temperature: 0.5
+base_url:    https://api.anthropic.com/v1 (claude)
+base_branch: main
+
+Priority: --api-key > env var > config file
+Env vars checked: ANTHROPIC_API_KEY
 ```
 
 ---
@@ -139,9 +221,9 @@ gitar config
 | OpenAI                | `https://api.openai.com/v1`                 | `gpt-5-chat-latest`          |
 | Anthropic             | `https://api.anthropic.com/v1`              | `claude-sonnet-4-5-20250929` |
 | Google Gemini         | `https://generativelanguage.googleapis.com` | `gemini-2.5-flash`           |
-| Groq                  | `https://api.groq.com/openai/v1`            | `openai/gpt-oss-20b`         |
-| Ollama                | `http://localhost:11434/v1`                 | (choose model)               |
-| Any OpenAI-compatible | Custom                                      | (choose model)               |
+| Groq                  | `https://api.groq.com/openai/v1`            | `gpt-5-chat-latest`          |
+| Ollama                | `http://localhost:11434/v1`                 | (specify with `--model`)     |
+| Any OpenAI-compatible | Custom                                      | (specify with `--model`)     |
 
 ---
 
@@ -149,35 +231,34 @@ gitar config
 
 For **gitar** (git diffs, summaries, commit messages):
 
+* **Best quality (paid)**: `claude-sonnet-4-5-20250929` or `gemini-2.5-pro`
 * **Best Gemini default**: `gemini-2.5-flash`
-* **Best quality (paid)**: `gemini-2.5-pro` or `claude-sonnet-4.5`
-* **Best free/local**: Ollama `qwen2.5-coder:14b-instruct`
-* **Best cheap API**: Groq `openai/gpt-oss-20b`
+* **Best free/local**: Ollama `qwen2.5-coder:14b-instruct` or `llama3.2:latest`
+* **Best cheap API**: Groq `llama-3.3-70b-versatile`
 
 ---
 
 ## Setup Examples
-
 ```bash
 # Ollama (100% local, free)
-ollama pull qwen2.5-coder:14b
-gitar init --base-url "http://localhost:11434/v1" --model "qwen2.5-coder:14b-instruct"
+ollama pull llama3.2
+gitar init --provider ollama --model "llama3.2:latest"
 
-# Groq (very cheap)
+# Groq (very fast, cheap)
 export GROQ_API_KEY="gsk_..."
-gitar init --base-url "https://api.groq.com/openai/v1" --model "openai/gpt-oss-20b"
+gitar init --provider groq --model "llama-3.3-70b-versatile"
 
 # Google Gemini
 export GEMINI_API_KEY="AIza..."
-gitar init --base-url "https://generativelanguage.googleapis.com" --model "gemini-2.5-flash"
+gitar init --provider gemini --model "gemini-2.5-flash"
 
 # OpenAI
 export OPENAI_API_KEY="sk-..."
-gitar init --model "gpt-5-chat-latest"
+gitar init --provider openai --model "gpt-5-chat-latest"
 
-# Anthropic
+# Anthropic Claude
 export ANTHROPIC_API_KEY="sk-ant-..."
-gitar init --base-url "https://api.anthropic.com/v1" --model "claude-sonnet-4-5-20250929"
+gitar init --provider claude --model "claude-sonnet-4-5-20250929"
 ```
 
 ---
@@ -185,22 +266,28 @@ gitar init --base-url "https://api.anthropic.com/v1" --model "claude-sonnet-4-5-
 ## Usage
 
 ### Quick reference
-
 ```bash
-gitar commit
-gitar commit -a -p
+gitar commit                    # Interactive commit
+gitar commit -a -p              # Stage all, commit, push
 
-gitar staged
-gitar unstaged
+gitar staged                    # Message for staged changes
+gitar unstaged                  # Message for unstaged changes
 
-gitar history v1.0.0
+gitar history v1.0.0            # Regenerate messages since tag
 gitar history v1.0.0 --to v1.1.0
 
-gitar changelog v1.0.0
-gitar pr
-gitar explain
-gitar version
-gitar models
+gitar changelog v1.0.0          # Release notes since tag
+gitar pr                        # PR description
+gitar explain                   # Explain for non-technical audience
+gitar version                   # Suggest version bump
+gitar models                    # List available models
+```
+
+### Using different providers per command
+```bash
+gitar --provider claude staged
+gitar --provider gemini --model gemini-2.5-pro pr
+gitar --provider ollama --model codellama:13b explain
 ```
 
 ---
@@ -208,7 +295,6 @@ gitar models
 ## Range Support
 
 All commands support `--to`:
-
 ```bash
 gitar changelog v1.0.0
 gitar changelog v1.0.0 --to v1.0.1
@@ -222,46 +308,68 @@ gitar changelog v1.0.1 --to v2.0.0
 ### commit
 
 Interactive AI commit:
-
 ```bash
 gitar commit [-a] [-p] [--no-tag]
 ```
 
+| Flag       | Description                    |
+| ---------- | ------------------------------ |
+| `-a`       | Stage all changes              |
+| `-p`       | Push after commit              |
+| `--no-tag` | Don't add AI model tag to message |
+
 ---
 
 ### staged / unstaged
-
 ```bash
 gitar staged
 gitar unstaged
 ```
 
 Pipe to clipboard:
-
 ```bash
-gitar staged | pbcopy
+gitar staged | pbcopy      # macOS
+gitar staged | xclip       # Linux
 ```
 
 ---
 
 ### history
 
+Regenerate commit messages for existing commits:
 ```bash
 gitar history [REF] [--to REF] [--since DATE] [--until DATE] [-n N] [--delay MS]
 ```
+
+| Option    | Description                          |
+| --------- | ------------------------------------ |
+| `REF`     | Starting point (tag, commit, branch) |
+| `--to`    | Ending point (default: HEAD)         |
+| `--since` | Commits newer than date              |
+| `--until` | Commits older than date              |
+| `-n`      | Max commits (default: 50)            |
+| `--delay` | Delay between API calls (ms)         |
 
 ---
 
 ### pr
 
+Generate PR description:
 ```bash
 gitar pr [BASE] [--to REF] [--staged]
 ```
+
+| Option     | Description                    |
+| ---------- | ------------------------------ |
+| `BASE`     | Base ref to compare against    |
+| `--to`     | Ending point                   |
+| `--staged` | Use staged changes only        |
 
 ---
 
 ### changelog
 
+Generate release notes:
 ```bash
 gitar changelog [REF] [--to REF] [--since DATE] [--until DATE] [-n N]
 ```
@@ -270,6 +378,7 @@ gitar changelog [REF] [--to REF] [--since DATE] [--until DATE] [-n N]
 
 ### explain
 
+Explain changes for non-technical stakeholders:
 ```bash
 gitar explain [REF] [--to REF] [--staged]
 ```
@@ -278,6 +387,7 @@ gitar explain [REF] [--to REF] [--staged]
 
 ### version
 
+Suggest semantic version bump:
 ```bash
 gitar version [REF] [--to REF] [--current X.Y.Z]
 ```
@@ -286,6 +396,7 @@ gitar version [REF] [--to REF] [--current X.Y.Z]
 
 ### models
 
+List available models from the configured API:
 ```bash
 gitar models
 ```
@@ -294,14 +405,16 @@ gitar models
 
 ### init
 
+Save configuration to `~/.gitar.toml`:
 ```bash
-gitar init [--api-key KEY] [--model MODEL] [--base-url URL] ...
+gitar init [--provider PROVIDER] [--api-key KEY] [--model MODEL] [--base-url URL] ...
 ```
 
 ---
 
 ### config
 
+Show current configuration:
 ```bash
 gitar config
 ```
@@ -310,14 +423,21 @@ gitar config
 
 ## Global Options
 
-| Option          | Description          |
-| --------------- | -------------------- |
-| `--api-key`     | Override API key     |
-| `--model`       | Override model       |
-| `--max-tokens`  | Override max tokens  |
-| `--temperature` | Override temperature |
-| `--base-url`    | Override API URL     |
-| `--base-branch` | Override base branch |
+| Option          | Description                                        |
+| --------------- | -------------------------------------------------- |
+| `--provider`    | Provider shortcut: openai, claude, gemini, groq, ollama |
+| `--api-key`     | Override API key                                   |
+| `--model`       | Override model                                     |
+| `--max-tokens`  | Override max tokens                                |
+| `--temperature` | Override temperature                               |
+| `--base-url`    | Override API URL                                   |
+| `--base-branch` | Override base branch                               |
+
+All global options work with any command:
+```bash
+gitar --provider claude --model claude-opus-4-5-20251101 staged
+gitar --temperature 0.8 commit
+```
 
 ---
 
@@ -335,18 +455,50 @@ gitar config
 ---
 
 ## Using SSH Tunnel / SOCKS5 (Restricted Networks)
-
 ```bash
 ssh -N -D 8000 user@jump-host
 export GITAR_PROXY="socks5h://localhost:8000"
 ```
 
 Example:
-
 ```bash
 export GROQ_API_KEY="gsk_..."
-gitar init --base-url "https://api.groq.com/openai/v1" --model "openai/gpt-oss-20b"
+gitar init --provider groq --model "llama-3.3-70b-versatile"
 gitar commit
+```
+
+---
+
+## Examples
+
+### Daily workflow
+```bash
+# Make changes, then commit with AI message
+gitar commit -a
+
+# Or review the message first
+gitar staged
+gitar commit
+```
+
+### Generate changelog for a release
+```bash
+gitar changelog v1.0.0
+gitar changelog v1.0.0 --to v1.1.0 > CHANGELOG.md
+```
+
+### Explain changes to non-technical team
+```bash
+gitar explain v1.0.0
+```
+
+### Switch providers on the fly
+```bash
+# Use Claude for complex explanations
+gitar --provider claude explain
+
+# Use fast local model for quick commits
+gitar --provider ollama --model llama3.2 commit -a
 ```
 
 ---
@@ -354,4 +506,3 @@ gitar commit
 ## License
 
 MIT
-
