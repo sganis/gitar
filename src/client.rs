@@ -7,6 +7,7 @@ use crate::{claude, gemini, openai};
 
 pub struct LlmClient {
     http: Client,
+    provider: String,
     base_url: String,
     api_key: Option<String>,
     model: String,
@@ -31,6 +32,7 @@ impl LlmClient {
 
         Ok(Self {
             http,
+            provider: config.provider.clone(),
             base_url: config.base_url.trim_end_matches('/').to_string(),
             api_key: config.api_key.clone(),
             model: config.model.clone(),
@@ -43,12 +45,16 @@ impl LlmClient {
         &self.model
     }
 
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+
     fn is_claude_api(&self) -> bool {
-        self.base_url.contains("anthropic.com")
+        self.provider == "claude" || self.base_url.contains("anthropic.com")
     }
 
     fn is_gemini_api(&self) -> bool {
-        self.base_url.contains("generativelanguage.googleapis.com")
+        self.provider == "gemini" || self.base_url.contains("generativelanguage.googleapis.com")
     }
 
     pub async fn chat(&self, system: &str, user: &str) -> Result<String> {
@@ -112,14 +118,11 @@ impl LlmClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::PROVIDER_CLAUDE;
-    use crate::config::PROVIDER_GEMINI;
-    use crate::config::PROVIDER_GROQ;
-    use crate::config::PROVIDER_OLLAMA;
-    use crate::config::PROVIDER_OPENAI;
+    use crate::config::{PROVIDER_CLAUDE, PROVIDER_GEMINI, PROVIDER_GROQ, PROVIDER_OLLAMA, PROVIDER_OPENAI};
 
-    fn make_config(base_url: &str) -> ResolvedConfig {
+    fn make_config(provider: &str, base_url: &str) -> ResolvedConfig {
         ResolvedConfig {
+            provider: provider.into(),
             api_key: None,
             model: "test-model".into(),
             max_tokens: 500,
@@ -130,47 +133,46 @@ mod tests {
     }
 
     #[test]
-    fn is_claude_api_detects_anthropic_url() {
-        let config = make_config(PROVIDER_CLAUDE);
+    fn is_claude_api_detects_provider() {
+        let config = make_config("claude", PROVIDER_CLAUDE);
         let client = LlmClient::new(&config).unwrap();
         assert!(client.is_claude_api());
         assert!(!client.is_gemini_api());
     }
 
     #[test]
-    fn is_claude_api_false_for_openai() {
-        let config = make_config(PROVIDER_OPENAI);
+    fn is_claude_api_detects_url() {
+        let config = make_config("openai", PROVIDER_CLAUDE);
         let client = LlmClient::new(&config).unwrap();
-        assert!(!client.is_claude_api());
-        assert!(!client.is_gemini_api());
+        assert!(client.is_claude_api());
     }
 
     #[test]
-    fn is_gemini_api_detects_google_url() {
-        let config = make_config(PROVIDER_GEMINI);
+    fn is_gemini_api_detects_provider() {
+        let config = make_config("gemini", PROVIDER_GEMINI);
         let client = LlmClient::new(&config).unwrap();
         assert!(client.is_gemini_api());
         assert!(!client.is_claude_api());
     }
 
     #[test]
-    fn is_gemini_api_false_for_openai() {
-        let config = make_config(PROVIDER_OPENAI);
+    fn is_gemini_api_detects_url() {
+        let config = make_config("openai", PROVIDER_GEMINI);
         let client = LlmClient::new(&config).unwrap();
-        assert!(!client.is_gemini_api());
+        assert!(client.is_gemini_api());
     }
 
     #[test]
-    fn is_gemini_api_false_for_claude() {
-        let config = make_config(PROVIDER_CLAUDE);
+    fn openai_provider_uses_openai_path() {
+        let config = make_config("openai", PROVIDER_OPENAI);
         let client = LlmClient::new(&config).unwrap();
+        assert!(!client.is_claude_api());
         assert!(!client.is_gemini_api());
-        assert!(client.is_claude_api());
     }
 
     #[test]
     fn groq_uses_openai_path() {
-        let config = make_config(PROVIDER_GROQ);
+        let config = make_config("groq", PROVIDER_GROQ);
         let client = LlmClient::new(&config).unwrap();
         assert!(!client.is_claude_api());
         assert!(!client.is_gemini_api());
@@ -178,7 +180,7 @@ mod tests {
 
     #[test]
     fn ollama_uses_openai_path() {
-        let config = make_config(PROVIDER_OLLAMA);
+        let config = make_config("ollama", PROVIDER_OLLAMA);
         let client = LlmClient::new(&config).unwrap();
         assert!(!client.is_claude_api());
         assert!(!client.is_gemini_api());
@@ -186,26 +188,26 @@ mod tests {
 
     #[test]
     fn provider_detection_mutually_exclusive() {
-        let urls = [
-            (PROVIDER_OPENAI, false, false),
-            (PROVIDER_CLAUDE, true, false),
-            (PROVIDER_GEMINI, false, true),
-            (PROVIDER_GROQ, false, false),
-            (PROVIDER_OLLAMA, false, false),
-            ("http://localhost:8080", false, false),
+        let cases = [
+            ("openai", PROVIDER_OPENAI, false, false),
+            ("claude", PROVIDER_CLAUDE, true, false),
+            ("gemini", PROVIDER_GEMINI, false, true),
+            ("groq", PROVIDER_GROQ, false, false),
+            ("ollama", PROVIDER_OLLAMA, false, false),
         ];
 
-        for (url, expected_claude, expected_gemini) in urls {
-            let config = make_config(url);
+        for (provider, url, expected_claude, expected_gemini) in cases {
+            let config = make_config(provider, url);
             let client = LlmClient::new(&config).unwrap();
-            assert_eq!(client.is_claude_api(), expected_claude, "Claude detection failed for {}", url);
-            assert_eq!(client.is_gemini_api(), expected_gemini, "Gemini detection failed for {}", url);
+            assert_eq!(client.is_claude_api(), expected_claude, "Claude detection failed for {}", provider);
+            assert_eq!(client.is_gemini_api(), expected_gemini, "Gemini detection failed for {}", provider);
         }
     }
 
     #[test]
     fn base_url_strips_trailing_slash() {
         let config = ResolvedConfig {
+            provider: "openai".into(),
             api_key: None,
             model: "test".into(),
             max_tokens: 500,
@@ -219,15 +221,15 @@ mod tests {
 
     #[test]
     fn model_getter_works() {
-        let config = ResolvedConfig {
-            api_key: None,
-            model: "gpt-4o".into(),
-            max_tokens: 500,
-            temperature: 0.5,
-            base_url: PROVIDER_OPENAI.into(),
-            base_branch: "main".into(),
-        };
+        let config = make_config("openai", PROVIDER_OPENAI);
         let client = LlmClient::new(&config).unwrap();
-        assert_eq!(client.model(), "gpt-4o");
+        assert_eq!(client.model(), "test-model");
+    }
+
+    #[test]
+    fn provider_getter_works() {
+        let config = make_config("claude", PROVIDER_CLAUDE);
+        let client = LlmClient::new(&config).unwrap();
+        assert_eq!(client.provider(), "claude");
     }
 }

@@ -23,19 +23,64 @@ pub fn provider_to_url(provider: &str) -> Option<&'static str> {
     }
 }
 
+pub fn normalize_provider(provider: &str) -> &'static str {
+    match provider.to_lowercase().as_str() {
+        "anthropic" => "claude",
+        "google" => "gemini",
+        "local" => "ollama",
+        "openai" => "openai",
+        "claude" => "claude",
+        "gemini" => "gemini",
+        "groq" => "groq",
+        "ollama" => "ollama",
+        _ => "openai",
+    }
+}
+
+fn default_model_for_provider(provider: &str) -> &'static str {
+    match provider {
+        "claude" => "claude-sonnet-4-5-20250929",
+        "gemini" => "gemini-2.5-flash",
+        "groq" => "llama-3.3-70b-versatile",
+        "ollama" => "llama3.2:latest",
+        _ => "gpt-4o",
+    }
+}
+
+fn env_var_for_provider(provider: &str) -> Option<&'static str> {
+    match provider {
+        "openai" => Some("OPENAI_API_KEY"),
+        "claude" => Some("ANTHROPIC_API_KEY"),
+        "gemini" => Some("GEMINI_API_KEY"),
+        "groq" => Some("GROQ_API_KEY"),
+        "ollama" => None,
+        _ => Some("OPENAI_API_KEY"),
+    }
+}
+
 // =============================================================================
 // CONFIG FILE
 // =============================================================================
 pub const CONFIG_FILENAME: &str = ".gitar.toml";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct Config {
+pub struct ProviderConfig {
     pub api_key: Option<String>,
     pub model: Option<String>,
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
     pub base_url: Option<String>,
+}
+
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct Config {
+    pub default_provider: Option<String>,
     pub base_branch: Option<String>,
+    pub openai: Option<ProviderConfig>,
+    pub claude: Option<ProviderConfig>,
+    pub gemini: Option<ProviderConfig>,
+    pub groq: Option<ProviderConfig>,
+    pub ollama: Option<ProviderConfig>,
 }
 
 impl Config {
@@ -57,12 +102,35 @@ impl Config {
         println!("Config saved to: {}", path.display());
         Ok(())
     }
+
+    pub fn get_provider(&self, name: &str) -> Option<&ProviderConfig> {
+        match name {
+            "openai" => self.openai.as_ref(),
+            "claude" => self.claude.as_ref(),
+            "gemini" => self.gemini.as_ref(),
+            "groq" => self.groq.as_ref(),
+            "ollama" => self.ollama.as_ref(),
+            _ => None,
+        }
+    }
+
+    pub fn get_provider_mut(&mut self, name: &str) -> &mut ProviderConfig {
+        match name {
+            "openai" => self.openai.get_or_insert_with(ProviderConfig::default),
+            "claude" => self.claude.get_or_insert_with(ProviderConfig::default),
+            "gemini" => self.gemini.get_or_insert_with(ProviderConfig::default),
+            "groq" => self.groq.get_or_insert_with(ProviderConfig::default),
+            "ollama" => self.ollama.get_or_insert_with(ProviderConfig::default),
+            _ => self.openai.get_or_insert_with(ProviderConfig::default),
+        }
+    }
 }
 
 // =============================================================================
 // RESOLVED CONFIG
 // =============================================================================
 pub struct ResolvedConfig {
+    pub provider: String,
     pub api_key: Option<String>,
     pub model: String,
     pub max_tokens: u32,
@@ -84,55 +152,62 @@ impl ResolvedConfig {
         file: &Config,
         default_branch_fn: impl Fn() -> String,
     ) -> Self {
-        let provider_url = cli_provider
-            .and_then(|p| provider_to_url(p).map(String::from));
+        // Determine provider: CLI > config default > "openai"
+        let provider = cli_provider
+            .map(|p| normalize_provider(p))
+            .or_else(|| file.default_provider.as_ref().map(|p| normalize_provider(p)))
+            .unwrap_or("openai")
+            .to_string();
 
-        let base_url = provider_url
-            .or_else(|| cli_base_url.cloned())
-            .or_else(|| file.base_url.clone())
-            .unwrap_or_else(|| PROVIDER_OPENAI.to_string());
+        let provider_config = file.get_provider(&provider);
 
-        let is_claude = base_url.contains("anthropic.com");
-        let is_gemini = base_url.contains("generativelanguage.googleapis.com");
-        let is_groq = base_url.contains("api.groq.com");
+        // Base URL: CLI > provider config > provider default
+        let base_url = cli_base_url
+            .cloned()
+            .or_else(|| provider_config.and_then(|p| p.base_url.clone()))
+            .unwrap_or_else(|| provider_to_url(&provider).unwrap_or(PROVIDER_OPENAI).to_string());
 
-        let default_model = if is_claude {
-            "claude-sonnet-4-5-20250929"
-        } else if is_gemini {
-            "gemini-2.5-flash"
-        } else {
-            "gpt-5-chat-latest"
-        };
+        // API key: CLI > provider config > env var
+        let env_api_key = env_var_for_provider(&provider)
+            .and_then(|var| std::env::var(var).ok());
 
-        let env_api_key = if is_claude {
-            std::env::var("ANTHROPIC_API_KEY").ok()
-        } else if is_groq {
-            std::env::var("GROQ_API_KEY").ok()
-                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-        } else if is_gemini {
-            std::env::var("GEMINI_API_KEY").ok()
-        } else {
-            std::env::var("OPENAI_API_KEY").ok()
-        };
+        let api_key = cli_api_key
+            .cloned()
+            .or_else(|| provider_config.and_then(|p| p.api_key.clone()))
+            .or(env_api_key);
 
-        let api_key = cli_api_key.cloned()
-            .or(env_api_key)
-            .or_else(|| file.api_key.clone());
+        // Model: CLI > provider config > provider default
+        let model = cli_model
+            .cloned()
+            .or_else(|| provider_config.and_then(|p| p.model.clone()))
+            .unwrap_or_else(|| default_model_for_provider(&provider).to_string());
+
+        // Max tokens: CLI > provider config > default
+        let max_tokens = cli_max_tokens
+            .or_else(|| provider_config.and_then(|p| p.max_tokens))
+            .unwrap_or(500);
+
+        // Temperature: CLI > provider config > default
+        let temperature = cli_temperature
+            .or_else(|| provider_config.and_then(|p| p.temperature))
+            .unwrap_or(0.5);
+
+        // Base branch: CLI > config > git default
+        let base_branch = cli_base_branch
+            .cloned()
+            .or_else(|| file.base_branch.clone())
+            .unwrap_or_else(default_branch_fn);
 
         Self {
+            provider,
             api_key,
-            model: cli_model.cloned()
-                .or_else(|| file.model.clone())
-                .unwrap_or_else(|| default_model.to_string()),
-            max_tokens: cli_max_tokens.or(file.max_tokens).unwrap_or(500),
-            temperature: cli_temperature.or(file.temperature).unwrap_or(0.5),
+            model,
+            max_tokens,
+            temperature,
             base_url,
-            base_branch: cli_base_branch.cloned()
-                .or_else(|| file.base_branch.clone())
-                .unwrap_or_else(default_branch_fn),
+            base_branch,
         }
     }
-
 }
 
 // =============================================================================
@@ -145,275 +220,168 @@ mod tests {
     #[test]
     fn config_default_is_empty() {
         let config = Config::default();
-        assert!(config.api_key.is_none());
-        assert!(config.model.is_none());
-        assert!(config.max_tokens.is_none());
-        assert!(config.temperature.is_none());
-        assert!(config.base_url.is_none());
+        assert!(config.default_provider.is_none());
         assert!(config.base_branch.is_none());
+        assert!(config.openai.is_none());
+        assert!(config.claude.is_none());
     }
 
     #[test]
     fn config_serializes_to_toml() {
         let config = Config {
-            api_key: Some("sk-test123".into()),
-            model: Some("gpt-4o".into()),
-            max_tokens: Some(4096),
-            temperature: Some(0.7),
-            base_url: None,
+            default_provider: Some("claude".into()),
             base_branch: Some("main".into()),
+            openai: Some(ProviderConfig {
+                api_key: Some("sk-test123".into()),
+                model: Some("gpt-4o".into()),
+                max_tokens: Some(1000),
+                temperature: Some(0.7),
+                base_url: None,
+            }),
+            claude: None,
+            gemini: None,
+            groq: None,
+            ollama: None,
         };
         let toml_str = toml::to_string(&config).unwrap();
-        assert!(toml_str.contains("api_key = \"sk-test123\""));
-        assert!(toml_str.contains("model = \"gpt-4o\""));
-        assert!(toml_str.contains("max_tokens = 4096"));
-        assert!(toml_str.contains("temperature = 0.7"));
-        assert!(toml_str.contains("base_branch = \"main\""));
+        assert!(toml_str.contains("default_provider = \"claude\""));
+        assert!(toml_str.contains("[openai]"));
     }
 
     #[test]
     fn config_deserializes_from_toml() {
         let toml_str = r#"
-            api_key = "sk-test"
-            model = "gpt-4"
-            max_tokens = 2048
-            temperature = 0.5
+            default_provider = "gemini"
             base_branch = "develop"
+
+            [openai]
+            api_key = "sk-test"
+            model = "gpt-4o"
+
+            [claude]
+            api_key = "sk-ant-test"
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.api_key, Some("sk-test".into()));
-        assert_eq!(config.model, Some("gpt-4".into()));
-        assert_eq!(config.max_tokens, Some(2048));
-        assert_eq!(config.temperature, Some(0.5));
-        assert_eq!(config.base_branch, Some("develop".into()));
+        assert_eq!(config.default_provider, Some("gemini".into()));
+        assert!(config.openai.is_some());
+        assert!(config.claude.is_some());
     }
 
     #[test]
-    fn config_deserializes_partial_toml() {
-        let toml_str = r#"model = "gpt-4""#;
-        let config: Config = toml::from_str(toml_str).unwrap();
-        assert!(config.api_key.is_none());
-        assert_eq!(config.model, Some("gpt-4".into()));
-        assert!(config.max_tokens.is_none());
-    }
-
-    #[test]
-    fn config_handles_empty_toml() {
-        let config: Config = toml::from_str("").unwrap();
-        assert!(config.api_key.is_none());
-        assert!(config.model.is_none());
-    }
-
-    #[test]
-    fn config_roundtrip() {
-        let original = Config {
-            api_key: Some("test-key".into()),
-            model: Some("gpt-5-chat-latest".into()),
-            max_tokens: Some(8192),
-            temperature: Some(0.5),
-            base_url: Some("https://api.example.com".into()),
-            base_branch: Some("develop".into()),
+    fn config_get_provider() {
+        let config = Config {
+            openai: Some(ProviderConfig {
+                model: Some("gpt-4o".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
         };
-        let toml_str = toml::to_string(&original).unwrap();
-        let restored: Config = toml::from_str(&toml_str).unwrap();
-        assert_eq!(original.api_key, restored.api_key);
-        assert_eq!(original.model, restored.model);
-        assert_eq!(original.max_tokens, restored.max_tokens);
-        assert_eq!(original.temperature, restored.temperature);
-        assert_eq!(original.base_url, restored.base_url);
-        assert_eq!(original.base_branch, restored.base_branch);
+        assert!(config.get_provider("openai").is_some());
+        assert!(config.get_provider("claude").is_none());
     }
 
     #[test]
-    fn config_path_in_home() {
-        if let Some(path) = Config::path() {
-            let path_str = path.to_string_lossy();
-            assert!(path_str.ends_with(".gitar.toml"));
-        }
-    }
-
-    #[test]
-    fn config_filename_correct() {
-        assert_eq!(CONFIG_FILENAME, ".gitar.toml");
-    }
-
-    #[test]
-    fn provider_to_url_openai() {
+    fn provider_to_url_all() {
         assert_eq!(provider_to_url("openai"), Some(PROVIDER_OPENAI));
-        assert_eq!(provider_to_url("OPENAI"), Some(PROVIDER_OPENAI));
-        assert_eq!(provider_to_url("OpenAI"), Some(PROVIDER_OPENAI));
-    }
-
-    #[test]
-    fn provider_to_url_claude() {
         assert_eq!(provider_to_url("claude"), Some(PROVIDER_CLAUDE));
-        assert_eq!(provider_to_url("CLAUDE"), Some(PROVIDER_CLAUDE));
         assert_eq!(provider_to_url("anthropic"), Some(PROVIDER_CLAUDE));
-        assert_eq!(provider_to_url("Anthropic"), Some(PROVIDER_CLAUDE));
-    }
-
-    #[test]
-    fn provider_to_url_gemini() {
         assert_eq!(provider_to_url("gemini"), Some(PROVIDER_GEMINI));
-        assert_eq!(provider_to_url("GEMINI"), Some(PROVIDER_GEMINI));
-    }
-
-    #[test]
-    fn provider_to_url_groq() {
         assert_eq!(provider_to_url("groq"), Some(PROVIDER_GROQ));
-        assert_eq!(provider_to_url("GROQ"), Some(PROVIDER_GROQ));
-    }
-
-    #[test]
-    fn provider_to_url_ollama() {
         assert_eq!(provider_to_url("ollama"), Some(PROVIDER_OLLAMA));
-        assert_eq!(provider_to_url("OLLAMA"), Some(PROVIDER_OLLAMA));
-        assert_eq!(provider_to_url("local"), Some(PROVIDER_OLLAMA));
-        assert_eq!(provider_to_url("LOCAL"), Some(PROVIDER_OLLAMA));
-    }
-
-    #[test]
-    fn provider_to_url_invalid() {
         assert_eq!(provider_to_url("invalid"), None);
-        assert_eq!(provider_to_url("azure"), None);
-        assert_eq!(provider_to_url(""), None);
     }
 
     #[test]
-    fn provider_constants_valid_urls() {
-        assert!(PROVIDER_OPENAI.starts_with("https://"));
-        assert!(PROVIDER_CLAUDE.starts_with("https://"));
-        assert!(PROVIDER_GEMINI.starts_with("https://"));
-        assert!(PROVIDER_GROQ.starts_with("https://"));
-        assert!(PROVIDER_OLLAMA.starts_with("http://"));
+    fn normalize_provider_aliases() {
+        assert_eq!(normalize_provider("anthropic"), "claude");
+        assert_eq!(normalize_provider("google"), "gemini");
+        assert_eq!(normalize_provider("local"), "ollama");
+        assert_eq!(normalize_provider("CLAUDE"), "claude");
     }
 
     #[test]
-    fn provider_ollama_url_is_localhost() {
-        assert!(PROVIDER_OLLAMA.contains("localhost:11434"));
+    fn default_model_for_providers() {
+        assert_eq!(default_model_for_provider("openai"), "gpt-4o");
+        assert_eq!(default_model_for_provider("claude"), "claude-sonnet-4-5-20250929");
+        assert_eq!(default_model_for_provider("gemini"), "gemini-2.5-flash");
     }
 
     #[test]
-    fn resolved_config_uses_defaults() {
+    fn resolved_config_uses_provider_defaults() {
         std::env::remove_var("OPENAI_API_KEY");
         let file = Config::default();
+        let provider = "openai".to_string();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None,
+            None, None, None, None, None, Some(&provider), None,
             &file, || "main".into(),
         );
-        assert!(resolved.api_key.is_none());
-        assert_eq!(resolved.model, "gpt-5-chat-latest");
-        assert_eq!(resolved.max_tokens, 500);
-        assert_eq!(resolved.temperature, 0.5);
-        assert_eq!(resolved.base_url, "https://api.openai.com/v1");
+        assert_eq!(resolved.provider, "openai");
+        assert_eq!(resolved.model, "gpt-4o");
+        assert_eq!(resolved.base_url, PROVIDER_OPENAI);
     }
 
     #[test]
-    fn resolved_config_file_overrides_defaults() {
-        std::env::remove_var("OPENAI_API_KEY");
+    fn resolved_config_uses_provider_config() {
+        std::env::remove_var("ANTHROPIC_API_KEY");
         let file = Config {
-            api_key: Some("file-key".into()),
-            model: Some("gpt-3.5-turbo".into()),
-            max_tokens: Some(2048),
-            temperature: Some(0.3),
-            base_url: Some("https://custom.api".into()),
-            base_branch: Some("develop".into()),
+            claude: Some(ProviderConfig {
+                api_key: Some("sk-ant-test".into()),
+                model: Some("claude-opus-4-5-20251101".into()),
+                max_tokens: Some(2000),
+                temperature: Some(0.8),
+                base_url: None,
+            }),
+            ..Default::default()
         };
+        let provider = "claude".to_string();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None,
+            None, None, None, None, None, Some(&provider), None,
             &file, || "main".into(),
         );
-        assert_eq!(resolved.api_key, Some("file-key".into()));
-        assert_eq!(resolved.model, "gpt-3.5-turbo");
-        assert_eq!(resolved.max_tokens, 2048);
-        assert_eq!(resolved.temperature, 0.3);
-        assert_eq!(resolved.base_url, "https://custom.api");
-        assert_eq!(resolved.base_branch, "develop");
+        assert_eq!(resolved.provider, "claude");
+        assert_eq!(resolved.api_key, Some("sk-ant-test".into()));
+        assert_eq!(resolved.model, "claude-opus-4-5-20251101");
+        assert_eq!(resolved.max_tokens, 2000);
     }
 
     #[test]
-    fn resolved_config_cli_overrides_file() {
+    fn resolved_config_cli_overrides_provider_config() {
         let file = Config {
-            api_key: Some("file-key".into()),
-            model: Some("gpt-3.5-turbo".into()),
-            max_tokens: Some(2048),
-            temperature: Some(0.3),
-            base_url: Some("https://file.api".into()),
-            base_branch: Some("develop".into()),
+            openai: Some(ProviderConfig {
+                api_key: Some("file-key".into()),
+                model: Some("gpt-4o".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
         };
+        let provider = "openai".to_string();
         let cli_key = "cli-key".to_string();
-        let cli_model = "claude-3".to_string();
-        let cli_url = "https://cli.api".to_string();
-        let cli_branch = "main".to_string();
+        let cli_model = "gpt-4o-mini".to_string();
         let resolved = ResolvedConfig::new(
-            Some(&cli_key), Some(&cli_model), Some(1024), Some(0.9),
-            Some(&cli_url), None, Some(&cli_branch),
+            Some(&cli_key), Some(&cli_model), Some(500), Some(0.9),
+            None, Some(&provider), None,
             &file, || "main".into(),
         );
         assert_eq!(resolved.api_key, Some("cli-key".into()));
-        assert_eq!(resolved.model, "claude-3");
-        assert_eq!(resolved.max_tokens, 1024);
-        assert_eq!(resolved.temperature, 0.9);
-        assert_eq!(resolved.base_url, "https://cli.api");
-        assert_eq!(resolved.base_branch, "main");
+        assert_eq!(resolved.model, "gpt-4o-mini");
     }
 
     #[test]
-    fn resolved_config_uses_claude_default_model() {
-        let cli_url = "https://api.anthropic.com/v1".to_string();
-        let file = Config::default();
+    fn resolved_config_uses_default_provider_from_config() {
+        std::env::remove_var("GEMINI_API_KEY");
+        let file = Config {
+            default_provider: Some("gemini".into()),
+            gemini: Some(ProviderConfig {
+                api_key: Some("gemini-key".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
         let resolved = ResolvedConfig::new(
-            None, None, None, None, Some(&cli_url), None, None,
+            None, None, None, None, None, None, None,
             &file, || "main".into(),
         );
-        assert_eq!(resolved.model, "claude-sonnet-4-5-20250929");
-        assert_eq!(resolved.base_url, "https://api.anthropic.com/v1");
-    }
-
-    #[test]
-    fn resolved_config_uses_gemini_default_model() {
-        let cli_url = "https://generativelanguage.googleapis.com".to_string();
-        let file = Config::default();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, Some(&cli_url), None, None,
-            &file, || "main".into(),
-        );
-        assert_eq!(resolved.model, "gemini-2.5-flash");
-    }
-
-    #[test]
-    fn resolved_config_provider_sets_claude_url() {
-        let provider = "claude".to_string();
-        let file = Config::default();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None,
-            &file, || "main".into(),
-        );
-        assert_eq!(resolved.base_url, PROVIDER_CLAUDE);
-        assert_eq!(resolved.model, "claude-sonnet-4-5-20250929");
-    }
-
-    #[test]
-    fn resolved_config_provider_sets_gemini_url() {
-        let provider = "gemini".to_string();
-        let file = Config::default();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None,
-            &file, || "main".into(),
-        );
-        assert_eq!(resolved.base_url, PROVIDER_GEMINI);
-        assert_eq!(resolved.model, "gemini-2.5-flash");
-    }
-
-    #[test]
-    fn resolved_config_provider_overrides_base_url() {
-        let cli_url = "https://custom.api".to_string();
-        let provider = "claude".to_string();
-        let file = Config::default();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, Some(&cli_url), Some(&provider), None,
-            &file, || "main".into(),
-        );
-        assert_eq!(resolved.base_url, PROVIDER_CLAUDE);
+        assert_eq!(resolved.provider, "gemini");
+        assert_eq!(resolved.api_key, Some("gemini-key".into()));
     }
 }

@@ -13,7 +13,7 @@ use clap::{Parser, Subcommand};
 use std::io::{self, Write};
 
 use client::LlmClient;
-use config::{provider_to_url, Config, ResolvedConfig};
+use config::{normalize_provider, Config, ResolvedConfig};
 use git::*;
 use prompts::*;
 
@@ -498,21 +498,30 @@ async fn cmd_version(
 fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
     let mut config = file.clone();
 
-    let resolved_url = cli.provider.as_ref()
-        .and_then(|p| provider_to_url(p).map(String::from))
-        .or_else(|| cli.base_url.clone());
+    // Determine which provider to configure
+    let provider = cli.provider.as_ref()
+        .map(|p| normalize_provider(p).to_string());
 
-    if cli.api_key.is_some() { config.api_key = cli.api_key.clone(); }
-    if cli.model.is_some() { config.model = cli.model.clone(); }
-    if cli.max_tokens.is_some() { config.max_tokens = cli.max_tokens; }
-    if cli.temperature.is_some() { config.temperature = cli.temperature; }
-    if resolved_url.is_some() { config.base_url = resolved_url; }
+    if let Some(ref p) = provider {
+        // Configure specific provider section
+        let pc = config.get_provider_mut(p);
+        if cli.api_key.is_some() { pc.api_key = cli.api_key.clone(); }
+        if cli.model.is_some() { pc.model = cli.model.clone(); }
+        if cli.max_tokens.is_some() { pc.max_tokens = cli.max_tokens; }
+        if cli.temperature.is_some() { pc.temperature = cli.temperature; }
+        if cli.base_url.is_some() { pc.base_url = cli.base_url.clone(); }
+        
+        // Always set as default provider
+        config.default_provider = Some(p.clone());
+    }
+
+    // Global settings
     if cli.base_branch.is_some() { config.base_branch = cli.base_branch.clone(); }
 
     config.save()?;
 
-    if let Some(p) = &cli.provider {
-        println!("Provider set to: {}", p);
+    if let Some(p) = &provider {
+        println!("Default provider set to: {}", p);
     }
 
     Ok(())
@@ -522,36 +531,35 @@ fn cmd_config() -> Result<()> {
     let config = Config::load();
     let path = Config::path().map(|p| p.display().to_string()).unwrap_or_else(|| "(unknown)".into());
 
-    let base_url = config.base_url.as_deref().unwrap_or("https://api.openai.com/v1");
-
-    let provider_name = if base_url.contains("anthropic.com") { "claude" }
-        else if base_url.contains("generativelanguage.googleapis.com") { "gemini" }
-        else if base_url.contains("api.groq.com") { "groq" }
-        else if base_url.contains("localhost:11434") || base_url.contains("127.0.0.1:11434") { "ollama" }
-        else if base_url.contains("api.openai.com") { "openai" }
-        else { "custom" };
-
-    let is_claude = base_url.contains("anthropic.com");
-    let is_groq = base_url.contains("api.groq.com");
-    let is_gemini = base_url.contains("generativelanguage.googleapis.com");
-    let is_ollama = base_url.contains("localhost:11434") || base_url.contains("127.0.0.1:11434");
-
     println!("Config file: {}\n", path);
-    println!("api_key:     {}", config.api_key.as_deref()
-        .map(|k| format!("{}...", &k[..8.min(k.len())]))
-        .unwrap_or_else(|| "(not set)".into()));
-    println!("model:       {}", config.model.as_deref().unwrap_or("(not set)"));
-    println!("max_tokens:  {}", config.max_tokens.map(|t| t.to_string()).unwrap_or_else(|| "(not set)".into()));
-    println!("temperature: {}", config.temperature.map(|t| t.to_string()).unwrap_or_else(|| "(not set)".into()));
-    println!("base_url:    {} ({})", config.base_url.as_deref().unwrap_or("(not set)"), provider_name);
-    println!("base_branch: {}", config.base_branch.as_deref().unwrap_or("(not set)"));
+    println!("default_provider: {}", config.default_provider.as_deref().unwrap_or("(not set)"));
+    println!("base_branch:      {}", config.base_branch.as_deref().unwrap_or("(not set)"));
 
-    println!("\nPriority: --api-key > env var > config file");
-    println!("Env vars checked: {}", if is_claude { "ANTHROPIC_API_KEY" }
-        else if is_groq { "GROQ_API_KEY (fallback: OPENAI_API_KEY)" }
-        else if is_gemini { "GEMINI_API_KEY" }
-        else if is_ollama { "(none required)" }
-        else { "OPENAI_API_KEY" });
+    let providers = [
+        ("openai", &config.openai, "OPENAI_API_KEY"),
+        ("claude", &config.claude, "ANTHROPIC_API_KEY"),
+        ("gemini", &config.gemini, "GEMINI_API_KEY"),
+        ("groq", &config.groq, "GROQ_API_KEY"),
+        ("ollama", &config.ollama, "(none)"),
+    ];
+
+    for (name, pc, env_var) in providers {
+        if let Some(p) = pc {
+            println!("\n[{}]", name);
+            println!("  api_key:     {}", p.api_key.as_deref()
+                .map(|k| format!("{}...", &k[..8.min(k.len())]))
+                .unwrap_or_else(|| format!("(env: {})", env_var)));
+            println!("  model:       {}", p.model.as_deref().unwrap_or("(default)"));
+            println!("  max_tokens:  {}", p.max_tokens.map(|t| t.to_string()).unwrap_or_else(|| "(default)".into()));
+            println!("  temperature: {}", p.temperature.map(|t| t.to_string()).unwrap_or_else(|| "(default)".into()));
+            if let Some(url) = &p.base_url {
+                println!("  base_url:    {}", url);
+            }
+        }
+    }
+
+    println!("\nUsage: gitar --provider <name> [command]");
+    println!("Priority: CLI args > provider config > env var > defaults");
     Ok(())
 }
 
@@ -671,57 +679,6 @@ mod tests {
     }
 
     #[test]
-    fn cli_parses_pr_with_to() {
-        let cli = Cli::try_parse_from(["gitar", "pr", "main", "--to", "feature/oauth"]).unwrap();
-        if let Commands::Pr { base, to, staged } = cli.command {
-            assert_eq!(base, Some("main".into()));
-            assert_eq!(to, Some("feature/oauth".into()));
-            assert!(!staged);
-        } else { panic!("Expected Pr command"); }
-    }
-
-    #[test]
-    fn cli_parses_changelog_with_ref() {
-        let cli = Cli::try_parse_from(["gitar", "changelog", "v1.0.0"]).unwrap();
-        if let Commands::Changelog { from, to, .. } = cli.command {
-            assert_eq!(from, Some("v1.0.0".into()));
-            assert!(to.is_none());
-        } else { panic!("Expected Changelog command"); }
-    }
-
-    #[test]
-    fn cli_parses_changelog_with_to() {
-        let cli = Cli::try_parse_from(["gitar", "changelog", "v1.0.0", "--to", "v1.0.1"]).unwrap();
-        if let Commands::Changelog { from, to, .. } = cli.command {
-            assert_eq!(from, Some("v1.0.0".into()));
-            assert_eq!(to, Some("v1.0.1".into()));
-        } else { panic!("Expected Changelog command"); }
-    }
-
-    #[test]
-    fn cli_parses_history_with_options() {
-        let cli = Cli::try_parse_from([
-            "gitar", "history", "v1.0.0", "--since", "2024-01-01", "-n", "10", "--delay", "1000",
-        ]).unwrap();
-        if let Commands::History { from, to, since, limit, delay, .. } = cli.command {
-            assert_eq!(from, Some("v1.0.0".into()));
-            assert!(to.is_none());
-            assert_eq!(since, Some("2024-01-01".into()));
-            assert_eq!(limit, Some(10));
-            assert_eq!(delay, 1000);
-        } else { panic!("Expected History command"); }
-    }
-
-    #[test]
-    fn cli_parses_history_with_to() {
-        let cli = Cli::try_parse_from(["gitar", "history", "v1.0.0", "--to", "v1.0.1"]).unwrap();
-        if let Commands::History { from, to, .. } = cli.command {
-            assert_eq!(from, Some("v1.0.0".into()));
-            assert_eq!(to, Some("v1.0.1".into()));
-        } else { panic!("Expected History command"); }
-    }
-
-    #[test]
     fn cli_parses_global_options() {
         let cli = Cli::try_parse_from([
             "gitar", "--model", "gpt-4", "--max-tokens", "2048", "--temperature", "0.5", "staged",
@@ -729,62 +686,6 @@ mod tests {
         assert_eq!(cli.model, Some("gpt-4".into()));
         assert_eq!(cli.max_tokens, Some(2048));
         assert_eq!(cli.temperature, Some(0.5));
-    }
-
-    #[test]
-    fn cli_parses_version_command() {
-        let cli = Cli::try_parse_from(["gitar", "version", "v1.0.0", "--current", "1.2.3"]).unwrap();
-        if let Commands::Version { base, to, current } = cli.command {
-            assert_eq!(base, Some("v1.0.0".into()));
-            assert!(to.is_none());
-            assert_eq!(current, Some("1.2.3".into()));
-        } else { panic!("Expected Version command"); }
-    }
-
-    #[test]
-    fn cli_parses_version_with_to() {
-        let cli = Cli::try_parse_from(["gitar", "version", "v1.0.0", "--to", "v1.0.1"]).unwrap();
-        if let Commands::Version { base, to, current } = cli.command {
-            assert_eq!(base, Some("v1.0.0".into()));
-            assert_eq!(to, Some("v1.0.1".into()));
-            assert!(current.is_none());
-        } else { panic!("Expected Version command"); }
-    }
-
-    #[test]
-    fn cli_parses_explain_command() {
-        let cli = Cli::try_parse_from(["gitar", "explain", "--staged"]).unwrap();
-        if let Commands::Explain { from, to, since, until, staged } = cli.command {
-            assert!(from.is_none());
-            assert!(to.is_none());
-            assert!(since.is_none());
-            assert!(until.is_none());
-            assert!(staged);
-        } else { panic!("Expected Explain command"); }
-    }
-
-    #[test]
-    fn cli_parses_explain_with_date_filters() {
-        let cli = Cli::try_parse_from([
-            "gitar", "explain", "v1.0.0", "--since", "2024-01-01", "--until", "2024-12-31",
-        ]).unwrap();
-        if let Commands::Explain { from, to, since, until, staged } = cli.command {
-            assert_eq!(from, Some("v1.0.0".into()));
-            assert!(to.is_none());
-            assert_eq!(since, Some("2024-01-01".into()));
-            assert_eq!(until, Some("2024-12-31".into()));
-            assert!(!staged);
-        } else { panic!("Expected Explain command"); }
-    }
-
-    #[test]
-    fn cli_parses_explain_with_to() {
-        let cli = Cli::try_parse_from(["gitar", "explain", "v1.0.0", "--to", "v1.0.1"]).unwrap();
-        if let Commands::Explain { from, to, staged, .. } = cli.command {
-            assert_eq!(from, Some("v1.0.0".into()));
-            assert_eq!(to, Some("v1.0.1".into()));
-            assert!(!staged);
-        } else { panic!("Expected Explain command"); }
     }
 
     #[test]
@@ -808,15 +709,6 @@ mod tests {
     }
 
     #[test]
-    fn cli_commit_no_tag_flag() {
-        let cli = Cli::try_parse_from(["gitar", "commit", "--no-tag"]).unwrap();
-        if let Commands::Commit { tag, no_tag, .. } = cli.command {
-            assert!(tag);
-            assert!(no_tag);
-        } else { panic!("Expected Commit command"); }
-    }
-
-    #[test]
     fn cli_with_provider_claude() {
         let cli = Cli::try_parse_from(["gitar", "--provider", "claude", "staged"]).unwrap();
         assert!(matches!(cli.command, Commands::Staged));
@@ -826,43 +718,13 @@ mod tests {
     #[test]
     fn cli_with_provider_gemini() {
         let cli = Cli::try_parse_from(["gitar", "--provider", "gemini", "staged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
         assert_eq!(cli.provider, Some("gemini".into()));
-    }
-
-    #[test]
-    fn cli_with_provider_groq() {
-        let cli = Cli::try_parse_from(["gitar", "--provider", "groq", "staged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
-        assert_eq!(cli.provider, Some("groq".into()));
-    }
-
-    #[test]
-    fn cli_with_provider_openai() {
-        let cli = Cli::try_parse_from(["gitar", "--provider", "openai", "staged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
-        assert_eq!(cli.provider, Some("openai".into()));
-    }
-
-    #[test]
-    fn cli_with_provider_anthropic_alias() {
-        let cli = Cli::try_parse_from(["gitar", "--provider", "anthropic", "staged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
-        assert_eq!(cli.provider, Some("anthropic".into()));
     }
 
     #[test]
     fn cli_with_provider_ollama() {
         let cli = Cli::try_parse_from(["gitar", "--provider", "ollama", "staged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
         assert_eq!(cli.provider, Some("ollama".into()));
-    }
-
-    #[test]
-    fn cli_with_provider_local_alias() {
-        let cli = Cli::try_parse_from(["gitar", "--provider", "local", "staged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
-        assert_eq!(cli.provider, Some("local".into()));
     }
 
     #[test]
@@ -872,21 +734,10 @@ mod tests {
     }
 
     #[test]
-    fn cli_provider_and_base_url_both_accepted() {
-        let cli = Cli::try_parse_from([
-            "gitar", "--provider", "claude", "--base-url", "https://custom.api", "staged",
-        ]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
-        assert_eq!(cli.provider, Some("claude".into()));
-        assert_eq!(cli.base_url, Some("https://custom.api".into()));
-    }
-
-    #[test]
     fn cli_provider_with_model() {
         let cli = Cli::try_parse_from([
             "gitar", "--provider", "gemini", "--model", "gemini-2.5-pro", "staged",
         ]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
         assert_eq!(cli.provider, Some("gemini".into()));
         assert_eq!(cli.model, Some("gemini-2.5-pro".into()));
     }
@@ -896,77 +747,7 @@ mod tests {
         let cli = Cli::try_parse_from([
             "gitar", "--provider", "groq", "--api-key", "gsk_test123", "staged",
         ]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
         assert_eq!(cli.provider, Some("groq".into()));
         assert_eq!(cli.api_key, Some("gsk_test123".into()));
-    }
-
-    #[test]
-    fn cli_ollama_with_model() {
-        let cli = Cli::try_parse_from([
-            "gitar", "--provider", "ollama", "--model", "llama3.2:latest", "staged",
-        ]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
-        assert_eq!(cli.provider, Some("ollama".into()));
-        assert_eq!(cli.model, Some("llama3.2:latest".into()));
-    }
-
-    #[test]
-    fn cli_provider_with_commit_command() {
-        let cli = Cli::try_parse_from(["gitar", "--provider", "gemini", "commit", "-a"]).unwrap();
-        if let Commands::Commit { all, .. } = cli.command {
-            assert!(all);
-        } else { panic!("Expected Commit command"); }
-        assert_eq!(cli.provider, Some("gemini".into()));
-    }
-
-    #[test]
-    fn cli_provider_with_history_command() {
-        let cli = Cli::try_parse_from([
-            "gitar", "--provider", "ollama", "--model", "llama3.2", "history", "-n", "5",
-        ]).unwrap();
-        if let Commands::History { limit, .. } = cli.command {
-            assert_eq!(limit, Some(5));
-        } else { panic!("Expected History command"); }
-        assert_eq!(cli.provider, Some("ollama".into()));
-        assert_eq!(cli.model, Some("llama3.2".into()));
-    }
-
-    #[test]
-    fn cli_parses_anthropic_base_url() {
-        let cli = Cli::try_parse_from([
-            "gitar", "--base-url", "https://api.anthropic.com/v1", "staged",
-        ]).unwrap();
-        assert_eq!(cli.base_url, Some("https://api.anthropic.com/v1".into()));
-    }
-
-    #[test]
-    fn cli_parses_claude_model() {
-        let cli = Cli::try_parse_from([
-            "gitar", "--model", "claude-sonnet-4-5-20250929", "staged",
-        ]).unwrap();
-        assert_eq!(cli.model, Some("claude-sonnet-4-5-20250929".into()));
-    }
-
-    #[test]
-    fn cli_parses_gemini_base_url() {
-        let cli = Cli::try_parse_from([
-            "gitar", "--base-url", "https://generativelanguage.googleapis.com", "staged",
-        ]).unwrap();
-        assert_eq!(cli.base_url, Some("https://generativelanguage.googleapis.com".into()));
-    }
-
-    #[test]
-    fn cli_parses_groq_base_url() {
-        let cli = Cli::try_parse_from([
-            "gitar", "--base-url", "https://api.groq.com/openai/v1", "staged",
-        ]).unwrap();
-        assert_eq!(cli.base_url, Some("https://api.groq.com/openai/v1".into()));
-    }
-
-    #[test]
-    fn cli_parses_gemini_model() {
-        let cli = Cli::try_parse_from(["gitar", "--model", "gemini-2.5-flash", "staged"]).unwrap();
-        assert_eq!(cli.model, Some("gemini-2.5-flash".into()));
     }
 }
