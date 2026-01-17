@@ -1,3 +1,31 @@
+# v1.0.6
+
+## Features
+- Added intelligent diff selection with file-aware and hunk-level semantic algorithms for improved LLM context optimization.
+- Introduced new diff command and smart diff algorithms, documented in README.
+- Refactored CLI into a modular command structure with subcommands for changelog, commit, diff, explain, history, and admin hook management.
+
+## Fixes
+- Removed deprecated admin command module and migrated hook/config handling to modern CLI structure.
+
+## Improvements
+- CLI now defaults to the semantic diff algorithm for more meaningful comparisons.
+- Added per-file hunk limit of 3 in diff algorithm for better output readability.
+- Clarified and reorganized README:
+  - Updated hook installation and uninstall instructions.
+  - Enhanced semantic JSON mode description.
+  - Moved Git Hook section to follow proxy configuration instructions.
+  - Replaced `GITAR_PROXY` with `ALL_PROXY` and added SSH tunnel usage examples.
+  - Capitalized project name references for consistency.
+  - Removed Rust justification section for brevity.
+
+## Breaking Changes
+- Deprecated admin command module removed; CLI subcommands updated accordingly.
+
+## Infrastructure
+- Adjusted related tests to align with new CLI structure and default diff behavior.
+
+
 # v1.0.5
 
 ## Features
