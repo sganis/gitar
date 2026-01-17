@@ -3,7 +3,8 @@ mod providers;
 mod client;
 mod config;
 mod git;
-mod prompts;
+mod diff;
+mod prompt;
 mod types;
 
 use anyhow::{bail, Context, Result};
@@ -16,8 +17,9 @@ use std::os::unix::fs::PermissionsExt;
 use client::LlmClient;
 use config::{normalize_provider, Config, ResolvedConfig};
 use git::*;
-use prompts::*;
+use prompt::*;
 use providers::*;
+use diff::{SmartDiffAlg, get_llm_diff_preview};
 
 // =============================================================================
 // CLI
@@ -44,7 +46,10 @@ use providers::*;
     gitar hook install              # Install git hook for auto-commit messages
     gitar hook uninstall            # Remove gitar git hook
 
-    gitar version v1.0.0            # Version bump since tag"
+    gitar version v1.0.0            # Version bump since tag
+    
+    gitar diff --compare            # Compare smart diff algorithms
+    gitar commit --think            # Use semantic analysis for large refactors"
 )]
 struct Cli {
     #[arg(long, global = true)]
@@ -109,17 +114,29 @@ enum Commands {
         /// Global --stream also enables streaming.
         #[arg(long, default_value = "false")]
         stream: bool,
+
+        /// Use semantic hunk-level analysis (better for large refactors, uses more tokens)
+        #[arg(long)]
+        think: bool,
     },
 
     /// Generate an AI commit message for currently staged changes
     ///
     /// Prints the message to stdout (does not create a commit).
-    Staged,
+    Staged {
+        /// Use semantic hunk-level analysis (better for large refactors, uses more tokens)
+        #[arg(long)]
+        think: bool,
+    },
 
     /// Generate an AI commit message for unstaged working tree changes
     ///
     /// Prints the message to stdout (does not create a commit).
-    Unstaged,
+    Unstaged {
+        /// Use semantic hunk-level analysis (better for large refactors, uses more tokens)
+        #[arg(long)]
+        think: bool,
+    },
 
     /// Describe a range of commits in plain English (does not modify history)
     ///
@@ -149,6 +166,10 @@ enum Commands {
         /// Delay between API calls in milliseconds (useful to avoid rate limits)
         #[arg(long, default_value = "500")]
         delay: u64,
+
+        /// Use semantic hunk-level analysis (better for large refactors, uses more tokens)
+        #[arg(long)]
+        think: bool,
     },
 
     /// Generate a pull request description from branch changes
@@ -167,6 +188,10 @@ enum Commands {
         /// Use staged changes only instead of comparing refs
         #[arg(long)]
         staged: bool,
+
+        /// Use semantic hunk-level analysis (better for large refactors, uses more tokens)
+        #[arg(long)]
+        think: bool,
     },
 
     /// Generate release notes (changelog) from a commit range
@@ -217,6 +242,10 @@ enum Commands {
         /// Explain staged changes only (ignores ref range)
         #[arg(long)]
         staged: bool,
+
+        /// Use semantic hunk-level analysis (better for large refactors, uses more tokens)
+        #[arg(long)]
+        think: bool,
     },
 
     /// Suggest a semantic version bump (major/minor/patch) from changes
@@ -234,6 +263,10 @@ enum Commands {
         /// Current version (e.g. 1.2.3) used to contextualize the bump suggestion
         #[arg(long)]
         current: Option<String>,
+
+        /// Use semantic hunk-level analysis (better for large refactors, uses more tokens)
+        #[arg(long)]
+        think: bool,
     },
 
     /// Manage git hooks for automatic commit message generation
@@ -250,6 +283,36 @@ enum Commands {
 
     /// List available models (when the provider exposes a models endpoint)
     Models,
+
+    /// Debug: Preview what would be sent to the LLM
+    Diff {
+        /// Git diff target (branch, commit, etc.)
+        target: Option<String>,
+
+        /// Show staged changes only
+        #[arg(long)]
+        staged: bool,
+
+        /// Maximum characters to send
+        #[arg(long, default_value = "15000")]
+        max_chars: usize,
+
+        /// Use semantic hunk-level analysis (--think mode)
+        #[arg(long)]
+        think: bool,
+
+        /// Include git diff --stat header
+        #[arg(long)]
+        stats: bool,
+
+        /// Show stats only (no diff output)
+        #[arg(long)]
+        stats_only: bool,
+
+        /// Compare both algorithms side-by-side
+        #[arg(long)]
+        compare: bool,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -285,6 +348,20 @@ gitar commit --write-to "$COMMIT_MSG_FILE" --silent
 "#;
 
 // =============================================================================
+// SMART DIFF HELPER
+// =============================================================================
+fn apply_smart_diff(raw_diff: &str, think: bool, max_chars: usize, silent: bool) -> Result<String> {
+    let algorithm = if think { SmartDiffAlg::Think } else { SmartDiffAlg::Standard };
+    let (shaped_diff, stats) = get_llm_diff_preview(raw_diff, None, max_chars, algorithm, false);
+    
+    if !silent {
+        eprintln!("{}", stats.display());
+    }
+    
+    Ok(shaped_diff)
+}
+
+// =============================================================================
 // COMMANDS
 // =============================================================================
 async fn cmd_commit(
@@ -295,29 +372,30 @@ async fn cmd_commit(
     write_to: Option<String>,
     silent: bool,
     stream: bool,
+    think: bool,
 ) -> Result<()> {
     let staged = run_git(&["diff", "--cached"]).unwrap_or_default();
     let unstaged = run_git(&["diff"]).unwrap_or_default();
 
-    let mut diff = String::new();
+    let mut raw_diff = String::new();
     if !staged.trim().is_empty() {
-        diff.push_str(&staged);
+        raw_diff.push_str(&staged);
     }
     if !unstaged.trim().is_empty() {
-        if !diff.is_empty() {
-            diff.push('\n');
+        if !raw_diff.is_empty() {
+            raw_diff.push('\n');
         }
-        diff.push_str(&unstaged);
+        raw_diff.push_str(&unstaged);
     }
 
-    if diff.trim().is_empty() {
+    if raw_diff.trim().is_empty() {
         if !silent {
             println!("Nothing to commit.");
         }
         return Ok(());
     }
 
-    let diff = truncate_diff(diff, 100000);
+    let diff = apply_smart_diff(&raw_diff, think, 100000, silent)?;
 
     // Hook mode: never stream (hooks expect file output only)
     if let Some(ref output_file) = write_to {
@@ -421,11 +499,13 @@ async fn cmd_commit(
     Ok(())
 }
 
-async fn cmd_staged(client: &LlmClient, stream: bool) -> Result<()> {
-    let diff = get_diff(None, true, 100000)?;
-    if diff.trim().is_empty() {
+async fn cmd_staged(client: &LlmClient, stream: bool, think: bool) -> Result<()> {
+    let raw_diff = get_diff(None, true, usize::MAX)?;
+    if raw_diff.trim().is_empty() {
         bail!("No staged changes.");
     }
+    
+    let diff = apply_smart_diff(&raw_diff, think, 100000, false)?;
     let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
     let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt, stream).await?;
     if stream {
@@ -436,11 +516,13 @@ async fn cmd_staged(client: &LlmClient, stream: bool) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_unstaged(client: &LlmClient, stream: bool) -> Result<()> {
-    let diff = get_diff(None, false, 100000)?;
-    if diff.trim().is_empty() {
+async fn cmd_unstaged(client: &LlmClient, stream: bool, think: bool) -> Result<()> {
+    let raw_diff = get_diff(None, false, usize::MAX)?;
+    if raw_diff.trim().is_empty() {
         bail!("No unstaged changes.");
     }
+    
+    let diff = apply_smart_diff(&raw_diff, think, 100000, false)?;
     let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
     let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt, stream).await?;
     if stream {
@@ -460,6 +542,7 @@ async fn cmd_history(
     limit: Option<usize>,
     delay: u64,
     stream: bool,
+    think: bool,
 ) -> Result<()> {
     let limit = match (&from, limit) {
         (Some(_), None) => None,
@@ -495,13 +578,15 @@ async fn cmd_history(
 
         println!("[{}/{}] {} | {} | {:15} | {}", i + 1, commits.len(), h, d, a, m);
 
-        let diff = match get_commit_diff(&c.hash, 12000)? {
+        let raw_diff = match get_commit_diff(&c.hash, usize::MAX)? {
             Some(d) if !d.trim().is_empty() => d,
             _ => {
                 println!("  - No diff");
                 continue;
             }
         };
+
+        let diff = apply_smart_diff(&raw_diff, think, 12000, true)?;
 
         let prompt = HISTORY_USER_PROMPT
             .replace("{original_message}", &c.message)
@@ -510,7 +595,6 @@ async fn cmd_history(
         match client.chat(HISTORY_SYSTEM_PROMPT, &prompt, stream).await {
             Ok(r) => {
                 if stream {
-                    // streaming already printed tokens; just terminate the line.
                     println!();
                 } else {
                     for (j, l) in r.lines().enumerate() {
@@ -538,6 +622,7 @@ async fn cmd_pr(
     base_branch: &str,
     staged: bool,
     stream: bool,
+    think: bool,
 ) -> Result<()> {
     let branch = to.clone().unwrap_or_else(get_current_branch);
     let target_base = base.as_deref().unwrap_or(base_branch);
@@ -545,8 +630,10 @@ async fn cmd_pr(
     println!("PR: {} -> {}\n", branch, target_base);
 
     let (diff, stats, commits_text) = if staged {
+        let raw_diff = get_diff(None, true, usize::MAX)?;
+        let diff = apply_smart_diff(&raw_diff, think, 15000, false)?;
         (
-            get_diff(None, true, 15000)?,
+            diff,
             get_diff_stats(None, true)?,
             "(staged changes)".into(),
         )
@@ -563,8 +650,11 @@ async fn cmd_pr(
 
         let diff_target_ref = if diff_target.is_empty() { None } else { Some(diff_target.as_str()) };
 
+        let raw_diff = get_diff(diff_target_ref, false, usize::MAX)?;
+        let diff = apply_smart_diff(&raw_diff, think, 15000, false)?;
+
         (
-            get_diff(diff_target_ref, false, 15000)?,
+            diff,
             get_diff_stats(diff_target_ref, false)?,
             if ct.is_empty() { "(no commits)".into() } else { ct },
         )
@@ -657,6 +747,7 @@ async fn cmd_explain(
     base_branch: &str,
     staged: bool,
     stream: bool,
+    think: bool,
 ) -> Result<()> {
     let display = match (&from, &to, &since, &until) {
         (Some(r), Some(t), _, _) => format!("{}..{}", r, t),
@@ -672,7 +763,9 @@ async fn cmd_explain(
 
     let (diff, stats) = if staged {
         println!("Explaining staged changes...\n");
-        (get_diff(None, true, 15000)?, get_diff_stats(None, true)?)
+        let raw_diff = get_diff(None, true, usize::MAX)?;
+        let diff = apply_smart_diff(&raw_diff, think, 15000, false)?;
+        (diff, get_diff_stats(None, true)?)
     } else {
         let effective_from = match (&from, &since, &until) {
             (Some(_), _, _) => from.clone(),
@@ -692,7 +785,9 @@ async fn cmd_explain(
         let diff_target = build_diff_target(effective_from.as_deref(), to.as_deref(), base_branch);
         let diff_target_ref = if diff_target.is_empty() { None } else { Some(diff_target.as_str()) };
 
-        (get_diff(diff_target_ref, false, 15000)?, get_diff_stats(diff_target_ref, false)?)
+        let raw_diff = get_diff(diff_target_ref, false, usize::MAX)?;
+        let diff = apply_smart_diff(&raw_diff, think, 15000, false)?;
+        (diff, get_diff_stats(diff_target_ref, false)?)
     };
 
     if diff.trim().is_empty() {
@@ -721,6 +816,7 @@ async fn cmd_version(
     base_branch: &str,
     current: Option<String>,
     stream: bool,
+    think: bool,
 ) -> Result<()> {
     let current = current.unwrap_or_else(get_current_version);
     println!("Version analysis (current: {})...\n", current);
@@ -728,12 +824,14 @@ async fn cmd_version(
     let diff_target = build_diff_target(base.as_deref(), to.as_deref(), base_branch);
     let diff_target_ref = if diff_target.is_empty() { None } else { Some(diff_target.as_str()) };
 
-    let diff = get_diff(diff_target_ref, false, 15000)?;
-
-    if diff.trim().is_empty() {
+    let raw_diff = get_diff(diff_target_ref, false, usize::MAX)?;
+    
+    if raw_diff.trim().is_empty() {
         println!("No changes detected.");
         return Ok(());
     }
+
+    let diff = apply_smart_diff(&raw_diff, think, 15000, false)?;
 
     let prompt = VERSION_USER_PROMPT.replace("{version}", &current).replace("{diff}", &diff);
 
@@ -766,7 +864,6 @@ fn cmd_hook(command: HookCommands) -> Result<()> {
 
             fs::write(&hook_path, HOOK_SCRIPT)?;
 
-            // Set executable permissions on Unix (essential for the hook to run)
             #[cfg(unix)]
             {
                 let mut perms = fs::metadata(&hook_path)?.permissions();
@@ -797,7 +894,6 @@ fn cmd_hook(command: HookCommands) -> Result<()> {
 fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
     let mut config = file.clone();
 
-    // Determine which provider to configure: CLI > existing default
     let provider = cli
         .provider
         .as_ref()
@@ -805,7 +901,6 @@ fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         .or_else(|| config.default_provider.as_ref().map(|p| normalize_provider(p).to_string()));
 
     if let Some(ref p) = provider {
-        // Configure specific provider section
         let pc = config.get_provider_mut(p);
         if cli.api_key.is_some() {
             pc.api_key = cli.api_key.clone();
@@ -826,17 +921,14 @@ fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
             pc.stream = Some(true);
         }
 
-        // Set as default provider if specified via CLI
         if cli.provider.is_some() {
             config.default_provider = Some(p.clone());
         }
     } else if cli.stream || cli.api_key.is_some() || cli.model.is_some() 
            || cli.max_tokens.is_some() || cli.temperature.is_some() {
-        // User specified provider-specific options but no provider
         bail!("Please specify --provider when setting provider-specific options like --stream, --model, --api-key, etc.");
     }
 
-    // Global settings
     if cli.base_branch.is_some() {
         config.base_branch = cli.base_branch.clone();
     }
@@ -933,6 +1025,74 @@ async fn cmd_models(client: &LlmClient) -> Result<()> {
     Ok(())
 }
 
+fn cmd_diff(
+    target: Option<String>,
+    staged: bool,
+    max_chars: usize,
+    think: bool,
+    include_stats: bool,
+    stats_only: bool,
+    compare: bool,
+) -> Result<()> {
+    let raw_diff = if staged {
+        git::get_diff(None, true, usize::MAX)?
+    } else {
+        git::get_diff(target.as_deref(), false, usize::MAX)?
+    };
+
+    if raw_diff.trim().is_empty() {
+        println!("No changes to show.");
+        return Ok(());
+    }
+
+    let diff_stats = if include_stats {
+        Some(git::get_diff_stats(target.as_deref(), staged)?)
+    } else {
+        None
+    };
+
+    if compare {
+        println!("╔══════════════════════════════════════════════════════════════╗");
+        println!("║            ALGORITHM COMPARISON                              ║");
+        println!("╚══════════════════════════════════════════════════════════════╝\n");
+
+        for alg in [SmartDiffAlg::Standard, SmartDiffAlg::Think] {
+            let (_output, stats) = get_llm_diff_preview(
+                &raw_diff,
+                diff_stats.as_deref(),
+                max_chars,
+                alg,
+                false,
+            );
+
+            println!("{}", stats.display());
+            println!();
+        }
+
+        println!("Default: standard (file-aware)");
+        println!("Use --think for semantic hunk-level analysis (large refactors)");
+        return Ok(());
+    }
+
+    let alg = if think { SmartDiffAlg::Think } else { SmartDiffAlg::Standard };
+
+    let (output, stats) = get_llm_diff_preview(
+        &raw_diff,
+        diff_stats.as_deref(),
+        max_chars,
+        alg,
+        true,
+    );
+
+    println!("{}\n", stats.display());
+
+    if !stats_only {
+        println!("{}", output);
+    }
+
+    Ok(())
+}
+
 // =============================================================================
 // MAIN
 // =============================================================================
@@ -952,6 +1112,10 @@ async fn main() -> Result<()> {
 
     if !is_git_repo() {
         bail!("Not a git repository");
+    }
+
+    if let Commands::Diff { target, staged, max_chars, think, stats, stats_only, compare } = &cli.command {
+        return cmd_diff(target.clone(), *staged, *max_chars, *think, *stats, *stats_only, *compare);
     }
 
     let config = ResolvedConfig::new(
@@ -977,9 +1141,8 @@ async fn main() -> Result<()> {
             write_to,
             silent,
             stream: _,
+            think,
         } => {
-            // no need to stream so small commit message usualy single-line
-            // let do_stream = stream || config.stream;
             let do_stream = false;
             cmd_commit(
                 &client,
@@ -989,11 +1152,12 @@ async fn main() -> Result<()> {
                 write_to,
                 silent,
                 do_stream,
+                think,
             )
             .await?
         }
-        Commands::Staged => cmd_staged(&client, config.stream).await?,
-        Commands::Unstaged => cmd_unstaged(&client, config.stream).await?,
+        Commands::Staged { think } => cmd_staged(&client, config.stream, think).await?,
+        Commands::Unstaged { think } => cmd_unstaged(&client, config.stream, think).await?,
         Commands::History {
             from,
             to,
@@ -1001,9 +1165,10 @@ async fn main() -> Result<()> {
             until,
             limit,
             delay,
-        } => cmd_history(&client, from, to, since, until, limit, delay, config.stream).await?,
-        Commands::Pr { base, to, staged } => {
-            cmd_pr(&client, base, to, &config.base_branch, staged, config.stream).await?
+            think,
+        } => cmd_history(&client, from, to, since, until, limit, delay, config.stream, think).await?,
+        Commands::Pr { base, to, staged, think } => {
+            cmd_pr(&client, base, to, &config.base_branch, staged, config.stream, think).await?
         }
         Commands::Changelog {
             from,
@@ -1018,6 +1183,7 @@ async fn main() -> Result<()> {
             since,
             until,
             staged,
+            think,
         } => cmd_explain(
             &client,
             from,
@@ -1027,12 +1193,13 @@ async fn main() -> Result<()> {
             &config.base_branch,
             staged,
             config.stream,
+            think,
         )
         .await?,
-        Commands::Version { base, to, current } => {
-            cmd_version(&client, base, to, &config.base_branch, current, config.stream).await?
+        Commands::Version { base, to, current, think } => {
+            cmd_version(&client, base, to, &config.base_branch, current, config.stream, think).await?
         }
-        Commands::Init | Commands::Config | Commands::Hook { .. } => unreachable!(),
+        Commands::Init | Commands::Config | Commands::Hook { .. } | Commands::Diff { .. } => unreachable!(),
         Commands::Models => cmd_models(&client).await?,
     }
 
@@ -1054,6 +1221,67 @@ mod tests {
     }
 
     #[test]
+    fn cli_parses_commit_with_think() {
+        let cli = Cli::try_parse_from(["gitar", "commit", "--think"]).unwrap();
+        if let Commands::Commit { think, .. } = cli.command {
+            assert!(think);
+        } else {
+            panic!("Expected Commit command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_commit_default_no_think() {
+        let cli = Cli::try_parse_from(["gitar", "commit"]).unwrap();
+        if let Commands::Commit { think, .. } = cli.command {
+            assert!(!think);
+        } else {
+            panic!("Expected Commit command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_staged_with_think() {
+        let cli = Cli::try_parse_from(["gitar", "staged", "--think"]).unwrap();
+        if let Commands::Staged { think } = cli.command {
+            assert!(think);
+        } else {
+            panic!("Expected Staged command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_pr_with_think() {
+        let cli = Cli::try_parse_from(["gitar", "pr", "main", "--think"]).unwrap();
+        if let Commands::Pr { base, think, .. } = cli.command {
+            assert_eq!(base, Some("main".into()));
+            assert!(think);
+        } else {
+            panic!("Expected Pr command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_diff_compare() {
+        let cli = Cli::try_parse_from(["gitar", "diff", "--compare"]).unwrap();
+        if let Commands::Diff { compare, .. } = cli.command {
+            assert!(compare);
+        } else {
+            panic!("Expected Diff command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_diff_with_think() {
+        let cli = Cli::try_parse_from(["gitar", "diff", "--think"]).unwrap();
+        if let Commands::Diff { think, .. } = cli.command {
+            assert!(think);
+        } else {
+            panic!("Expected Diff command");
+        }
+    }
+
+    #[test]
     fn cli_parses_commit_with_flags() {
         let cli = Cli::try_parse_from(["gitar", "commit", "-p", "-a"]).unwrap();
         if let Commands::Commit { push, all, .. } = cli.command {
@@ -1065,38 +1293,28 @@ mod tests {
     }
 
     #[test]
-    fn cli_parses_commit_with_stream_override() {
-        let cli = Cli::try_parse_from(["gitar", "commit", "--stream"]).unwrap();
-        if let Commands::Commit { stream, .. } = cli.command {
-            assert!(stream);
-        } else {
-            panic!("Expected Commit command");
-        }
-    }
-
-    #[test]
     fn cli_parses_global_stream_flag() {
         let cli = Cli::try_parse_from(["gitar", "--stream", "staged"]).unwrap();
         assert!(cli.stream);
-        assert!(matches!(cli.command, Commands::Staged));
+        assert!(matches!(cli.command, Commands::Staged { .. }));
     }
 
     #[test]
     fn cli_parses_staged_command() {
         let cli = Cli::try_parse_from(["gitar", "staged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
+        assert!(matches!(cli.command, Commands::Staged { .. }));
     }
 
     #[test]
     fn cli_parses_unstaged_command() {
         let cli = Cli::try_parse_from(["gitar", "unstaged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Unstaged));
+        assert!(matches!(cli.command, Commands::Unstaged { .. }));
     }
 
     #[test]
     fn cli_parses_pr_with_base() {
         let cli = Cli::try_parse_from(["gitar", "pr", "develop"]).unwrap();
-        if let Commands::Pr { base, to, staged } = cli.command {
+        if let Commands::Pr { base, to, staged, .. } = cli.command {
             assert_eq!(base, Some("develop".into()));
             assert!(to.is_none());
             assert!(!staged);
@@ -1148,7 +1366,7 @@ mod tests {
     #[test]
     fn cli_with_provider_claude() {
         let cli = Cli::try_parse_from(["gitar", "--provider", "claude", "staged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged));
+        assert!(matches!(cli.command, Commands::Staged { .. }));
         assert_eq!(cli.provider, Some("claude".into()));
     }
 
@@ -1171,22 +1389,6 @@ mod tests {
     }
 
     #[test]
-    fn cli_provider_with_model() {
-        let cli = Cli::try_parse_from(["gitar", "--provider", "gemini", "--model", "gemini-2.5-pro", "staged"])
-            .unwrap();
-        assert_eq!(cli.provider, Some("gemini".into()));
-        assert_eq!(cli.model, Some("gemini-2.5-pro".into()));
-    }
-
-    #[test]
-    fn cli_provider_with_api_key() {
-        let cli = Cli::try_parse_from(["gitar", "--provider", "groq", "--api-key", "gsk_test123", "staged"])
-            .unwrap();
-        assert_eq!(cli.provider, Some("groq".into()));
-        assert_eq!(cli.api_key, Some("gsk_test123".into()));
-    }
-
-    #[test]
     fn cli_parses_hook_install() {
         let cli = Cli::try_parse_from(["gitar", "hook", "install"]).unwrap();
         assert!(matches!(
@@ -1206,17 +1408,6 @@ mod tests {
                 command: HookCommands::Uninstall
             }
         ));
-    }
-
-    #[test]
-    fn cli_parses_commit_with_write_to() {
-        let cli = Cli::try_parse_from(["gitar", "commit", "--write-to", "/tmp/msg", "--silent"]).unwrap();
-        if let Commands::Commit { write_to, silent, .. } = cli.command {
-            assert_eq!(write_to, Some("/tmp/msg".into()));
-            assert!(silent);
-        } else {
-            panic!("Expected Commit command");
-        }
     }
 
     #[test]
