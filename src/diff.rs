@@ -323,19 +323,34 @@ fn alg_think(
     let mut included_files: HashMap<String, bool> = HashMap::new();
     let mut truncated = false;
 
+    let max_hunks_per_file = 3;
+    let mut per_file_count: HashMap<String, usize> = HashMap::new();
+
+
     for hunk in &all_hunks {
+        let count = per_file_count.entry(hunk.file_path.clone()).or_insert(0);
+
+        // Enforce per-file cap
+        if *count >= max_hunks_per_file {
+            continue;
+        }
+
         if output.len() + hunk.content.len() <= header_len + available {
             // Add file header if first hunk from this file
             if !included_files.contains_key(&hunk.file_path) {
                 output.push_str(&format!("--- {} ---\n", hunk.file_path));
                 included_files.insert(hunk.file_path.clone(), true);
             }
+
             output.push_str(&hunk.content);
             output.push('\n');
+
+            *count += 1;
         } else {
             truncated = true;
         }
     }
+
 
     if truncated {
         output.push_str("\n[... additional hunks excluded due to size limit ...]\n");

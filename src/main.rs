@@ -353,11 +353,11 @@ gitar commit --write-to "$COMMIT_MSG_FILE" --silent
 fn apply_smart_diff(raw_diff: &str, think: bool, max_chars: usize, silent: bool) -> Result<String> {
     let algorithm = if think { SmartDiffAlg::Think } else { SmartDiffAlg::Standard };
     let (shaped_diff, stats) = get_llm_diff_preview(raw_diff, None, max_chars, algorithm, false);
-    
+
     if !silent {
         eprintln!("{}", stats.display());
     }
-    
+
     Ok(shaped_diff)
 }
 
@@ -504,7 +504,7 @@ async fn cmd_staged(client: &LlmClient, stream: bool, think: bool) -> Result<()>
     if raw_diff.trim().is_empty() {
         bail!("No staged changes.");
     }
-    
+
     let diff = apply_smart_diff(&raw_diff, think, 100000, false)?;
     let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
     let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt, stream).await?;
@@ -521,7 +521,7 @@ async fn cmd_unstaged(client: &LlmClient, stream: bool, think: bool) -> Result<(
     if raw_diff.trim().is_empty() {
         bail!("No unstaged changes.");
     }
-    
+
     let diff = apply_smart_diff(&raw_diff, think, 100000, false)?;
     let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
     let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt, stream).await?;
@@ -632,11 +632,7 @@ async fn cmd_pr(
     let (diff, stats, commits_text) = if staged {
         let raw_diff = get_diff(None, true, usize::MAX)?;
         let diff = apply_smart_diff(&raw_diff, think, 15000, false)?;
-        (
-            diff,
-            get_diff_stats(None, true)?,
-            "(staged changes)".into(),
-        )
+        (diff, get_diff_stats(None, true)?, "(staged changes)".into())
     } else {
         let diff_target = build_diff_target(base.as_deref(), to.as_deref(), base_branch);
         let range = build_range(base.as_deref(), to.as_deref(), base_branch);
@@ -653,11 +649,7 @@ async fn cmd_pr(
         let raw_diff = get_diff(diff_target_ref, false, usize::MAX)?;
         let diff = apply_smart_diff(&raw_diff, think, 15000, false)?;
 
-        (
-            diff,
-            get_diff_stats(diff_target_ref, false)?,
-            if ct.is_empty() { "(no commits)".into() } else { ct },
-        )
+        (diff, get_diff_stats(diff_target_ref, false)?, if ct.is_empty() { "(no commits)".into() } else { ct })
     };
 
     if diff.trim().is_empty() {
@@ -825,7 +817,7 @@ async fn cmd_version(
     let diff_target_ref = if diff_target.is_empty() { None } else { Some(diff_target.as_str()) };
 
     let raw_diff = get_diff(diff_target_ref, false, usize::MAX)?;
-    
+
     if raw_diff.trim().is_empty() {
         println!("No changes detected.");
         return Ok(());
@@ -924,8 +916,12 @@ fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         if cli.provider.is_some() {
             config.default_provider = Some(p.clone());
         }
-    } else if cli.stream || cli.api_key.is_some() || cli.model.is_some() 
-           || cli.max_tokens.is_some() || cli.temperature.is_some() {
+    } else if cli.stream
+        || cli.api_key.is_some()
+        || cli.model.is_some()
+        || cli.max_tokens.is_some()
+        || cli.temperature.is_some()
+    {
         bail!("Please specify --provider when setting provider-specific options like --stream, --model, --api-key, etc.");
     }
 
@@ -1051,22 +1047,34 @@ fn cmd_diff(
         None
     };
 
+    // -------------------------------------------------------------------------
+    // FIX #1: --compare must print BOTH outputs, not only the stats
+    // FIX #2: avoid printing duplicated headers/stats (include_header true only in compare)
+    // -------------------------------------------------------------------------
     if compare {
         println!("╔══════════════════════════════════════════════════════════════╗");
         println!("║            ALGORITHM COMPARISON                              ║");
         println!("╚══════════════════════════════════════════════════════════════╝\n");
 
         for alg in [SmartDiffAlg::Standard, SmartDiffAlg::Think] {
-            let (_output, stats) = get_llm_diff_preview(
+            let (output, stats) = get_llm_diff_preview(
                 &raw_diff,
                 diff_stats.as_deref(),
                 max_chars,
                 alg,
-                false,
+                true, // show per-alg header in compare mode
             );
 
             println!("{}", stats.display());
-            println!();
+            println!("\n{}\n", "-".repeat(72));
+
+            if stats_only {
+                // stats-only: don't print the shaped diff
+            } else {
+                println!("{}", output);
+            }
+
+            println!("\n{}\n", "=".repeat(72));
         }
 
         println!("Default: standard (file-aware)");
@@ -1081,7 +1089,7 @@ fn cmd_diff(
         diff_stats.as_deref(),
         max_chars,
         alg,
-        true,
+        false, // normal mode: we already print stats; avoid duplicated header
     );
 
     println!("{}\n", stats.display());
@@ -1114,8 +1122,25 @@ async fn main() -> Result<()> {
         bail!("Not a git repository");
     }
 
-    if let Commands::Diff { target, staged, max_chars, think, stats, stats_only, compare } = &cli.command {
-        return cmd_diff(target.clone(), *staged, *max_chars, *think, *stats, *stats_only, *compare);
+    if let Commands::Diff {
+        target,
+        staged,
+        max_chars,
+        think,
+        stats,
+        stats_only,
+        compare,
+    } = &cli.command
+    {
+        return cmd_diff(
+            target.clone(),
+            *staged,
+            *max_chars,
+            *think,
+            *stats,
+            *stats_only,
+            *compare,
+        );
     }
 
     let config = ResolvedConfig::new(
@@ -1166,10 +1191,26 @@ async fn main() -> Result<()> {
             limit,
             delay,
             think,
-        } => cmd_history(&client, from, to, since, until, limit, delay, config.stream, think).await?,
-        Commands::Pr { base, to, staged, think } => {
-            cmd_pr(&client, base, to, &config.base_branch, staged, config.stream, think).await?
+        } => {
+            cmd_history(
+                &client,
+                from,
+                to,
+                since,
+                until,
+                limit,
+                delay,
+                config.stream,
+                think,
+            )
+            .await?
         }
+        Commands::Pr {
+            base,
+            to,
+            staged,
+            think,
+        } => cmd_pr(&client, base, to, &config.base_branch, staged, config.stream, think).await?,
         Commands::Changelog {
             from,
             to,
@@ -1184,22 +1225,35 @@ async fn main() -> Result<()> {
             until,
             staged,
             think,
-        } => cmd_explain(
-            &client,
-            from,
-            to,
-            since,
-            until,
-            &config.base_branch,
-            staged,
-            config.stream,
-            think,
-        )
-        .await?,
-        Commands::Version { base, to, current, think } => {
-            cmd_version(&client, base, to, &config.base_branch, current, config.stream, think).await?
+        } => {
+            cmd_explain(
+                &client,
+                from,
+                to,
+                since,
+                until,
+                &config.base_branch,
+                staged,
+                config.stream,
+                think,
+            )
+            .await?
         }
-        Commands::Init | Commands::Config | Commands::Hook { .. } | Commands::Diff { .. } => unreachable!(),
+        Commands::Version { base, to, current, think } => {
+            cmd_version(
+                &client,
+                base,
+                to,
+                &config.base_branch,
+                current,
+                config.stream,
+                think,
+            )
+            .await?
+        }
+        Commands::Init | Commands::Config | Commands::Hook { .. } | Commands::Diff { .. } => {
+            unreachable!()
+        }
         Commands::Models => cmd_models(&client).await?,
     }
 
@@ -1343,9 +1397,15 @@ mod tests {
 
     #[test]
     fn cli_parses_init_command() {
-        let cli =
-            Cli::try_parse_from(["gitar", "--model", "claude-3", "--base-branch", "develop", "init"])
-                .unwrap();
+        let cli = Cli::try_parse_from([
+            "gitar",
+            "--model",
+            "claude-3",
+            "--base-branch",
+            "develop",
+            "init",
+        ])
+        .unwrap();
         assert!(matches!(cli.command, Commands::Init));
         assert_eq!(cli.model, Some("claude-3".into()));
         assert_eq!(cli.base_branch, Some("develop".into()));
