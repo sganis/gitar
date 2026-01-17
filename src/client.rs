@@ -45,10 +45,6 @@ impl LlmClient {
         &self.model
     }
 
-    pub fn provider(&self) -> &str {
-        &self.provider
-    }
-
     fn is_claude_api(&self) -> bool {
         self.provider == "claude" || self.base_url.contains("anthropic.com")
     }
@@ -224,12 +220,5 @@ mod tests {
         let config = make_config("openai", PROVIDER_OPENAI);
         let client = LlmClient::new(&config).unwrap();
         assert_eq!(client.model(), "test-model");
-    }
-
-    #[test]
-    fn provider_getter_works() {
-        let config = make_config("claude", PROVIDER_CLAUDE);
-        let client = LlmClient::new(&config).unwrap();
-        assert_eq!(client.provider(), "claude");
     }
 }
