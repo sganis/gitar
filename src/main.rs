@@ -8,9 +8,12 @@ mod openai;
 mod prompts;
 mod types;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use clap::{Parser, Subcommand};
+use std::fs;
 use std::io::{self, Write};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 use client::LlmClient;
 use config::{normalize_provider, Config, ResolvedConfig};
@@ -39,6 +42,9 @@ use prompts::*;
     gitar pr develop                # PR description against develop
     gitar pr --staged               # PR from staged changes
     
+    gitar hook install              # Install git hook for auto-commit messages
+    gitar hook uninstall            # Remove gitar git hook
+    
     gitar version v1.0.0            # Version bump since tag"
 )]
 struct Cli {
@@ -62,81 +68,239 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Create a commit with an AI-generated message
+    ///
+    /// By default this will generate a message from staged changes, then run `git commit`.
+    /// Use `-a` to stage all changes first, and `-p` to push after committing.
     Commit {
+        /// Push after committing
         #[arg(short = 'p', long)]
         push: bool,
+
+        /// Stage all changes before committing (`git add -A`)
         #[arg(short = 'a', long)]
         all: bool,
+
+        /// Add AI model/provider tag to the commit message (default: true)
         #[arg(long, default_value = "true")]
         tag: bool,
+
+        /// Do not add AI model/provider tag to the commit message
         #[arg(long = "no-tag")]
         no_tag: bool,
+
+        /// Write commit message to file instead of committing (used by git hooks)
+        #[arg(long, hide = true)]
+        write_to: Option<String>,
+
+        /// Suppress interactive prompts (used by git hooks)
+        #[arg(long, hide = true)]
+        silent: bool,
     },
+
+    /// Generate an AI commit message for currently staged changes
+    ///
+    /// Prints the message to stdout (does not create a commit).
     Staged,
+
+    /// Generate an AI commit message for unstaged working tree changes
+    ///
+    /// Prints the message to stdout (does not create a commit).
     Unstaged,
+
+    /// Describe a range of commits in plain English (does not modify history)
+    ///
+    /// Useful for understanding what happened between two refs or within a time window.
+    /// Note: this command does NOT rewrite commits or create new commits.
     History {
+        /// Starting ref (tag, commit, branch). If omitted, defaults to recent commits.
         #[arg(value_name = "REF")]
         from: Option<String>,
+
+        /// Ending ref (default: HEAD)
         #[arg(long)]
         to: Option<String>,
+
+        /// Only include commits after this date (git date formats supported)
         #[arg(long)]
         since: Option<String>,
+
+        /// Only include commits before this date (git date formats supported)
         #[arg(long)]
         until: Option<String>,
+
+        /// Maximum number of commits to process (default: 50 when no FROM ref is given)
         #[arg(short = 'n', long)]
         limit: Option<usize>,
+
+        /// Delay between API calls in milliseconds (useful to avoid rate limits)
         #[arg(long, default_value = "500")]
         delay: u64,
     },
+
+    /// Generate a pull request description from branch changes
+    ///
+    /// Compares your current HEAD against BASE (or configured base branch).
+    /// Use `--staged` to generate from staged changes only.
     Pr {
+        /// Base ref to compare against (default: configured base branch, e.g. main)
         #[arg(value_name = "REF")]
         base: Option<String>,
+
+        /// Ending ref (default: HEAD)
         #[arg(long)]
         to: Option<String>,
+
+        /// Use staged changes only instead of comparing refs
         #[arg(long)]
         staged: bool,
     },
+
+    /// Generate release notes (changelog) from a commit range
+    ///
+    /// Useful for GitHub Releases. Outputs markdown-ready text.
     Changelog {
+        /// Starting ref (tag, commit, branch)
         #[arg(value_name = "REF")]
         from: Option<String>,
+
+        /// Ending ref (default: HEAD)
         #[arg(long)]
         to: Option<String>,
+
+        /// Only include commits after this date (git date formats supported)
         #[arg(long)]
         since: Option<String>,
+
+        /// Only include commits before this date (git date formats supported)
         #[arg(long)]
         until: Option<String>,
+
+        /// Maximum number of commits to include
         #[arg(short = 'n', long)]
         limit: Option<usize>,
     },
+
+    /// Explain changes in plain English for non-technical stakeholders
+    ///
+    /// Can explain a commit range or staged changes (`--staged`).
     Explain {
+        /// Starting ref (tag, commit, branch)
         #[arg(value_name = "REF")]
         from: Option<String>,
+
+        /// Ending ref (default: HEAD)
         #[arg(long)]
         to: Option<String>,
+
+        /// Only include commits after this date (git date formats supported)
         #[arg(long)]
         since: Option<String>,
+
+        /// Only include commits before this date (git date formats supported)
         #[arg(long)]
         until: Option<String>,
+
+        /// Explain staged changes only (ignores ref range)
         #[arg(long)]
         staged: bool,
     },
+
+    /// Suggest a semantic version bump (major/minor/patch) from changes
+    ///
+    /// Optionally provide the current version to influence the recommendation.
     Version {
+        /// Base ref to compare against (tag, commit, branch)
         #[arg(value_name = "REF")]
         base: Option<String>,
+
+        /// Ending ref (default: HEAD)
         #[arg(long)]
         to: Option<String>,
+
+        /// Current version (e.g. 1.2.3) used to contextualize the bump suggestion
         #[arg(long)]
         current: Option<String>,
     },
+
+    /// Manage git hooks for automatic commit message generation
+    Hook {
+        #[command(subcommand)]
+        command: HookCommands,
+    },
+
+    /// Create or update `~/.gitar.toml` with provider/model defaults
     Init,
+
+    /// Show the resolved configuration and where each value comes from
     Config,
+
+    /// List available models (when the provider exposes a models endpoint)
     Models,
 }
+
+
+#[derive(Subcommand, Clone)]
+enum HookCommands {
+    /// Install the prepare-commit-msg hook
+    Install,
+    /// Uninstall the prepare-commit-msg hook
+    Uninstall,
+}
+
+// =============================================================================
+// HOOK SCRIPTS
+// =============================================================================
+const HOOK_SCRIPT_UNIX: &str = r#"#!/bin/sh
+# gitar-hook: Auto-generated by gitar
+# Generates AI commit messages automatically
+
+# Skip if gitar is not installed
+if ! command -v gitar >/dev/null 2>&1; then
+    exit 0
+fi
+
+COMMIT_MSG_FILE=$1
+COMMIT_SOURCE=$2
+
+# Skip if message was provided via -m, -F, or is a merge/squash
+if [ -n "$COMMIT_SOURCE" ]; then
+    exit 0
+fi
+
+# Generate commit message and write to file
+gitar commit --write-to "$COMMIT_MSG_FILE" --silent --no-tag < /dev/tty
+"#;
+
+const HOOK_SCRIPT_WINDOWS: &str = r#"@echo off
+REM gitar-hook: Auto-generated by gitar
+REM Generates AI commit messages automatically
+
+REM Check if gitar is installed
+where gitar >nul 2>nul
+if %errorlevel% neq 0 exit /b 0
+
+set COMMIT_MSG_FILE=%1
+set COMMIT_SOURCE=%2
+
+REM Skip if message was provided via -m or -F
+if not "%COMMIT_SOURCE%"=="" exit /b 0
+
+REM Generate commit message and write to file
+gitar commit --write-to "%COMMIT_MSG_FILE%" --silent --no-tag
+"#;
 
 // =============================================================================
 // COMMANDS
 // =============================================================================
-async fn cmd_commit(client: &LlmClient, push: bool, all: bool, tag: bool) -> Result<()> {
+async fn cmd_commit(
+    client: &LlmClient,
+    push: bool,
+    all: bool,
+    tag: bool,
+    write_to: Option<String>,
+    silent: bool,
+) -> Result<()> {
     let staged = run_git(&["diff", "--cached"]).unwrap_or_default();
     let unstaged = run_git(&["diff"]).unwrap_or_default();
 
@@ -150,15 +314,30 @@ async fn cmd_commit(client: &LlmClient, push: bool, all: bool, tag: bool) -> Res
     }
 
     if diff.trim().is_empty() {
-        println!("Nothing to commit.");
+        if !silent {
+            println!("Nothing to commit.");
+        }
         return Ok(());
     }
 
     let diff = truncate_diff(diff, 100000);
 
+    // Hook mode: generate message and write to file
+    if let Some(ref output_file) = write_to {
+        let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
+        let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await?;
+        fs::write(output_file, format!("{}\n", msg.trim()))?;
+        return Ok(());
+    }
+
+    // Interactive mode
     let commit_message = loop {
         let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
         let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await?;
+
+        if silent {
+            break msg;
+        }
 
         println!("\n{}\n", msg);
         println!("{}", "=".repeat(50));
@@ -185,11 +364,11 @@ async fn cmd_commit(client: &LlmClient, push: bool, all: bool, tag: bool) -> Res
     };
 
     if all {
-        println!("Staging all...");
+        if !silent { println!("Staging all..."); }
         run_git(&["add", "-A"])?;
     }
 
-    println!("Committing...");
+    if !silent { println!("Committing..."); }
     let full_msg = if tag {
         format!("{} [AI:{}]", commit_message, client.model())
     } else {
@@ -201,17 +380,17 @@ async fn cmd_commit(client: &LlmClient, push: bool, all: bool, tag: bool) -> Res
     } else {
         run_git_status(&["commit", "-m", &full_msg])
     };
-    println!("{}{}", out, err);
+    if !silent { println!("{}{}", out, err); }
 
     if !ok {
-        println!("Commit failed.");
+        if !silent { println!("Commit failed."); }
         return Ok(());
     }
 
     if push {
-        println!("Pushing...");
+        if !silent { println!("Pushing..."); }
         let (o, e, _) = run_git_status(&["push"]);
-        println!("{}{}", o, e);
+        if !silent { println!("{}{}", o, e); }
     }
 
     Ok(())
@@ -495,6 +674,84 @@ async fn cmd_version(
     Ok(())
 }
 
+fn cmd_hook(command: HookCommands) -> Result<()> {
+    let git_dir = get_git_dir().context("Not in a git repository")?;
+    let hooks_dir = git_dir.join("hooks");
+
+    // Create hooks directory if it doesn't exist
+    if !hooks_dir.exists() {
+        fs::create_dir_all(&hooks_dir)?;
+    }
+
+    // Determine filename and script content based on OS
+    let (hook_filename, script_content) = if cfg!(windows) {
+        ("prepare-commit-msg.bat", HOOK_SCRIPT_WINDOWS)
+    } else {
+        ("prepare-commit-msg", HOOK_SCRIPT_UNIX)
+    };
+
+    let hook_path = hooks_dir.join(hook_filename);
+
+    match command {
+        HookCommands::Install => {
+            // Check for existing hook
+            if hook_path.exists() {
+                let existing = fs::read_to_string(&hook_path)?;
+                if existing.contains("gitar-hook") {
+                    println!("Hook already installed at {}", hook_path.display());
+                    return Ok(());
+                }
+                println!("Warning: A {} hook already exists at {}", hook_filename, hook_path.display());
+                println!("To use gitar, either:");
+                println!("  1. Remove the existing hook and run 'gitar hook install' again");
+                println!("  2. Manually add the following to your hook:\n");
+                println!("{}", script_content);
+                return Ok(());
+            }
+
+            // Write the hook script
+            fs::write(&hook_path, script_content)?;
+
+            // Set executable permission on Unix
+            #[cfg(unix)]
+            {
+                let mut perms = fs::metadata(&hook_path)?.permissions();
+                perms.set_mode(0o755);
+                fs::set_permissions(&hook_path, perms)?;
+            }
+
+            println!("Hook installed at {}", hook_path.display());
+            println!();
+            println!("Now when you run 'git commit', gitar will automatically");
+            println!("generate a commit message from your staged changes.");
+            println!();
+            if cfg!(windows) {
+                println!("Try it: git add . & git commit");
+            } else {
+                println!("Try it: git add . && git commit");
+            }
+        }
+        HookCommands::Uninstall => {
+            if !hook_path.exists() {
+                println!("No hook found at {}", hook_path.display());
+                return Ok(());
+            }
+
+            let content = fs::read_to_string(&hook_path)?;
+            if !content.contains("gitar-hook") {
+                println!("The hook at {} was not created by gitar.", hook_path.display());
+                println!("Please remove it manually if needed.");
+                return Ok(());
+            }
+
+            fs::remove_file(&hook_path)?;
+            println!("Hook uninstalled from {}", hook_path.display());
+        }
+    }
+
+    Ok(())
+}
+
 fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
     let mut config = file.clone();
 
@@ -591,6 +848,7 @@ async fn main() -> Result<()> {
     match &cli.command {
         Commands::Init => return cmd_init(&cli, &file_config),
         Commands::Config => return cmd_config(),
+        Commands::Hook { command } => return cmd_hook(command.clone()),
         _ => {}
     }
 
@@ -612,7 +870,9 @@ async fn main() -> Result<()> {
     let client = LlmClient::new(&config)?;
 
     match cli.command {
-        Commands::Commit { push, all, tag, no_tag } => cmd_commit(&client, push, all, tag && !no_tag).await?,
+        Commands::Commit { push, all, tag, no_tag, write_to, silent } => {
+            cmd_commit(&client, push, all, tag && !no_tag, write_to, silent).await?
+        }
         Commands::Staged => cmd_staged(&client).await?,
         Commands::Unstaged => cmd_unstaged(&client).await?,
         Commands::History { from, to, since, until, limit, delay } => {
@@ -626,7 +886,7 @@ async fn main() -> Result<()> {
             cmd_explain(&client, from, to, since, until, &config.base_branch, staged).await?
         }
         Commands::Version { base, to, current } => cmd_version(&client, base, to, &config.base_branch, current).await?,
-        Commands::Init | Commands::Config => unreachable!(),
+        Commands::Init | Commands::Config | Commands::Hook { .. } => unreachable!(),
         Commands::Models => cmd_models(&client).await?,
     }
 
@@ -749,5 +1009,48 @@ mod tests {
         ]).unwrap();
         assert_eq!(cli.provider, Some("groq".into()));
         assert_eq!(cli.api_key, Some("gsk_test123".into()));
+    }
+
+    #[test]
+    fn cli_parses_hook_install() {
+        let cli = Cli::try_parse_from(["gitar", "hook", "install"]).unwrap();
+        assert!(matches!(cli.command, Commands::Hook { command: HookCommands::Install }));
+    }
+
+    #[test]
+    fn cli_parses_hook_uninstall() {
+        let cli = Cli::try_parse_from(["gitar", "hook", "uninstall"]).unwrap();
+        assert!(matches!(cli.command, Commands::Hook { command: HookCommands::Uninstall }));
+    }
+
+    #[test]
+    fn cli_parses_commit_with_write_to() {
+        let cli = Cli::try_parse_from(["gitar", "commit", "--write-to", "/tmp/msg", "--silent"]).unwrap();
+        if let Commands::Commit { write_to, silent, .. } = cli.command {
+            assert_eq!(write_to, Some("/tmp/msg".into()));
+            assert!(silent);
+        } else { panic!("Expected Commit command"); }
+    }
+
+    #[test]
+    fn hook_script_unix_contains_marker() {
+        assert!(HOOK_SCRIPT_UNIX.contains("gitar-hook"));
+    }
+
+    #[test]
+    fn hook_script_windows_contains_marker() {
+        assert!(HOOK_SCRIPT_WINDOWS.contains("gitar-hook"));
+    }
+
+    #[test]
+    fn hook_scripts_skip_when_message_provided() {
+        assert!(HOOK_SCRIPT_UNIX.contains("COMMIT_SOURCE"));
+        assert!(HOOK_SCRIPT_WINDOWS.contains("COMMIT_SOURCE"));
+    }
+
+    #[test]
+    fn hook_scripts_check_gitar_installed() {
+        assert!(HOOK_SCRIPT_UNIX.contains("command -v gitar"));
+        assert!(HOOK_SCRIPT_WINDOWS.contains("where gitar"));
     }
 }

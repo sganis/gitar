@@ -1,5 +1,6 @@
 // src/git.rs
 use anyhow::Result;
+use std::path::PathBuf;
 use std::process::Command;
 
 // =============================================================================
@@ -58,6 +59,18 @@ pub fn is_git_repo() -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+pub fn get_git_dir() -> Option<PathBuf> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--git-dir"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let path_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    Some(PathBuf::from(path_str))
 }
 
 pub fn get_current_branch() -> String {
@@ -475,6 +488,16 @@ mod tests {
     fn is_git_repo_detects_repo() {
         let result = is_git_repo();
         let _ = result;
+    }
+
+    #[test]
+    fn get_git_dir_returns_path_in_repo() {
+        if is_git_repo() {
+            let result = get_git_dir();
+            assert!(result.is_some());
+            let path = result.unwrap();
+            assert!(path.to_string_lossy().contains(".git") || path.to_string_lossy() == ".git");
+        }
     }
 
     #[test]
