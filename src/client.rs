@@ -53,7 +53,7 @@ impl LlmClient {
         self.provider == "gemini" || self.base_url.contains("generativelanguage.googleapis.com")
     }
 
-    pub async fn chat(&self, system: &str, user: &str) -> Result<String> {
+    pub async fn chat(&self, system: &str, user: &str, stream: bool) -> Result<String> {
         if self.is_claude_api() {
             return claude::chat(
                 &self.http,
@@ -64,6 +64,7 @@ impl LlmClient {
                 self.temperature,
                 system,
                 user,
+                stream,
             )
             .await;
         }
@@ -91,6 +92,7 @@ impl LlmClient {
             self.temperature,
             system,
             user,
+            stream,
         )
         .await
     }
@@ -114,7 +116,37 @@ impl LlmClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{PROVIDER_CLAUDE, PROVIDER_GEMINI, PROVIDER_GROQ, PROVIDER_OLLAMA, PROVIDER_OPENAI};
+    use crate::config::ResolvedConfig;
+
+    // Stable, explicit URLs (avoid depending on config constants that might be
+    // provider names rather than URLs).
+    const URL_OPENAI: &str = "https://api.openai.com/v1";
+    const URL_CLAUDE: &str = "https://api.anthropic.com/v1";
+    const URL_GEMINI: &str = "https://generativelanguage.googleapis.com/v1beta";
+    const URL_GROQ: &str = "https://api.groq.com/openai/v1";
+    const URL_OLLAMA: &str = "http://localhost:11434/v1";
+
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
+
+    impl EnvGuard {
+        fn remove(key: &'static str) -> Self {
+            let prev = std::env::var(key).ok();
+            std::env::remove_var(key);
+            Self { key, prev }
+        }
+    }
+
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            match &self.prev {
+                Some(v) => std::env::set_var(self.key, v),
+                None => std::env::remove_var(self.key),
+            }
+        }
+    }
 
     fn make_config(provider: &str, base_url: &str) -> ResolvedConfig {
         ResolvedConfig {
@@ -130,7 +162,9 @@ mod tests {
 
     #[test]
     fn is_claude_api_detects_provider() {
-        let config = make_config("claude", PROVIDER_CLAUDE);
+        let _env = EnvGuard::remove("GITAR_PROXY");
+
+        let config = make_config("claude", URL_OPENAI);
         let client = LlmClient::new(&config).unwrap();
         assert!(client.is_claude_api());
         assert!(!client.is_gemini_api());
@@ -138,14 +172,19 @@ mod tests {
 
     #[test]
     fn is_claude_api_detects_url() {
-        let config = make_config("openai", PROVIDER_CLAUDE);
+        let _env = EnvGuard::remove("GITAR_PROXY");
+
+        let config = make_config("openai", URL_CLAUDE);
         let client = LlmClient::new(&config).unwrap();
         assert!(client.is_claude_api());
+        assert!(!client.is_gemini_api());
     }
 
     #[test]
     fn is_gemini_api_detects_provider() {
-        let config = make_config("gemini", PROVIDER_GEMINI);
+        let _env = EnvGuard::remove("GITAR_PROXY");
+
+        let config = make_config("gemini", URL_OPENAI);
         let client = LlmClient::new(&config).unwrap();
         assert!(client.is_gemini_api());
         assert!(!client.is_claude_api());
@@ -153,14 +192,19 @@ mod tests {
 
     #[test]
     fn is_gemini_api_detects_url() {
-        let config = make_config("openai", PROVIDER_GEMINI);
+        let _env = EnvGuard::remove("GITAR_PROXY");
+
+        let config = make_config("openai", URL_GEMINI);
         let client = LlmClient::new(&config).unwrap();
         assert!(client.is_gemini_api());
+        assert!(!client.is_claude_api());
     }
 
     #[test]
     fn openai_provider_uses_openai_path() {
-        let config = make_config("openai", PROVIDER_OPENAI);
+        let _env = EnvGuard::remove("GITAR_PROXY");
+
+        let config = make_config("openai", URL_OPENAI);
         let client = LlmClient::new(&config).unwrap();
         assert!(!client.is_claude_api());
         assert!(!client.is_gemini_api());
@@ -168,7 +212,9 @@ mod tests {
 
     #[test]
     fn groq_uses_openai_path() {
-        let config = make_config("groq", PROVIDER_GROQ);
+        let _env = EnvGuard::remove("GITAR_PROXY");
+
+        let config = make_config("groq", URL_GROQ);
         let client = LlmClient::new(&config).unwrap();
         assert!(!client.is_claude_api());
         assert!(!client.is_gemini_api());
@@ -176,7 +222,9 @@ mod tests {
 
     #[test]
     fn ollama_uses_openai_path() {
-        let config = make_config("ollama", PROVIDER_OLLAMA);
+        let _env = EnvGuard::remove("GITAR_PROXY");
+
+        let config = make_config("ollama", URL_OLLAMA);
         let client = LlmClient::new(&config).unwrap();
         assert!(!client.is_claude_api());
         assert!(!client.is_gemini_api());
@@ -184,24 +232,40 @@ mod tests {
 
     #[test]
     fn provider_detection_mutually_exclusive() {
+        let _env = EnvGuard::remove("GITAR_PROXY");
+
         let cases = [
-            ("openai", PROVIDER_OPENAI, false, false),
-            ("claude", PROVIDER_CLAUDE, true, false),
-            ("gemini", PROVIDER_GEMINI, false, true),
-            ("groq", PROVIDER_GROQ, false, false),
-            ("ollama", PROVIDER_OLLAMA, false, false),
+            ("openai", URL_OPENAI, false, false),
+            ("claude", URL_CLAUDE, true, false),
+            ("gemini", URL_GEMINI, false, true),
+            ("groq", URL_GROQ, false, false),
+            ("ollama", URL_OLLAMA, false, false),
         ];
 
         for (provider, url, expected_claude, expected_gemini) in cases {
             let config = make_config(provider, url);
             let client = LlmClient::new(&config).unwrap();
-            assert_eq!(client.is_claude_api(), expected_claude, "Claude detection failed for {}", provider);
-            assert_eq!(client.is_gemini_api(), expected_gemini, "Gemini detection failed for {}", provider);
+            assert_eq!(
+                client.is_claude_api(),
+                expected_claude,
+                "Claude detection failed for {} ({})",
+                provider,
+                url
+            );
+            assert_eq!(
+                client.is_gemini_api(),
+                expected_gemini,
+                "Gemini detection failed for {} ({})",
+                provider,
+                url
+            );
         }
     }
 
     #[test]
     fn base_url_strips_trailing_slash() {
+        let _env = EnvGuard::remove("GITAR_PROXY");
+
         let config = ResolvedConfig {
             provider: "openai".into(),
             api_key: None,
@@ -213,11 +277,14 @@ mod tests {
         };
         let client = LlmClient::new(&config).unwrap();
         assert!(!client.base_url.ends_with('/'));
+        assert_eq!(client.base_url, "https://api.openai.com/v1");
     }
 
     #[test]
     fn model_getter_works() {
-        let config = make_config("openai", PROVIDER_OPENAI);
+        let _env = EnvGuard::remove("GITAR_PROXY");
+
+        let config = make_config("openai", URL_OPENAI);
         let client = LlmClient::new(&config).unwrap();
         assert_eq!(client.model(), "test-model");
     }

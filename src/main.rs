@@ -31,19 +31,19 @@ use providers::*;
     gitar changelog v1.0.0          # Release notes since tag
     gitar changelog HEAD~10         # Release notes for last 10 commits
     gitar changelog --since '1 week ago'
-    
+
     gitar history v1.0.0            # Generate messages since tag
     gitar history -n 5              # Generate for last 5 commits
-    
+
     gitar explain v1.0.0            # Explain changes since tag
     gitar explain --staged          # Explain staged changes
-    
+
     gitar pr develop                # PR description against develop
     gitar pr --staged               # PR from staged changes
-    
+
     gitar hook install              # Install git hook for auto-commit messages
     gitar hook uninstall            # Remove gitar git hook
-    
+
     gitar version v1.0.0            # Version bump since tag"
 )]
 struct Cli {
@@ -59,8 +59,18 @@ struct Cli {
     base_url: Option<String>,
     #[arg(long, global = true)]
     base_branch: Option<String>,
-    #[arg(long, global = true, value_parser = ["openai", "claude", "anthropic", "gemini", "google", "groq", "ollama", "local"])]
+    #[arg(
+        long,
+        global = true,
+        value_parser = ["openai", "claude", "anthropic", "gemini", "google", "groq", "ollama", "local"]
+    )]
     provider: Option<String>,
+
+    /// Stream responses to stdout (when supported by the provider).
+    /// Note: git hook mode never streams (hooks expect file output only).
+    #[arg(long, global = true, default_value_t = false)]
+    stream: bool,
+
     #[command(subcommand)]
     command: Commands,
 }
@@ -95,6 +105,11 @@ enum Commands {
         /// Suppress interactive prompts (used by git hooks)
         #[arg(long, hide = true)]
         silent: bool,
+
+        /// Stream (per-command override). If set, enables streaming for this command.
+        /// Global --stream also enables streaming.
+        #[arg(long, default_value = "false")]
+        stream: bool,
     },
 
     /// Generate an AI commit message for currently staged changes
@@ -238,7 +253,6 @@ enum Commands {
     Models,
 }
 
-
 #[derive(Subcommand, Clone)]
 enum HookCommands {
     /// Install the prepare-commit-msg hook
@@ -281,6 +295,7 @@ async fn cmd_commit(
     tag: bool,
     write_to: Option<String>,
     silent: bool,
+    stream: bool,
 ) -> Result<()> {
     let staged = run_git(&["diff", "--cached"]).unwrap_or_default();
     let unstaged = run_git(&["diff"]).unwrap_or_default();
@@ -290,7 +305,9 @@ async fn cmd_commit(
         diff.push_str(&staged);
     }
     if !unstaged.trim().is_empty() {
-        if !diff.is_empty() { diff.push('\n'); }
+        if !diff.is_empty() {
+            diff.push('\n');
+        }
         diff.push_str(&unstaged);
     }
 
@@ -303,10 +320,10 @@ async fn cmd_commit(
 
     let diff = truncate_diff(diff, 100000);
 
-    // Hook mode: generate message and write to file
+    // Hook mode: never stream (hooks expect file output only)
     if let Some(ref output_file) = write_to {
         let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
-        let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await?;
+        let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt, false).await?;
         fs::write(output_file, format!("{}\n", msg.trim()))?;
         return Ok(());
     }
@@ -314,13 +331,22 @@ async fn cmd_commit(
     // Interactive mode
     let commit_message = loop {
         let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
-        let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await?;
+
+        // If we stream, the provider prints tokens as they arrive.
+        let do_stream = stream && !silent;
+        let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt, do_stream).await?;
 
         if silent {
             break msg;
         }
 
-        println!("\n{}\n", msg);
+        if do_stream {
+            // Ensure the next UI lines start on a new line after streaming.
+            println!();
+        } else {
+            println!("\n{}\n", msg);
+        }
+
         println!("{}", "=".repeat(50));
         println!("  [Enter] Accept | [g] Regenerate | [e] Edit | [other] Cancel");
         println!("{}", "=".repeat(50));
@@ -332,7 +358,10 @@ async fn cmd_commit(
 
         match input.trim().to_lowercase().as_str() {
             "" => break msg,
-            "g" => { println!("Regenerating...\n"); continue; }
+            "g" => {
+                println!("Regenerating...\n");
+                continue;
+            }
             "e" => {
                 print!("New message: ");
                 io::stdout().flush()?;
@@ -340,16 +369,24 @@ async fn cmd_commit(
                 io::stdin().read_line(&mut ed)?;
                 break if ed.trim().is_empty() { msg } else { ed.trim().into() };
             }
-            _ => { println!("Canceled."); return Ok(()); }
+            _ => {
+                println!("Canceled.");
+                return Ok(());
+            }
         }
     };
 
     if all {
-        if !silent { println!("Staging all..."); }
+        if !silent {
+            println!("Staging all...");
+        }
         run_git(&["add", "-A"])?;
     }
 
-    if !silent { println!("Committing..."); }
+    if !silent {
+        println!("Committing...");
+    }
+
     let full_msg = if tag {
         format!("{} [AI:{}]", commit_message, client.model())
     } else {
@@ -361,37 +398,57 @@ async fn cmd_commit(
     } else {
         run_git_status(&["commit", "-m", &full_msg])
     };
-    if !silent { println!("{}{}", out, err); }
+    if !silent {
+        println!("{}{}", out, err);
+    }
 
     if !ok {
-        if !silent { println!("Commit failed."); }
+        if !silent {
+            println!("Commit failed.");
+        }
         return Ok(());
     }
 
     if push {
-        if !silent { println!("Pushing..."); }
+        if !silent {
+            println!("Pushing...");
+        }
         let (o, e, _) = run_git_status(&["push"]);
-        if !silent { println!("{}{}", o, e); }
+        if !silent {
+            println!("{}{}", o, e);
+        }
     }
 
     Ok(())
 }
 
-async fn cmd_staged(client: &LlmClient) -> Result<()> {
+async fn cmd_staged(client: &LlmClient, stream: bool) -> Result<()> {
     let diff = get_diff(None, true, 100000)?;
-    if diff.trim().is_empty() { bail!("No staged changes."); }
+    if diff.trim().is_empty() {
+        bail!("No staged changes.");
+    }
     let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
-    let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await?;
-    println!("{}", msg);
+    let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt, stream).await?;
+    if stream {
+        println!();
+    } else {
+        println!("{}", msg);
+    }
     Ok(())
 }
 
-async fn cmd_unstaged(client: &LlmClient) -> Result<()> {
+async fn cmd_unstaged(client: &LlmClient, stream: bool) -> Result<()> {
     let diff = get_diff(None, false, 100000)?;
-    if diff.trim().is_empty() { bail!("No unstaged changes."); }
+    if diff.trim().is_empty() {
+        bail!("No unstaged changes.");
+    }
     let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
-    let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await?;
-    println!("{}", msg);
+    let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt, stream).await?;
+    if stream {
+        println!();
+    } else {
+        println!("{}", msg);
+    }
     Ok(())
 }
 
@@ -403,6 +460,7 @@ async fn cmd_history(
     until: Option<String>,
     limit: Option<usize>,
     delay: u64,
+    stream: bool,
 ) -> Result<()> {
     let limit = match (&from, limit) {
         (Some(_), None) => None,
@@ -440,18 +498,26 @@ async fn cmd_history(
 
         let diff = match get_commit_diff(&c.hash, 12000)? {
             Some(d) if !d.trim().is_empty() => d,
-            _ => { println!("  - No diff"); continue; }
+            _ => {
+                println!("  - No diff");
+                continue;
+            }
         };
 
         let prompt = HISTORY_USER_PROMPT
             .replace("{original_message}", &c.message)
             .replace("{diff}", &diff);
 
-        match client.chat(HISTORY_SYSTEM_PROMPT, &prompt).await {
+        match client.chat(HISTORY_SYSTEM_PROMPT, &prompt, stream).await {
             Ok(r) => {
-                for (j, l) in r.lines().enumerate() {
-                    if !l.trim().is_empty() {
-                        println!("{}{}", if j == 0 { "  - " } else { "    " }, l);
+                if stream {
+                    // streaming already printed tokens; just terminate the line.
+                    println!();
+                } else {
+                    for (j, l) in r.lines().enumerate() {
+                        if !l.trim().is_empty() {
+                            println!("{}{}", if j == 0 { "  - " } else { "    " }, l);
+                        }
                     }
                 }
             }
@@ -472,6 +538,7 @@ async fn cmd_pr(
     to: Option<String>,
     base_branch: &str,
     staged: bool,
+    stream: bool,
 ) -> Result<()> {
     let branch = to.clone().unwrap_or_else(get_current_branch);
     let target_base = base.as_deref().unwrap_or(base_branch);
@@ -479,13 +546,21 @@ async fn cmd_pr(
     println!("PR: {} -> {}\n", branch, target_base);
 
     let (diff, stats, commits_text) = if staged {
-        (get_diff(None, true, 15000)?, get_diff_stats(None, true)?, "(staged changes)".into())
+        (
+            get_diff(None, true, 15000)?,
+            get_diff_stats(None, true)?,
+            "(staged changes)".into(),
+        )
     } else {
         let diff_target = build_diff_target(base.as_deref(), to.as_deref(), base_branch);
         let range = build_range(base.as_deref(), to.as_deref(), base_branch);
 
         let commits = get_commit_logs(Some(20), None, None, range.as_deref())?;
-        let ct = commits.iter().map(|c| format!("- {}", c.message)).collect::<Vec<_>>().join("\n");
+        let ct = commits
+            .iter()
+            .map(|c| format!("- {}", c.message))
+            .collect::<Vec<_>>()
+            .join("\n");
 
         let diff_target_ref = if diff_target.is_empty() { None } else { Some(diff_target.as_str()) };
 
@@ -507,8 +582,12 @@ async fn cmd_pr(
         .replace("{stats}", &stats)
         .replace("{diff}", &diff);
 
-    let r = client.chat(PR_SYSTEM_PROMPT, &prompt).await?;
-    println!("{}", r);
+    let r = client.chat(PR_SYSTEM_PROMPT, &prompt, stream).await?;
+    if stream {
+        println!();
+    } else {
+        println!("{}", r);
+    }
     Ok(())
 }
 
@@ -519,6 +598,7 @@ async fn cmd_changelog(
     since: Option<String>,
     until: Option<String>,
     limit: Option<usize>,
+    stream: bool,
 ) -> Result<()> {
     let limit = match (&from, limit) {
         (Some(_), None) => None,
@@ -560,8 +640,12 @@ async fn cmd_changelog(
         .replace("{count}", &commits.len().to_string())
         .replace("{commits}", &ct);
 
-    let r = client.chat(CHANGELOG_SYSTEM_PROMPT, &prompt).await?;
-    println!("{}", r);
+    let r = client.chat(CHANGELOG_SYSTEM_PROMPT, &prompt, stream).await?;
+    if stream {
+        println!();
+    } else {
+        println!("{}", r);
+    }
     Ok(())
 }
 
@@ -573,6 +657,7 @@ async fn cmd_explain(
     until: Option<String>,
     base_branch: &str,
     staged: bool,
+    stream: bool,
 ) -> Result<()> {
     let display = match (&from, &to, &since, &until) {
         (Some(r), Some(t), _, _) => format!("{}..{}", r, t),
@@ -621,8 +706,12 @@ async fn cmd_explain(
         .replace("{stats}", &stats)
         .replace("{diff}", &diff);
 
-    let r = client.chat(EXPLAIN_SYSTEM_PROMPT, &prompt).await?;
-    println!("{}", r);
+    let r = client.chat(EXPLAIN_SYSTEM_PROMPT, &prompt, stream).await?;
+    if stream {
+        println!();
+    } else {
+        println!("{}", r);
+    }
     Ok(())
 }
 
@@ -632,6 +721,7 @@ async fn cmd_version(
     to: Option<String>,
     base_branch: &str,
     current: Option<String>,
+    stream: bool,
 ) -> Result<()> {
     let current = current.unwrap_or_else(get_current_version);
     println!("Version analysis (current: {})...\n", current);
@@ -646,12 +736,14 @@ async fn cmd_version(
         return Ok(());
     }
 
-    let prompt = VERSION_USER_PROMPT
-        .replace("{version}", &current)
-        .replace("{diff}", &diff);
+    let prompt = VERSION_USER_PROMPT.replace("{version}", &current).replace("{diff}", &diff);
 
-    let r = client.chat(VERSION_SYSTEM_PROMPT, &prompt).await?;
-    println!("{}", r);
+    let r = client.chat(VERSION_SYSTEM_PROMPT, &prompt, stream).await?;
+    if stream {
+        println!();
+    } else {
+        println!("{}", r);
+    }
     Ok(())
 }
 
@@ -667,7 +759,10 @@ fn cmd_hook(command: HookCommands) -> Result<()> {
                     println!("Gitar hook is already installed.");
                     return Ok(());
                 }
-                bail!("A prepare-commit-msg hook already exists at {:?}. Please back it up or delete it first.", hook_path);
+                bail!(
+                    "A prepare-commit-msg hook already exists at {:?}. Please back it up or delete it first.",
+                    hook_path
+                );
             }
 
             fs::write(&hook_path, HOOK_SCRIPT)?;
@@ -704,24 +799,38 @@ fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
     let mut config = file.clone();
 
     // Determine which provider to configure
-    let provider = cli.provider.as_ref()
+    let provider = cli
+        .provider
+        .as_ref()
         .map(|p| normalize_provider(p).to_string());
 
     if let Some(ref p) = provider {
         // Configure specific provider section
         let pc = config.get_provider_mut(p);
-        if cli.api_key.is_some() { pc.api_key = cli.api_key.clone(); }
-        if cli.model.is_some() { pc.model = cli.model.clone(); }
-        if cli.max_tokens.is_some() { pc.max_tokens = cli.max_tokens; }
-        if cli.temperature.is_some() { pc.temperature = cli.temperature; }
-        if cli.base_url.is_some() { pc.base_url = cli.base_url.clone(); }
-        
+        if cli.api_key.is_some() {
+            pc.api_key = cli.api_key.clone();
+        }
+        if cli.model.is_some() {
+            pc.model = cli.model.clone();
+        }
+        if cli.max_tokens.is_some() {
+            pc.max_tokens = cli.max_tokens;
+        }
+        if cli.temperature.is_some() {
+            pc.temperature = cli.temperature;
+        }
+        if cli.base_url.is_some() {
+            pc.base_url = cli.base_url.clone();
+        }
+
         // Always set as default provider
         config.default_provider = Some(p.clone());
     }
 
     // Global settings
-    if cli.base_branch.is_some() { config.base_branch = cli.base_branch.clone(); }
+    if cli.base_branch.is_some() {
+        config.base_branch = cli.base_branch.clone();
+    }
 
     config.save()?;
 
@@ -734,11 +843,19 @@ fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
 
 fn cmd_config() -> Result<()> {
     let config = Config::load();
-    let path = Config::path().map(|p| p.display().to_string()).unwrap_or_else(|| "(unknown)".into());
+    let path = Config::path()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| "(unknown)".into());
 
     println!("Config file: {}\n", path);
-    println!("default_provider: {}", config.default_provider.as_deref().unwrap_or("(not set)"));
-    println!("base_branch:      {}", config.base_branch.as_deref().unwrap_or("(not set)"));
+    println!(
+        "default_provider: {}",
+        config.default_provider.as_deref().unwrap_or("(not set)")
+    );
+    println!(
+        "base_branch:      {}",
+        config.base_branch.as_deref().unwrap_or("(not set)")
+    );
 
     let providers = [
         ("openai", &config.openai, "OPENAI_API_KEY"),
@@ -751,12 +868,26 @@ fn cmd_config() -> Result<()> {
     for (name, pc, env_var) in providers {
         if let Some(p) = pc {
             println!("\n[{}]", name);
-            println!("  api_key:     {}", p.api_key.as_deref()
-                .map(|k| format!("{}...", &k[..8.min(k.len())]))
-                .unwrap_or_else(|| format!("(env: {})", env_var)));
+            println!(
+                "  api_key:     {}",
+                p.api_key
+                    .as_deref()
+                    .map(|k| format!("{}...", &k[..8.min(k.len())]))
+                    .unwrap_or_else(|| format!("(env: {})", env_var))
+            );
             println!("  model:       {}", p.model.as_deref().unwrap_or("(default)"));
-            println!("  max_tokens:  {}", p.max_tokens.map(|t| t.to_string()).unwrap_or_else(|| "(default)".into()));
-            println!("  temperature: {}", p.temperature.map(|t| t.to_string()).unwrap_or_else(|| "(default)".into()));
+            println!(
+                "  max_tokens:  {}",
+                p.max_tokens
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "(default)".into())
+            );
+            println!(
+                "  temperature: {}",
+                p.temperature
+                    .map(|t| t.to_string())
+                    .unwrap_or_else(|| "(default)".into())
+            );
             if let Some(url) = &p.base_url {
                 println!("  base_url:    {}", url);
             }
@@ -818,22 +949,68 @@ async fn main() -> Result<()> {
     let client = LlmClient::new(&config)?;
 
     match cli.command {
-        Commands::Commit { push, all, tag, no_tag, write_to, silent } => {
-            cmd_commit(&client, push, all, tag && !no_tag, write_to, silent).await?
+        Commands::Commit {
+            push,
+            all,
+            tag,
+            no_tag,
+            write_to,
+            silent,
+            stream,
+        } => {
+            // combine global + per-command
+            let do_stream = cli.stream || stream;
+            cmd_commit(
+                &client,
+                push,
+                all,
+                tag && !no_tag,
+                write_to,
+                silent,
+                do_stream,
+            )
+            .await?
         }
-        Commands::Staged => cmd_staged(&client).await?,
-        Commands::Unstaged => cmd_unstaged(&client).await?,
-        Commands::History { from, to, since, until, limit, delay } => {
-            cmd_history(&client, from, to, since, until, limit, delay).await?
+        Commands::Staged => cmd_staged(&client, cli.stream).await?,
+        Commands::Unstaged => cmd_unstaged(&client, cli.stream).await?,
+        Commands::History {
+            from,
+            to,
+            since,
+            until,
+            limit,
+            delay,
+        } => cmd_history(&client, from, to, since, until, limit, delay, cli.stream).await?,
+        Commands::Pr { base, to, staged } => {
+            cmd_pr(&client, base, to, &config.base_branch, staged, cli.stream).await?
         }
-        Commands::Pr { base, to, staged } => cmd_pr(&client, base, to, &config.base_branch, staged).await?,
-        Commands::Changelog { from, to, since, until, limit } => {
-            cmd_changelog(&client, from, to, since, until, limit).await?
+        Commands::Changelog {
+            from,
+            to,
+            since,
+            until,
+            limit,
+        } => cmd_changelog(&client, from, to, since, until, limit, cli.stream).await?,
+        Commands::Explain {
+            from,
+            to,
+            since,
+            until,
+            staged,
+        } => cmd_explain(
+            &client,
+            from,
+            to,
+            since,
+            until,
+            &config.base_branch,
+            staged,
+            cli.stream,
+        )
+        .await?,
+        Commands::Version { base, to, current } => {
+            cmd_version(&client, base, to, &config.base_branch, current, cli.stream).await?
         }
-        Commands::Explain { from, to, since, until, staged } => {
-            cmd_explain(&client, from, to, since, until, &config.base_branch, staged).await?
-        }
-        Commands::Version { base, to, current } => cmd_version(&client, base, to, &config.base_branch, current).await?,
         Commands::Init | Commands::Config | Commands::Hook { .. } => unreachable!(),
         Commands::Models => cmd_models(&client).await?,
     }
@@ -861,7 +1038,26 @@ mod tests {
         if let Commands::Commit { push, all, .. } = cli.command {
             assert!(push);
             assert!(all);
-        } else { panic!("Expected Commit command"); }
+        } else {
+            panic!("Expected Commit command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_commit_with_stream_override() {
+        let cli = Cli::try_parse_from(["gitar", "commit", "--stream"]).unwrap();
+        if let Commands::Commit { stream, .. } = cli.command {
+            assert!(stream);
+        } else {
+            panic!("Expected Commit command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_global_stream_flag() {
+        let cli = Cli::try_parse_from(["gitar", "--stream", "staged"]).unwrap();
+        assert!(cli.stream);
+        assert!(matches!(cli.command, Commands::Staged));
     }
 
     #[test]
@@ -883,14 +1079,24 @@ mod tests {
             assert_eq!(base, Some("develop".into()));
             assert!(to.is_none());
             assert!(!staged);
-        } else { panic!("Expected Pr command"); }
+        } else {
+            panic!("Expected Pr command");
+        }
     }
 
     #[test]
     fn cli_parses_global_options() {
         let cli = Cli::try_parse_from([
-            "gitar", "--model", "gpt-4", "--max-tokens", "2048", "--temperature", "0.5", "staged",
-        ]).unwrap();
+            "gitar",
+            "--model",
+            "gpt-4",
+            "--max-tokens",
+            "2048",
+            "--temperature",
+            "0.5",
+            "staged",
+        ])
+        .unwrap();
         assert_eq!(cli.model, Some("gpt-4".into()));
         assert_eq!(cli.max_tokens, Some(2048));
         assert_eq!(cli.temperature, Some(0.5));
@@ -898,7 +1104,9 @@ mod tests {
 
     #[test]
     fn cli_parses_init_command() {
-        let cli = Cli::try_parse_from(["gitar", "--model", "claude-3", "--base-branch", "develop", "init"]).unwrap();
+        let cli =
+            Cli::try_parse_from(["gitar", "--model", "claude-3", "--base-branch", "develop", "init"])
+                .unwrap();
         assert!(matches!(cli.command, Commands::Init));
         assert_eq!(cli.model, Some("claude-3".into()));
         assert_eq!(cli.base_branch, Some("develop".into()));
@@ -943,18 +1151,16 @@ mod tests {
 
     #[test]
     fn cli_provider_with_model() {
-        let cli = Cli::try_parse_from([
-            "gitar", "--provider", "gemini", "--model", "gemini-2.5-pro", "staged",
-        ]).unwrap();
+        let cli = Cli::try_parse_from(["gitar", "--provider", "gemini", "--model", "gemini-2.5-pro", "staged"])
+            .unwrap();
         assert_eq!(cli.provider, Some("gemini".into()));
         assert_eq!(cli.model, Some("gemini-2.5-pro".into()));
     }
 
     #[test]
     fn cli_provider_with_api_key() {
-        let cli = Cli::try_parse_from([
-            "gitar", "--provider", "groq", "--api-key", "gsk_test123", "staged",
-        ]).unwrap();
+        let cli = Cli::try_parse_from(["gitar", "--provider", "groq", "--api-key", "gsk_test123", "staged"])
+            .unwrap();
         assert_eq!(cli.provider, Some("groq".into()));
         assert_eq!(cli.api_key, Some("gsk_test123".into()));
     }
@@ -962,13 +1168,23 @@ mod tests {
     #[test]
     fn cli_parses_hook_install() {
         let cli = Cli::try_parse_from(["gitar", "hook", "install"]).unwrap();
-        assert!(matches!(cli.command, Commands::Hook { command: HookCommands::Install }));
+        assert!(matches!(
+            cli.command,
+            Commands::Hook {
+                command: HookCommands::Install
+            }
+        ));
     }
 
     #[test]
     fn cli_parses_hook_uninstall() {
         let cli = Cli::try_parse_from(["gitar", "hook", "uninstall"]).unwrap();
-        assert!(matches!(cli.command, Commands::Hook { command: HookCommands::Uninstall }));
+        assert!(matches!(
+            cli.command,
+            Commands::Hook {
+                command: HookCommands::Uninstall
+            }
+        ));
     }
 
     #[test]
@@ -977,7 +1193,9 @@ mod tests {
         if let Commands::Commit { write_to, silent, .. } = cli.command {
             assert_eq!(write_to, Some("/tmp/msg".into()));
             assert!(silent);
-        } else { panic!("Expected Commit command"); }
+        } else {
+            panic!("Expected Commit command");
+        }
     }
 
     #[test]
@@ -988,10 +1206,10 @@ mod tests {
     #[test]
     fn hook_scripts_skip_when_message_provided() {
         assert!(HOOK_SCRIPT.contains("COMMIT_SOURCE"));
-   }
+    }
 
     #[test]
     fn hook_scripts_check_gitar_installed() {
         assert!(HOOK_SCRIPT.contains("command -v gitar"));
-   }
+    }
 }

@@ -71,6 +71,20 @@ pub struct ClaudeRequest {
     pub max_tokens: u32,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub temperature: Option<f32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream: Option<bool>,
+}
+
+// Streaming event chunks (delta-style)
+#[derive(Debug, Deserialize)]
+pub struct ClaudeStreamDelta {
+    //pub r#type: String,
+    pub delta: Option<ClaudeTextDelta>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ClaudeTextDelta {
+    pub text: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -146,8 +160,14 @@ mod tests {
         let req = ChatCompletionRequest {
             model: "gpt-4o".to_string(),
             messages: vec![
-                ChatMessage { role: "system".to_string(), content: "You are helpful.".to_string() },
-                ChatMessage { role: "user".to_string(), content: "Hi".to_string() },
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: "You are helpful.".to_string(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: "Hi".to_string(),
+                },
             ],
             max_tokens: Some(1024),
             max_completion_tokens: None,
@@ -167,7 +187,10 @@ mod tests {
         let json = r#"{"choices": [{"message": {"content": "Hello! How can I help?"}}]}"#;
         let resp: ChatCompletionResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.choices.len(), 1);
-        assert_eq!(resp.choices[0].message.content, Some("Hello! How can I help?".to_string()));
+        assert_eq!(
+            resp.choices[0].message.content,
+            Some("Hello! How can I help?".to_string())
+        );
     }
 
     #[test]
@@ -180,7 +203,8 @@ mod tests {
 
     #[test]
     fn models_response_deserializes() {
-        let json = r#"{"data": [{"id": "gpt-4o"}, {"id": "gpt-5-chat-latest"}, {"id": "gpt-3.5-turbo"}]}"#;
+        let json =
+            r#"{"data": [{"id": "gpt-4o"}, {"id": "gpt-5-chat-latest"}, {"id": "gpt-3.5-turbo"}]}"#;
         let resp: ModelsResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.data.len(), 3);
         assert_eq!(resp.data[0].id, "gpt-4o");
@@ -200,7 +224,10 @@ mod tests {
         let json = r#"{"error": {"message": "Invalid API key"}}"#;
         let err: ApiError = serde_json::from_str(json).unwrap();
         assert!(err.error.is_some());
-        assert_eq!(err.error.unwrap().message, Some("Invalid API key".to_string()));
+        assert_eq!(
+            err.error.unwrap().message,
+            Some("Invalid API key".to_string())
+        );
     }
 
     #[test]
@@ -222,10 +249,14 @@ mod tests {
     fn claude_request_serializes() {
         let req = ClaudeRequest {
             model: "claude-sonnet-4-5-20250929".to_string(),
-            messages: vec![ChatMessage { role: "user".to_string(), content: "Hello".to_string() }],
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+            }],
             system: "You are helpful.".to_string(),
             max_tokens: 1024,
             temperature: Some(0.7),
+            stream: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"model\":\"claude-sonnet-4-5-20250929\""));
@@ -233,6 +264,7 @@ mod tests {
         assert!(json.contains("\"max_tokens\":1024"));
         assert!(json.contains("\"temperature\":0.7"));
         assert!(json.contains("\"role\":\"user\""));
+        assert!(!json.contains("\"stream\""));
     }
 
     #[test]
@@ -243,9 +275,28 @@ mod tests {
             system: "test".to_string(),
             max_tokens: 500,
             temperature: None,
+            stream: None,
         };
         let json = serde_json::to_string(&req).unwrap();
         assert!(!json.contains("temperature"));
+        assert!(!json.contains("\"stream\""));
+    }
+
+    #[test]
+    fn claude_request_serializes_stream_true_when_set() {
+        let req = ClaudeRequest {
+            model: "claude-sonnet-4-5-20250929".to_string(),
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+            }],
+            system: "test".to_string(),
+            max_tokens: 10,
+            temperature: None,
+            stream: Some(true),
+        };
+        let json = serde_json::to_string(&req).unwrap();
+        assert!(json.contains("\"stream\":true"));
     }
 
     #[test]
@@ -253,7 +304,10 @@ mod tests {
         let json = r#"{"content": [{"type": "text", "text": "Hello! How can I help?"}]}"#;
         let resp: ClaudeResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.content.len(), 1);
-        assert_eq!(resp.content[0].text, Some("Hello! How can I help?".to_string()));
+        assert_eq!(
+            resp.content[0].text,
+            Some("Hello! How can I help?".to_string())
+        );
     }
 
     #[test]
@@ -283,10 +337,14 @@ mod tests {
     fn gemini_request_serializes() {
         let req = GeminiGenerateContentRequest {
             system_instruction: Some(GeminiContent {
-                parts: vec![GeminiPart { text: "You are helpful.".to_string() }],
+                parts: vec![GeminiPart {
+                    text: "You are helpful.".to_string(),
+                }],
             }),
             contents: vec![GeminiContent {
-                parts: vec![GeminiPart { text: "Hello".to_string() }],
+                parts: vec![GeminiPart {
+                    text: "Hello".to_string(),
+                }],
             }],
         };
         let json = serde_json::to_string(&req).unwrap();
@@ -301,7 +359,9 @@ mod tests {
         let req = GeminiGenerateContentRequest {
             system_instruction: None,
             contents: vec![GeminiContent {
-                parts: vec![GeminiPart { text: "Hello".to_string() }],
+                parts: vec![GeminiPart {
+                    text: "Hello".to_string(),
+                }],
             }],
         };
         let json = serde_json::to_string(&req).unwrap();
@@ -315,7 +375,15 @@ mod tests {
         assert!(resp.candidates.is_some());
         let candidates = resp.candidates.unwrap();
         assert_eq!(candidates.len(), 1);
-        let text = candidates[0].content.as_ref().unwrap().parts[0].text.clone();
+        let text = candidates[0]
+            .content
+            .as_ref()
+            .unwrap()
+            .parts
+            .first()
+            .unwrap()
+            .text
+            .clone();
         assert_eq!(text, "Hello! How can I help?");
     }
 
