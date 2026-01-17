@@ -159,6 +159,7 @@ mod tests {
             base_url: base_url.into(),
             base_branch: "main".into(),
             stream: false,
+            max_diff_chars: 10_000,
         }
     }
 
@@ -277,6 +278,7 @@ mod tests {
             base_url: "https://api.openai.com/v1/".into(),
             base_branch: "main".into(),
             stream: false,
+            max_diff_chars: 10_000,
         };
         let client = LlmClient::new(&config).unwrap();
         assert!(!client.base_url.ends_with('/'));

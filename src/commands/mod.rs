@@ -1,5 +1,4 @@
 // src/commands/mod.rs
-mod admin;
 mod changelog;
 mod commit;
 mod diff;
@@ -7,8 +6,11 @@ mod explain;
 mod history;
 mod pr;
 mod version;
+mod config;
+mod models;
+mod hook;
 
-pub use admin::{cmd_config, cmd_hook, cmd_init, cmd_models};
+pub use models::cmd_models;
 pub use changelog::cmd_changelog;
 pub use commit::{cmd_commit, cmd_staged, cmd_unstaged};
 pub use diff::cmd_diff;
@@ -16,6 +18,8 @@ pub use explain::cmd_explain;
 pub use history::cmd_history;
 pub use pr::cmd_pr;
 pub use version::cmd_version;
+pub use config::{cmd_init, cmd_config};
+pub use hook::cmd_hook;
 
 use anyhow::Result;
 use crate::diff::{get_llm_diff_preview, DiffAlg};

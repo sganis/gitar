@@ -30,9 +30,9 @@ use clap::{Parser, Subcommand};
 
 DIFF ALGORITHMS:
     --alg 1    Full: complete git diff (ignores --max-chars)
-    --alg 2    Files: selective files, ranked by priority (default)
+    --alg 2    Files: selective files, ranked by priority
     --alg 3    Hunks: selective hunks, ranked by importance
-    --alg 4    Semantic: JSON IR with scored hunks (token-efficient)"
+    --alg 4    Semantic: JSON IR with scored hunks (default)"
 )]
 pub struct Cli {
     #[arg(long, global = true)]
@@ -98,8 +98,8 @@ pub enum Commands {
         #[arg(long, default_value = "false")]
         stream: bool,
 
-        /// Diff algorithm: 1=naive, 2=standard, 3=think, 4=ir
-        #[arg(long, default_value = "2", value_parser = clap::value_parser!(u8).range(1..=4))]
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         alg: u8,
     },
 
@@ -107,8 +107,8 @@ pub enum Commands {
     ///
     /// Prints the message to stdout (does not create a commit).
     Staged {
-        /// Diff algorithm: 1=naive, 2=standard, 3=think, 4=ir
-        #[arg(long, default_value = "2", value_parser = clap::value_parser!(u8).range(1..=4))]
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         alg: u8,
     },
 
@@ -116,8 +116,8 @@ pub enum Commands {
     ///
     /// Prints the message to stdout (does not create a commit).
     Unstaged {
-        /// Diff algorithm: 1=naive, 2=standard, 3=think, 4=ir
-        #[arg(long, default_value = "2", value_parser = clap::value_parser!(u8).range(1..=4))]
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         alg: u8,
     },
 
@@ -150,8 +150,8 @@ pub enum Commands {
         #[arg(long, default_value = "500")]
         delay: u64,
 
-        /// Diff algorithm: 1=naive, 2=standard, 3=think, 4=ir
-        #[arg(long, default_value = "2", value_parser = clap::value_parser!(u8).range(1..=4))]
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         alg: u8,
     },
 
@@ -172,8 +172,8 @@ pub enum Commands {
         #[arg(long)]
         staged: bool,
 
-        /// Diff algorithm: 1=naive, 2=standard, 3=think, 4=ir
-        #[arg(long, default_value = "2", value_parser = clap::value_parser!(u8).range(1..=4))]
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         alg: u8,
     },
 
@@ -201,8 +201,8 @@ pub enum Commands {
         #[arg(short = 'n', long)]
         limit: Option<usize>,
 
-        /// Diff algorithm: 1=naive, 2=standard, 3=think, 4=ir
-        #[arg(long, default_value = "2", value_parser = clap::value_parser!(u8).range(1..=4))]
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         alg: u8,
     },
 
@@ -230,8 +230,8 @@ pub enum Commands {
         #[arg(long)]
         staged: bool,
 
-        /// Diff algorithm: 1=naive, 2=standard, 3=think, 4=ir
-        #[arg(long, default_value = "2", value_parser = clap::value_parser!(u8).range(1..=4))]
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         alg: u8,
     },
 
@@ -251,8 +251,8 @@ pub enum Commands {
         #[arg(long)]
         current: Option<String>,
 
-        /// Diff algorithm: 1=naive, 2=standard, 3=think, 4=ir
-        #[arg(long, default_value = "2", value_parser = clap::value_parser!(u8).range(1..=4))]
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         alg: u8,
     },
 
@@ -356,7 +356,7 @@ mod tests {
     fn cli_parses_commit_default_alg() {
         let cli = Cli::try_parse_from(["gitar", "commit"]).unwrap();
         if let Commands::Commit { alg, .. } = cli.command {
-            assert_eq!(alg, 2);
+            assert_eq!(alg, 4);
         } else {
             panic!("Expected Commit command");
         }
