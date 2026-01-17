@@ -1,10 +1,8 @@
 // src/main.rs
-mod claude;
+mod providers;
 mod client;
 mod config;
-mod gemini;
 mod git;
-mod openai;
 mod prompts;
 mod types;
 
@@ -19,6 +17,7 @@ use client::LlmClient;
 use config::{normalize_provider, Config, ResolvedConfig};
 use git::*;
 use prompts::*;
+use providers::*;
 
 // =============================================================================
 // CLI
