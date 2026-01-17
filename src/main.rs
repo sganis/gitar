@@ -797,11 +797,12 @@ fn cmd_hook(command: HookCommands) -> Result<()> {
 fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
     let mut config = file.clone();
 
-    // Determine which provider to configure
+    // Determine which provider to configure: CLI > existing default
     let provider = cli
         .provider
         .as_ref()
-        .map(|p| normalize_provider(p).to_string());
+        .map(|p| normalize_provider(p).to_string())
+        .or_else(|| config.default_provider.as_ref().map(|p| normalize_provider(p).to_string()));
 
     if let Some(ref p) = provider {
         // Configure specific provider section
@@ -825,8 +826,14 @@ fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
             pc.stream = Some(true);
         }
 
-        // Always set as default provider
-        config.default_provider = Some(p.clone());
+        // Set as default provider if specified via CLI
+        if cli.provider.is_some() {
+            config.default_provider = Some(p.clone());
+        }
+    } else if cli.stream || cli.api_key.is_some() || cli.model.is_some() 
+           || cli.max_tokens.is_some() || cli.temperature.is_some() {
+        // User specified provider-specific options but no provider
+        bail!("Please specify --provider when setting provider-specific options like --stream, --model, --api-key, etc.");
     }
 
     // Global settings
@@ -837,7 +844,11 @@ fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
     config.save()?;
 
     if let Some(p) = &provider {
-        println!("Default provider set to: {}", p);
+        if cli.provider.is_some() {
+            println!("Default provider set to: {}", p);
+        } else {
+            println!("Updated provider: {}", p);
+        }
     }
 
     Ok(())
@@ -965,10 +976,11 @@ async fn main() -> Result<()> {
             no_tag,
             write_to,
             silent,
-            stream,
+            _stream,
         } => {
-            // combine global config + per-command flag
-            let do_stream = stream || config.stream;
+            // no need to stream so small commit message usualy single-line
+            // let do_stream = stream || config.stream;
+            let do_stream = false;
             cmd_commit(
                 &client,
                 push,
