@@ -109,7 +109,66 @@ gitar init --provider ollama --model llama3.2:latest
 
 ---
 
-## 🚀 Automatic Commit Messages (Git Hook)
+## Usage
+
+### Quick reference
+
+```bash
+gitar commit                    # Interactive commit
+gitar commit -a -p              # Stage all, commit, push
+
+gitar staged                    # Message for staged changes
+gitar unstaged                  # Message for unstaged changes
+
+gitar history v1.0.0            # Regenerate messages since tag
+gitar history v1.0.0 --to v1.1.0
+
+gitar changelog v1.0.0          # Release notes since tag
+gitar pr                        # PR description
+gitar explain                   # Explain for non-technical audience
+gitar version                   # Suggest version bump
+gitar models                    # List available models (when supported)
+
+gitar hook install              # Install git commit hook
+
+gitar diff --compare            # Compare smart diff algorithms side-by-side
+```
+
+---
+
+
+## Using gitar Behind Firewalls (SSH Tunnel / Proxy)
+
+If your machine **does not have direct internet access** (corporate / air-gapped / restricted network), you can still use gitar by tunneling traffic through another machine.
+
+gitar supports **HTTP and SOCKS proxies** via the `ALL_PROXY` environment variable.
+
+On your **local machine**, open a SOCKS proxy tunnel:
+
+```bash
+ssh -N -D 8000 user@machine-with-internet
+```
+
+This opens a local SOCKS5 proxy at:
+
+```
+socks5h://localhost:8000
+```
+
+Now tell gitar to use it:
+
+#### Linux / macOS
+
+```bash
+export ALL_PROXY="socks5h://localhost:8000"
+```
+
+gitar will now route **all LLM API traffic** through the SSH tunnel.
+
+
+---
+
+## Git Hook
 
 gitar can **automatically generate commit messages every time you run `git commit`** by installing a Git hook.
 
@@ -154,78 +213,10 @@ gitar commit --write-to .git/COMMIT_EDITMSG --silent
 
 You can still edit it before saving.
 
-### Windows notes
-
-On Git for Windows:
-
-* Git hooks are executed via Git’s internal shell, not directly by `cmd.exe`
-* gitar installs an extensionless `prepare-commit-msg` entrypoint
-  
-This works transparently even if you use Git from **cmd** or **PowerShell**.
-
 ### Uninstall
 
 Run **gitar uninstall** or simply delete **.git/hooks/prepare-commit-msg** 
 
-
----
-
-## Usage
-
-### Quick reference
-
-```bash
-gitar commit                    # Interactive commit
-gitar commit -a -p              # Stage all, commit, push
-
-gitar staged                    # Message for staged changes
-gitar unstaged                  # Message for unstaged changes
-
-gitar history v1.0.0            # Regenerate messages since tag
-gitar history v1.0.0 --to v1.1.0
-
-gitar changelog v1.0.0          # Release notes since tag
-gitar pr                        # PR description
-gitar explain                   # Explain for non-technical audience
-gitar version                   # Suggest version bump
-gitar models                    # List available models (when supported)
-
-gitar hook install              # Install git commit hook
-
-gitar diff --compare            # Compare smart diff algorithms side-by-side
-```
-
----
-
----
-
-## Using gitar Behind Firewalls (SSH Tunnel / Proxy)
-
-If your machine **does not have direct internet access** (corporate / air-gapped / restricted network), you can still use gitar by tunneling traffic through another machine.
-
-gitar supports **HTTP and SOCKS proxies** via the `ALL_PROXY` environment variable.
-
-On your **local machine**, open a SOCKS proxy tunnel:
-
-```bash
-ssh -N -D 8000 user@machine-with-internet
-```
-
-This opens a local SOCKS5 proxy at:
-
-```
-socks5h://localhost:8000
-```
-
-Now tell gitar to use it:
-
-#### Linux / macOS
-
-```bash
-export ALL_PROXY="socks5h://localhost:8000"
-```
-
-gitar will now route **all LLM API traffic** through the SSH tunnel.
 
 ---
 
