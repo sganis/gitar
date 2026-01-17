@@ -197,6 +197,38 @@ gitar diff --compare            # Compare smart diff algorithms side-by-side
 
 ---
 
+---
+
+## Using gitar Behind Firewalls (SSH Tunnel / Proxy)
+
+If your machine **does not have direct internet access** (corporate / air-gapped / restricted network), you can still use gitar by tunneling traffic through another machine.
+
+gitar supports **HTTP and SOCKS proxies** via the `ALL_PROXY` environment variable.
+
+On your **local machine**, open a SOCKS proxy tunnel:
+
+```bash
+ssh -N -D 8000 user@machine-with-internet
+```
+
+This opens a local SOCKS5 proxy at:
+
+```
+socks5h://localhost:8000
+```
+
+Now tell gitar to use it:
+
+#### Linux / macOS
+
+```bash
+export ALL_PROXY="socks5h://localhost:8000"
+```
+
+gitar will now route **all LLM API traffic** through the SSH tunnel.
+
+---
+
 ## Smart Diff Algorithms (Context Optimization)
 
 Large diffs can blow up context windows and cost tokens. Gitar can **shape** the diff before sending it to your LLM, using one of four algorithms.

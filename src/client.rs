@@ -21,7 +21,7 @@ impl LlmClient {
             .danger_accept_invalid_certs(true)
             .timeout(std::time::Duration::from_secs(120));
 
-        if let Ok(proxy_url) = std::env::var("GITAR_PROXY") {
+        if let Ok(proxy_url) = std::env::var("ALL_PROXY") {
             let proxy_url = proxy_url.trim();
             if !proxy_url.is_empty() {
                 builder = builder.proxy(Proxy::all(proxy_url)?);
@@ -165,7 +165,7 @@ mod tests {
 
     #[test]
     fn is_claude_api_detects_provider() {
-        let _env = EnvGuard::remove("GITAR_PROXY");
+        let _env = EnvGuard::remove("ALL_PROXY");
 
         let config = make_config("claude", URL_OPENAI);
         let client = LlmClient::new(&config).unwrap();
@@ -175,7 +175,7 @@ mod tests {
 
     #[test]
     fn is_claude_api_detects_url() {
-        let _env = EnvGuard::remove("GITAR_PROXY");
+        let _env = EnvGuard::remove("ALL_PROXY");
 
         let config = make_config("openai", URL_CLAUDE);
         let client = LlmClient::new(&config).unwrap();
@@ -185,7 +185,7 @@ mod tests {
 
     #[test]
     fn is_gemini_api_detects_provider() {
-        let _env = EnvGuard::remove("GITAR_PROXY");
+        let _env = EnvGuard::remove("ALL_PROXY");
 
         let config = make_config("gemini", URL_OPENAI);
         let client = LlmClient::new(&config).unwrap();
@@ -195,7 +195,7 @@ mod tests {
 
     #[test]
     fn is_gemini_api_detects_url() {
-        let _env = EnvGuard::remove("GITAR_PROXY");
+        let _env = EnvGuard::remove("ALL_PROXY");
 
         let config = make_config("openai", URL_GEMINI);
         let client = LlmClient::new(&config).unwrap();
@@ -205,7 +205,7 @@ mod tests {
 
     #[test]
     fn openai_provider_uses_openai_path() {
-        let _env = EnvGuard::remove("GITAR_PROXY");
+        let _env = EnvGuard::remove("ALL_PROXY");
 
         let config = make_config("openai", URL_OPENAI);
         let client = LlmClient::new(&config).unwrap();
@@ -215,7 +215,7 @@ mod tests {
 
     #[test]
     fn groq_uses_openai_path() {
-        let _env = EnvGuard::remove("GITAR_PROXY");
+        let _env = EnvGuard::remove("ALL_PROXY");
 
         let config = make_config("groq", URL_GROQ);
         let client = LlmClient::new(&config).unwrap();
@@ -225,7 +225,7 @@ mod tests {
 
     #[test]
     fn ollama_uses_openai_path() {
-        let _env = EnvGuard::remove("GITAR_PROXY");
+        let _env = EnvGuard::remove("ALL_PROXY");
 
         let config = make_config("ollama", URL_OLLAMA);
         let client = LlmClient::new(&config).unwrap();
@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn provider_detection_mutually_exclusive() {
-        let _env = EnvGuard::remove("GITAR_PROXY");
+        let _env = EnvGuard::remove("ALL_PROXY");
 
         let cases = [
             ("openai", URL_OPENAI, false, false),
@@ -267,7 +267,7 @@ mod tests {
 
     #[test]
     fn base_url_strips_trailing_slash() {
-        let _env = EnvGuard::remove("GITAR_PROXY");
+        let _env = EnvGuard::remove("ALL_PROXY");
 
         let config = ResolvedConfig {
             provider: "openai".into(),
@@ -287,7 +287,7 @@ mod tests {
 
     #[test]
     fn model_getter_works() {
-        let _env = EnvGuard::remove("GITAR_PROXY");
+        let _env = EnvGuard::remove("ALL_PROXY");
 
         let config = make_config("openai", URL_OPENAI);
         let client = LlmClient::new(&config).unwrap();
