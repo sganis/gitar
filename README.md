@@ -12,7 +12,7 @@ It supports:
 - **Ollama** (local models)
 - **Any OpenAI-compatible API** (OpenRouter, Together, Mistral, etc.)
 
-The name combines **git** + **AI** + **Rust** (and happens to sound like *guitar*).
+The name combines **Git** + **Ai** + **Rust** (and happens to sound like *guitar*).
 
 ---
 
@@ -147,7 +147,7 @@ On `git commit`:
 * The hook runs:
 
 ```bash
-gitar commit --write-to .git/COMMIT_EDITMSG --silent --no-tag
+gitar commit --write-to .git/COMMIT_EDITMSG --silent
 ```
 
 * Your editor opens with a **ready-to-use AI commit message**
@@ -159,21 +159,14 @@ You can still edit it before saving.
 On Git for Windows:
 
 * Git hooks are executed via Git’s internal shell, not directly by `cmd.exe`
-* gitar installs:
-
-  * An extensionless `prepare-commit-msg` entrypoint
-  * A `prepare-commit-msg.bat` that contains the actual logic
-
+* gitar installs an extensionless `prepare-commit-msg` entrypoint
+  
 This works transparently even if you use Git from **cmd** or **PowerShell**.
 
 ### Uninstall
 
-Simply delete:
+Run **gitar uninstall** or simply delete **.git/hooks/prepare-commit-msg** 
 
-```
-.git/hooks/prepare-commit-msg
-.git/hooks/prepare-commit-msg.bat
-```
 
 ---
 
@@ -206,7 +199,7 @@ gitar diff --compare            # Compare smart diff algorithms side-by-side
 
 ## Smart Diff Algorithms (Context Optimization)
 
-Large diffs can blow up context windows and cost tokens. gitar can **shape** the diff before sending it to your LLM, using one of four algorithms.
+Large diffs can blow up context windows and cost tokens. Gitar can **shape** the diff before sending it to your LLM, using one of four algorithms.
 
 Most commands accept:
 
@@ -225,12 +218,8 @@ Most commands accept:
 * **3 — Selective Hunks**
   Extracts hunks across files, scores them (structural changes, meaningful additions/removals, etc.), then packs the highest scoring hunks first. Includes a per-file cap so one file can’t dominate.
 
-* **4 — Semantic JSON (IR)** *(default)*
-  Produces a compact JSON “intermediate representation” with:
-
-  * a file summary (path, status, adds/dels, priority)
-  * top-ranked hunks with short previews
-    It adaptively shrinks previews / hunk count until it fits the size budget.
+* **4 — Semantic JSON** *(default)*
+  Produces a compact JSON “intermediate representation” with a file summary (path, status, adds/dels, priority) and a top-ranked hunks with short previews. It adaptively shrinks previews / hunk count until it fits the size budget.
 
 ### Examples
 
