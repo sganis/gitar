@@ -3,7 +3,7 @@ use anyhow::Result;
 use reqwest::{Client, Proxy};
 
 use crate::config::ResolvedConfig;
-use crate::{claude, gemini, openai};
+use crate::providers::{claude, gemini, openai};
 
 pub struct LlmClient {
     http: Client,

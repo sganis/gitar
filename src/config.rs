@@ -3,6 +3,9 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
+/// Default max characters for diff context (~14k tokens at 3.5 chars/token)
+pub const DEFAULT_MAX_DIFF_CHARS: usize = 50_000;
+
 // =============================================================================
 // PROVIDER CONSTANTS
 // =============================================================================
@@ -77,6 +80,8 @@ pub struct ProviderConfig {
 pub struct Config {
     pub default_provider: Option<String>,
     pub base_branch: Option<String>,
+    /// Maximum characters to include in diff context for LLM
+    pub max_diff_chars: Option<usize>,
     pub openai: Option<ProviderConfig>,
     pub claude: Option<ProviderConfig>,
     pub gemini: Option<ProviderConfig>,
@@ -139,6 +144,7 @@ pub struct ResolvedConfig {
     pub base_url: String,
     pub base_branch: String,
     pub stream: bool,
+    pub max_diff_chars: usize,
 }
 
 impl ResolvedConfig {
@@ -206,6 +212,9 @@ impl ResolvedConfig {
             .or_else(|| provider_config.and_then(|p| p.stream))
             .unwrap_or(false);
 
+        // Max diff chars: config > default
+        let max_diff_chars = file.max_diff_chars.unwrap_or(DEFAULT_MAX_DIFF_CHARS);
+
         Self {
             provider,
             api_key,
@@ -215,6 +224,7 @@ impl ResolvedConfig {
             base_url,
             base_branch,
             stream,
+            max_diff_chars,
         }
     }
 }
@@ -231,6 +241,7 @@ mod tests {
         let config = Config::default();
         assert!(config.default_provider.is_none());
         assert!(config.base_branch.is_none());
+        assert!(config.max_diff_chars.is_none());
         assert!(config.openai.is_none());
         assert!(config.claude.is_none());
     }
@@ -240,6 +251,7 @@ mod tests {
         let config = Config {
             default_provider: Some("claude".into()),
             base_branch: Some("main".into()),
+            max_diff_chars: Some(30000),
             openai: Some(ProviderConfig {
                 api_key: Some("sk-test123".into()),
                 model: Some("gpt-4o".into()),
@@ -255,6 +267,7 @@ mod tests {
         };
         let toml_str = toml::to_string(&config).unwrap();
         assert!(toml_str.contains("default_provider = \"claude\""));
+        assert!(toml_str.contains("max_diff_chars = 30000"));
         assert!(toml_str.contains("[openai]"));
     }
 
@@ -263,6 +276,7 @@ mod tests {
         let toml_str = r#"
             default_provider = "gemini"
             base_branch = "develop"
+            max_diff_chars = 100000
 
             [openai]
             api_key = "sk-test"
@@ -273,6 +287,7 @@ mod tests {
         "#;
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.default_provider, Some("gemini".into()));
+        assert_eq!(config.max_diff_chars, Some(100000));
         assert!(config.openai.is_some());
         assert!(config.claude.is_some());
     }
@@ -329,6 +344,20 @@ mod tests {
         assert_eq!(resolved.model, "gpt-4o");
         assert_eq!(resolved.base_url, PROVIDER_OPENAI);
         assert!(!resolved.stream);
+        assert_eq!(resolved.max_diff_chars, DEFAULT_MAX_DIFF_CHARS);
+    }
+
+    #[test]
+    fn resolved_config_uses_max_diff_chars_from_config() {
+        let file = Config {
+            max_diff_chars: Some(25000),
+            ..Default::default()
+        };
+        let resolved = ResolvedConfig::new(
+            None, None, None, None, None, None, None, None,
+            &file, || "main".into(),
+        );
+        assert_eq!(resolved.max_diff_chars, 25000);
     }
 
     #[test]
