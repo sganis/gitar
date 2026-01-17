@@ -551,6 +551,34 @@ gitar --provider ollama --model llama3.2 commit -a
 
 ---
 
+## Project Structure
+```
+src/
+├── main.rs      CLI definition, command handlers, entry point
+├── config.rs    Configuration loading, provider constants, settings resolution
+├── client.rs    LlmClient - routes requests to appropriate provider
+├── git.rs       Git operations: diff, logs, branches, version detection
+├── prompts.rs   System and user prompt templates for all commands
+├── types.rs     API request/response structs for all providers
+├── openai.rs    OpenAI-compatible API (also used by Groq, Ollama)
+├── claude.rs    Anthropic Claude API
+└── gemini.rs    Google Gemini API
+```
+
+| File | Description |
+|------|-------------|
+| `main.rs` | CLI parsing with clap, command implementations, async entry point |
+| `config.rs` | Loads `~/.gitar.toml`, resolves config priority (CLI > env > file), provider URL mapping |
+| `client.rs` | Unified `LlmClient` that detects provider from URL and delegates to appropriate module |
+| `git.rs` | Wrappers for git commands, diff truncation, commit log parsing, exclude patterns |
+| `prompts.rs` | Prompt constants for commit, PR, changelog, explain, and version commands |
+| `types.rs` | Serde structs for OpenAI, Claude, and Gemini API request/response formats |
+| `openai.rs` | OpenAI chat completions with reasoning model auto-detection and retry logic |
+| `claude.rs` | Anthropic Messages API with proper headers and response parsing |
+| `gemini.rs` | Google Generative AI API with URL/model path normalization |
+
+--- 
+
 ## License
 
 MIT

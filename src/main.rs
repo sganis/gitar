@@ -1,360 +1,25 @@
-// gitar - AI-powered Git assistant
 // src/main.rs
-mod tests;
-use anyhow::{bail, Context, Result};
+mod claude;
+mod client;
+mod config;
+mod gemini;
+mod git;
+mod openai;
+mod prompts;
+mod types;
+
+use anyhow::{bail, Result};
 use clap::{Parser, Subcommand};
-use reqwest::{Client, Proxy};
-use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
-use std::path::PathBuf;
-use std::process::Command;
-use std::sync::{LazyLock, Mutex};
-use std::collections::HashSet;
 
-// =============================================================================
-// PROVIDER CONSTANTS (add near the top, after REASONING_MODELS)
-// =============================================================================
-const PROVIDER_OPENAI: &str = "https://api.openai.com/v1";
-const PROVIDER_CLAUDE: &str = "https://api.anthropic.com/v1";
-const PROVIDER_GEMINI: &str = "https://generativelanguage.googleapis.com";
-const PROVIDER_GROQ: &str = "https://api.groq.com/openai/v1";
-const PROVIDER_OLLAMA: &str = "http://localhost:11434/v1";
-
-fn provider_to_url(provider: &str) -> Option<&'static str> {
-    match provider.to_lowercase().as_str() {
-        "openai" => Some(PROVIDER_OPENAI),
-        "claude" | "anthropic" => Some(PROVIDER_CLAUDE),
-        "gemini" | "google" => Some(PROVIDER_GEMINI),
-        "groq" => Some(PROVIDER_GROQ),
-        "ollama" | "local" => Some(PROVIDER_OLLAMA),
-        _ => None,
-    }
-}
-
-static REASONING_MODELS: LazyLock<Mutex<HashSet<String>>> = 
-    LazyLock::new(|| Mutex::new(HashSet::new()));
-
-// =============================================================================
-// CONFIG FILE
-// =============================================================================
-
-const CONFIG_FILENAME: &str = ".gitar.toml";
-
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-struct Config {
-    api_key: Option<String>,
-    model: Option<String>,
-    max_tokens: Option<u32>,
-    temperature: Option<f32>,
-    base_url: Option<String>,
-    base_branch: Option<String>,
-}
-
-impl Config {
-    fn path() -> Option<PathBuf> {
-        dirs::home_dir().map(|h| h.join(CONFIG_FILENAME))
-    }
-
-    fn load() -> Self {
-        Self::path()
-            .and_then(|p| std::fs::read_to_string(&p).ok())
-            .and_then(|s| toml::from_str(&s).ok())
-            .unwrap_or_default()
-    }
-
-    fn save(&self) -> Result<()> {
-        let path = Self::path().context("Could not determine home directory")?;
-        let content = toml::to_string_pretty(self).context("Failed to serialize config")?;
-        std::fs::write(&path, content).context("Failed to write config file")?;
-        println!("Config saved to: {}", path.display());
-        Ok(())
-    }
-}
-
-// =============================================================================
-// OPENAI API TYPES
-// =============================================================================
-#[derive(Debug, Clone, Serialize)]
-struct ChatMessage {
-    role: String,
-    content: String,
-}
-
-#[derive(Debug, Serialize)]
-struct ChatCompletionRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    max_completion_tokens: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    temperature: Option<f32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChatCompletionResponse {
-    choices: Vec<ChatChoice>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChatChoice {
-    message: ChatMessageResponse,
-}
-
-#[derive(Debug, Deserialize)]
-struct ChatMessageResponse {
-    content: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ModelsResponse {
-    data: Vec<ModelInfo>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ModelInfo {
-    id: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct ApiError {
-    error: Option<ApiErrorDetail>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ApiErrorDetail {
-    message: Option<String>,
-}
-
-// CLAUDE 
-#[derive(Debug, Serialize)]
-struct ClaudeRequest {
-    model: String,
-    messages: Vec<ChatMessage>,
-    system: String,
-    max_tokens: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    temperature: Option<f32>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ClaudeResponse {
-    content: Vec<ClaudeContent>,
-}
-
-#[derive(Debug, Deserialize)]
-struct ClaudeContent {
-    text: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct GeminiGenerateContentRequest {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    system_instruction: Option<GeminiContent>,
-    contents: Vec<GeminiContent>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct GeminiContent {
-    parts: Vec<GeminiPart>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Clone)]
-struct GeminiPart {
-    text: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GeminiGenerateContentResponse {
-    candidates: Option<Vec<GeminiCandidate>>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GeminiCandidate {
-    content: Option<GeminiContent>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GeminiModelsResponse {
-    models: Vec<GeminiModelInfo>,
-}
-
-#[derive(Debug, Deserialize)]
-struct GeminiModelInfo {
-    name: String, // e.g. "models/gemini-2.5-flash"
-}
-
-// =============================================================================
-// PROMPTS
-// =============================================================================
-
-const HISTORY_SYSTEM_PROMPT: &str = r#"You are an expert software engineer who writes clear, informative Git commit messages.
-
-## Commit Message Format
-<Type>(<scope>):
-<description line 1>
-<description line 2 if needed>
-
-## Types
-- Feat: New feature
-- Fix: Bug fix
-- Refactor: Code restructuring without behavior change
-- Docs: Documentation changes
-- Style: Formatting, whitespace (no code logic change)
-- Test: Adding or modifying tests
-- Chore: Build process, dependencies, config
-- Perf: Performance improvement
-
-## Rules
-1. First line: Type(scope): only, capitalized (no description on this line)
-2. Following lines: describe WHAT changed and WHY
-3. Scale detail to complexity: simple changes get 1-2 lines, complex changes get more
-4. Use imperative mood ("Add" not "Added")
-5. Be specific about impact and reasoning
-6. Use plain ASCII characters only. Do not use emojis or Unicode symbols."#;
-
-const HISTORY_USER_PROMPT: &str = r#"Generate a commit message for this diff.
-First line: Type(scope): only (capitalized, nothing else on this line)
-Following lines: describe what and why (1-5 lines depending on complexity)
-
-**Original message (if any):** {original_message}
-
-**Diff:**
-```
-{diff}
-```
-Respond with ONLY the commit message (no markdown, no extra explanation)."#;
-
-const COMMIT_SYSTEM_PROMPT: &str = r#"You generate clear and informative Git commit messages from diffs.
-
-Rules:
-1. Focus on PURPOSE, not file listings
-2. Ignore build/minified files
-3. No markdown. Use plain ASCII characters only. Do not use emojis or Unicode symbols. Do not use empty lines between lines.
-4. Be specific
-
-Examples:
-"Add user authentication with OAuth2 support"
-"Fix payment timeout with retry logic"
-"Refactor database queries for connection pooling"
-"#;
-
-const COMMIT_USER_PROMPT: &str = r#"Generate a commit message in a single-line.
-```
-{diff}
-```
-Respond with ONLY the commit message. (single-line)"#;
-
-const PR_SYSTEM_PROMPT: &str = r#"Write a PR description.
-
-Use plain ASCII characters only. Do not use emojis or Unicode symbols.
-
-Format:
-## Summary
-Brief overview.
-
-## What Changed
-- Key changes
-
-## Why
-Motivation.
-
-## Risks
-- Issues or "None"
-
-## Testing
-- How tested
-
-## Rollout
-- Deploy notes or "Standard""#;
-
-const PR_USER_PROMPT: &str = r#"Generate PR description.
-
-**Branch:** {branch}
-**Commits:**
-{commits}
-
-**Stats:**
-{stats}
-
-**Diff:**
-```
-{diff}
-```
-"#;
-
-const CHANGELOG_SYSTEM_PROMPT: &str = r#"Create release notes.
-
-Use plain ASCII characters only. Do not use emojis or Unicode symbols.
-
-Format:
-# Release Notes
-## Features
-## Fixes
-## Improvements
-## Breaking Changes
-## Infrastructure
-
-Group related changes, omit empty sections."#;
-
-const CHANGELOG_USER_PROMPT: &str = r#"Generate release notes.
-
-**Range:** {range}
-**Count:** {count}
-
-**Commits:**
-{commits}"#;
-
-const EXPLAIN_SYSTEM_PROMPT: &str = r#"Explain code changes to non-technical stakeholders.
-No jargon, focus on user impact, be brief.
-
-Use plain ASCII characters only. Do not use emojis or Unicode symbols.
-
-Format:
-## What's Changing
-Summary.
-
-## User Impact
-- Effects
-
-## Risk Level
-Low/Medium/High
-
-## Actions
-- QA needed"#;
-
-const EXPLAIN_USER_PROMPT: &str = r#"Explain for non-technical person.
-
-**Stats:**
-{stats}
-
-**Diff:**
-```
-{diff}
-```"#;
-
-const VERSION_SYSTEM_PROMPT: &str = r#"Recommend semantic version bump.
-- MAJOR: Breaking changes
-- MINOR: New features
-- PATCH: Fixes/refactors
-
-Use plain ASCII characters only. Do not use emojis or Unicode symbols.
-
-Output: Recommendation + Reasoning + Breaking: Yes/No"#;
-
-const VERSION_USER_PROMPT: &str = r#"Recommend version bump.
-
-**Current:** {version}
-**Diff:**
-```
-{diff}
-```"#;
+use client::LlmClient;
+use config::{provider_to_url, Config, ResolvedConfig};
+use git::*;
+use prompts::*;
 
 // =============================================================================
 // CLI
 // =============================================================================
-
 #[derive(Parser)]
 #[command(
     name = "gitar",
@@ -377,45 +42,26 @@ const VERSION_USER_PROMPT: &str = r#"Recommend version bump.
     gitar version v1.0.0            # Version bump since tag"
 )]
 struct Cli {
-    /// API key (or set OPENAI_API_KEY / ANTHROPIC_API_KEY env var)
-    #[arg(long, global = true)]  
+    #[arg(long, global = true)]
     api_key: Option<String>,
-
-    /// Model name [default: gpt-5-chat-latest]
     #[arg(long, global = true)]
     model: Option<String>,
-
-    /// Maximum tokens [default: 500]
     #[arg(long, global = true)]
     max_tokens: Option<u32>,
-
-    /// Temperature (0.0-2.0) [default: 0.5]
     #[arg(long, global = true)]
     temperature: Option<f32>,
-
-    /// API base URL
     #[arg(long, env = "OPENAI_BASE_URL", global = true)]
     base_url: Option<String>,
-
-    /// Default base branch
     #[arg(long, global = true)]
     base_branch: Option<String>,
-
-    /// Provider shortcut: openai, claude, gemini, groq, ollama
-    #[arg(
-        long,
-        global = true,
-        value_parser = ["openai", "claude", "anthropic", "gemini", "google", "groq", "ollama", "local"]
-    )]
+    #[arg(long, global = true, value_parser = ["openai", "claude", "anthropic", "gemini", "google", "groq", "ollama", "local"])]
     provider: Option<String>,
-
     #[command(subcommand)]
     command: Commands,
 }
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Interactive commit with AI message
     Commit {
         #[arg(short = 'p', long)]
         push: bool,
@@ -426,771 +72,70 @@ enum Commands {
         #[arg(long = "no-tag")]
         no_tag: bool,
     },
-
-    /// Generate commit message for staged changes
     Staged,
-
-    /// Generate commit message for unstaged changes
     Unstaged,
-
-    /// Generate messages for commit history
     History {
-        /// Starting point (tag, commit, branch)
         #[arg(value_name = "REF")]
         from: Option<String>,
-        /// Ending point (default: HEAD)
         #[arg(long)]
         to: Option<String>,
-        /// Commits newer than date
         #[arg(long)]
         since: Option<String>,
-        /// Commits older than date
         #[arg(long)]
         until: Option<String>,
-        /// Max commits (default: 50 if no REF)
         #[arg(short = 'n', long)]
         limit: Option<usize>,
-        /// Delay between API calls (ms)
         #[arg(long, default_value = "500")]
         delay: u64,
     },
-
-    /// Generate PR description
     Pr {
-        /// Base ref to compare against (tag, commit, branch)
         #[arg(value_name = "REF")]
         base: Option<String>,
-        /// Ending point (default: current branch)
         #[arg(long)]
         to: Option<String>,
-        /// Use staged changes only
         #[arg(long)]
         staged: bool,
     },
-
-    /// Generate changelog / release notes
     Changelog {
-        /// Starting point (tag, commit, branch)
         #[arg(value_name = "REF")]
         from: Option<String>,
-        /// Ending point (default: HEAD)
         #[arg(long)]
         to: Option<String>,
-        /// Commits newer than date
         #[arg(long)]
         since: Option<String>,
-        /// Commits older than date
         #[arg(long)]
         until: Option<String>,
-        /// Max commits (default: 50 if no REF)
         #[arg(short = 'n', long)]
         limit: Option<usize>,
     },
-
-    /// Explain changes for non-technical stakeholders
     Explain {
-        /// Starting point (tag, commit, branch)
         #[arg(value_name = "REF")]
         from: Option<String>,
-        /// Ending point (default: HEAD)
         #[arg(long)]
         to: Option<String>,
-        /// Changes newer than date
         #[arg(long)]
         since: Option<String>,
-        /// Changes older than date
         #[arg(long)]
         until: Option<String>,
-        /// Use staged changes only
         #[arg(long)]
         staged: bool,
     },
-
-    /// Suggest semantic version bump
     Version {
-        /// Base ref to compare against (tag, commit, branch)
         #[arg(value_name = "REF")]
         base: Option<String>,
-        /// Ending point (default: HEAD)
         #[arg(long)]
         to: Option<String>,
-        /// Current version (default: from tags)
         #[arg(long)]
         current: Option<String>,
     },
-
-    /// Save options to config file (~/.gitar.toml)
     Init,
-
-    /// Show current config
     Config,
-
-    /// List available models
     Models,
-}
-
-struct ResolvedConfig {
-    api_key: Option<String>,
-    model: String,
-    max_tokens: u32,
-    temperature: f32,
-    base_url: String,
-    base_branch: String,
-}
-
-impl ResolvedConfig {
-    fn new(cli: &Cli, file: &Config) -> Self {
-        // Resolve provider to URL, CLI provider takes precedence
-        let provider_url = cli.provider.as_ref()
-            .and_then(|p| provider_to_url(p).map(String::from));
-
-        let base_url = provider_url
-            .or_else(|| cli.base_url.clone())
-            .or_else(|| file.base_url.clone())
-            .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-
-        let is_claude = base_url.contains("anthropic.com");
-        let is_groq = base_url.contains("api.groq.com");
-        let is_gemini = base_url.contains("generativelanguage.googleapis.com");
-
-        let default_model = if is_claude {
-            "claude-sonnet-4-5-20250929"
-        } else if is_gemini {
-            "gemini-2.5-flash"
-        } else {
-            "gpt-5-chat-latest"
-        };
-
-        // Priority: CLI > env var > config file
-        let env_api_key = if is_claude {
-            std::env::var("ANTHROPIC_API_KEY").ok()
-        } else if is_groq {
-            std::env::var("GROQ_API_KEY").ok()
-                .or_else(|| std::env::var("OPENAI_API_KEY").ok())
-        } else if is_gemini {
-            std::env::var("GEMINI_API_KEY").ok()
-        } else {
-            std::env::var("OPENAI_API_KEY").ok()
-        };
-
-        let api_key = cli.api_key.clone()
-            .or(env_api_key)
-            .or_else(|| file.api_key.clone());
-
-        Self {
-            api_key,
-            model: cli.model.clone()
-                .or_else(|| file.model.clone())
-                .unwrap_or_else(|| default_model.to_string()),
-            max_tokens: cli.max_tokens.or(file.max_tokens).unwrap_or(500),
-            temperature: cli.temperature.or(file.temperature).unwrap_or(0.5),
-            base_url,
-            base_branch: cli.base_branch.clone()
-                .or_else(|| file.base_branch.clone())
-                .unwrap_or_else(get_default_branch),
-        }
-    }
-}
-
-// =============================================================================
-// LLM CLIENT
-// =============================================================================
-
-struct LlmClient {
-    http: Client,
-    base_url: String,
-    api_key: Option<String>,
-    model: String,
-    max_tokens: u32,
-    temperature: f32,
-}
-
-impl LlmClient {
-    fn new(config: &ResolvedConfig) -> Result<Self> {
-        let mut builder = Client::builder()
-            .danger_accept_invalid_certs(true)
-            .timeout(std::time::Duration::from_secs(120));
-
-        if let Ok(proxy_url) = std::env::var("GITAR_PROXY") {
-            let proxy_url = proxy_url.trim();
-            if !proxy_url.is_empty() {
-                builder = builder.proxy(Proxy::all(proxy_url)?);
-            }
-        }
-
-        let http = builder.build()?;
-
-        Ok(Self {
-            http,
-            base_url: config.base_url.trim_end_matches('/').to_string(),
-            api_key: config.api_key.clone(),
-            model: config.model.clone(),
-            max_tokens: config.max_tokens,
-            temperature: config.temperature,
-        })
-    }
-    
-    fn is_claude_api(&self) -> bool {
-        self.base_url.contains("anthropic.com")
-    }
-    
-    fn is_gemini_api(&self) -> bool {
-        self.base_url.contains("generativelanguage.googleapis.com")
-    }
-
-    
-    async fn chat(&self, system: &str, user: &str) -> Result<String> {
-        if self.is_claude_api() {
-            return self.chat_claude(system, user).await;
-        }
-
-        if self.is_gemini_api() {
-            return self.chat_gemini(system, user).await;
-        }
-
-        let url = format!("{}/chat/completions", self.base_url);
-
-        let is_reasoning_model = REASONING_MODELS
-            .lock()
-            .unwrap()
-            .contains(&self.model);
-
-        let messages = vec![
-            ChatMessage {
-                role: "system".to_string(),
-                content: system.to_string(),
-            },
-            ChatMessage {
-                role: "user".to_string(),
-                content: user.to_string(),
-            },
-        ];
-
-        let request = ChatCompletionRequest {
-            model: self.model.clone(),
-            messages: messages.clone(),
-            max_tokens: if is_reasoning_model { None } else { Some(self.max_tokens) },
-            max_completion_tokens: if is_reasoning_model { Some(self.max_tokens) } else { None },
-            temperature: if is_reasoning_model { None } else { Some(self.temperature) },
-        };
-
-        let response = self.send_chat_request(&url, &request).await;
-
-        // Check if we need to retry as a reasoning model
-        if let Err(e) = &response {
-            let err_str = e.to_string();
-            if (err_str.contains("max_completion_tokens") || err_str.contains("temperature")) 
-                && !is_reasoning_model 
-            {
-                REASONING_MODELS
-                    .lock()
-                    .unwrap()
-                    .insert(self.model.clone());
-
-                let retry_request = ChatCompletionRequest {
-                    model: self.model.clone(),
-                    messages,
-                    max_tokens: None,
-                    max_completion_tokens: Some(self.max_tokens),
-                    temperature: None,
-                };
-
-                return self.send_chat_request(&url, &retry_request).await;
-            }
-        }
-
-        response
-    }
-
-    async fn chat_claude(&self, system: &str, user: &str) -> Result<String> {
-        let url = format!("{}/messages", self.base_url);
-
-        let request = ClaudeRequest {
-            model: self.model.clone(),
-            messages: vec![ChatMessage {
-                role: "user".to_string(),
-                content: user.to_string(),
-            }],
-            system: system.to_string(),
-            max_tokens: self.max_tokens,
-            temperature: Some(self.temperature),
-        };
-
-        let mut req_builder = self.http
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .header("anthropic-version", "2023-06-01");
-
-        if let Some(ref api_key) = self.api_key {
-            req_builder = req_builder.header("x-api-key", api_key);
-        }
-
-        let response = req_builder
-            .json(&request)
-            .send()
-            .await
-            .context("Failed to send request")?;
-
-        let status = response.status();
-        let body = response.text().await.context("Failed to read response body")?;
-
-        if !status.is_success() {
-            if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
-                if let Some(detail) = err.error {
-                    if let Some(msg) = detail.message {
-                        bail!("API error ({}): {}", status, msg);
-                    }
-                }
-            }
-            bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
-        }
-
-        let resp: ClaudeResponse = serde_json::from_str(&body)
-            .context("Failed to parse Claude response")?;
-
-        resp.content
-            .first()
-            .and_then(|c| c.text.as_ref())
-            .map(|s| s.trim().to_string())
-            .context("No response content from Claude API")
-    }
-
-    async fn chat_gemini(&self, system: &str, user: &str) -> Result<String> {
-        let base = self.base_url.trim_end_matches('/');
-
-        let base = if base.ends_with("/v1beta") {
-            base.to_string()
-        } else {
-            format!("{}/v1beta", base)
-        };
-
-        let model_path = if self.model.starts_with("models/") {
-            self.model.clone()
-        } else {
-            format!("models/{}", self.model)
-        };
-
-        let url = format!("{}/{}:generateContent", base, model_path);
-
-        let request = GeminiGenerateContentRequest {
-            system_instruction: if system.trim().is_empty() {
-                None
-            } else {
-                Some(GeminiContent {
-                    parts: vec![GeminiPart { text: system.to_string() }],
-                })
-            },
-            contents: vec![GeminiContent {
-                parts: vec![GeminiPart { text: user.to_string() }],
-            }],
-        };
-
-        let mut req_builder = self.http
-            .post(&url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json");
-
-        if let Some(ref api_key) = self.api_key {
-            req_builder = req_builder.header("X-goog-api-key", api_key);
-        }
-
-        let response = req_builder
-            .json(&request)
-            .send()
-            .await
-            .context("Failed to send request")?;
-
-        let status = response.status();
-        let body = response.text().await.context("Failed to read response body")?;
-
-        if !status.is_success() {
-            if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
-                if let Some(detail) = err.error {
-                    if let Some(msg) = detail.message {
-                        bail!("API error ({}): {}", status, msg);
-                    }
-                }
-            }
-            bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
-        }
-
-        let resp: GeminiGenerateContentResponse = serde_json::from_str(&body)
-            .context("Failed to parse Gemini response")?;
-
-        let text = resp.candidates
-            .as_ref()
-            .and_then(|c| c.first())
-            .and_then(|c| c.content.as_ref())
-            .and_then(|c| c.parts.first())
-            .map(|p| p.text.trim().to_string());
-
-        text.context("No response content from Gemini API")
-    }
-
-    async fn send_chat_request(&self, url: &str, request: &ChatCompletionRequest) -> Result<String> {
-        let mut req_builder = self.http
-            .post(url)
-            .header("Content-Type", "application/json")
-            .header("Accept", "application/json");
-
-        if let Some(ref api_key) = self.api_key {
-            req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
-        }
-
-        let response = req_builder
-            .json(request)
-            .send()
-            .await
-            .context("Failed to send request")?;
-
-        let status = response.status();
-        let body = response.text().await.context("Failed to read response body")?;
-
-        if !status.is_success() {
-            if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
-                if let Some(detail) = err.error {
-                    if let Some(msg) = detail.message {
-                        bail!("API error ({}): {}", status, msg);
-                    }
-                }
-            }
-            bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
-        }
-
-        let resp: ChatCompletionResponse = serde_json::from_str(&body)
-            .context("Failed to parse response")?;
-
-        resp.choices
-            .first()
-            .and_then(|c| c.message.content.as_ref())
-            .map(|s| s.trim().to_string())
-            .context("No response content from API")
-    }
-
-    async fn list_models(&self) -> Result<Vec<String>> {
-        if self.is_gemini_api() {
-            return self.list_models_gemini().await;
-        }
-
-        let url = format!("{}/models", self.base_url);
-
-        let mut req_builder = self.http
-            .get(&url)
-            .header("Accept", "application/json");
-
-        if let Some(ref api_key) = self.api_key {
-            if self.is_claude_api() {
-                req_builder = req_builder
-                    .header("x-api-key", api_key)
-                    .header("anthropic-version", "2023-06-01");
-            } else {
-                req_builder = req_builder.header("Authorization", format!("Bearer {}", api_key));
-            }
-        }
-
-        let response = req_builder
-            .send()
-            .await
-            .context("Failed to send request")?;
-
-        let status = response.status();
-        let body = response.text().await.context("Failed to read response body")?;
-
-        if !status.is_success() {
-            if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
-                if let Some(detail) = err.error {
-                    if let Some(msg) = detail.message {
-                        bail!("API error ({}): {}", status, msg);
-                    }
-                }
-            }
-            bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
-        }
-
-        let resp: ModelsResponse = serde_json::from_str(&body)
-            .context("Failed to parse models response")?;
-
-        Ok(resp.data.into_iter().map(|m| m.id).collect())
-    }
-
-    async fn list_models_gemini(&self) -> Result<Vec<String>> {
-        let base = self.base_url.trim_end_matches('/');
-
-        let base = if base.ends_with("/v1beta") {
-            base.to_string()
-        } else {
-            format!("{}/v1beta", base)
-        };
-
-        let url = format!("{}/models", base);
-
-        let mut req_builder = self.http
-            .get(&url)
-            .header("Accept", "application/json");
-
-        if let Some(ref api_key) = self.api_key {
-            req_builder = req_builder.header("X-goog-api-key", api_key);
-        }
-
-        let response = req_builder
-            .send()
-            .await
-            .context("Failed to send request")?;
-
-        let status = response.status();
-        let body = response.text().await.context("Failed to read response body")?;
-
-        if !status.is_success() {
-            if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
-                if let Some(detail) = err.error {
-                    if let Some(msg) = detail.message {
-                        bail!("API error ({}): {}", status, msg);
-                    }
-                }
-            }
-            bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
-        }
-
-        let resp: GeminiModelsResponse = serde_json::from_str(&body)
-            .context("Failed to parse Gemini models response")?;
-
-        Ok(resp.models.into_iter().map(|m| {
-            // convert "models/gemini-2.5-flash" -> "gemini-2.5-flash"
-            m.name.strip_prefix("models/").unwrap_or(&m.name).to_string()
-        }).collect())
-    }
-}
-
-// =============================================================================
-// GIT UTILITIES
-// =============================================================================
-
-const EXCLUDE_PATTERNS: &[&str] = &[
-    ":(exclude)*.lock",
-    ":(exclude)package-lock.json",
-    ":(exclude)yarn.lock",
-    ":(exclude)pnpm-lock.yaml",
-    ":(exclude)dist/*",
-    ":(exclude)build/*",
-    ":(exclude)*.min.js",
-    ":(exclude)*.min.css",
-    ":(exclude)*.map",
-    ":(exclude).env*",
-    ":(exclude)target/*",
-];
-
-fn run_git(args: &[&str]) -> Result<String> {
-    let output = Command::new("git").args(args).output().context("Failed to execute git")?;
-    Ok(String::from_utf8_lossy(&output.stdout).to_string())
-}
-
-fn run_git_status(args: &[&str]) -> (String, String, bool) {
-    match Command::new("git").args(args).output() {
-        Ok(o) => (
-            String::from_utf8_lossy(&o.stdout).to_string(),
-            String::from_utf8_lossy(&o.stderr).to_string(),
-            o.status.success(),
-        ),
-        Err(e) => (String::new(), e.to_string(), false),
-    }
-}
-
-fn is_git_repo() -> bool {
-    Command::new("git")
-        .args(["rev-parse", "--git-dir"])
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-}
-
-pub fn get_current_branch() -> String {
-    // 1) Fast path: works on normal checkouts
-    if let Ok(out) = run_git(&["branch", "--show-current"]) {
-        let b = out.trim().to_string();
-        if !b.is_empty() {
-            return b;
-        }
-    }
-
-    // 2) Fallback: works even when detached (returns "HEAD" in that case)
-    if let Ok(out) = run_git(&["rev-parse", "--abbrev-ref", "HEAD"]) {
-        let b = out.trim().to_string();
-        if !b.is_empty() {
-            return b;
-        }
-    }
-
-    // 3) Last resort: never return empty
-    "HEAD".to_string()
-}
-
-
-fn get_default_branch() -> String {
-    for b in ["main", "master"] {
-        if run_git(&["rev-parse", "--verify", b]).is_ok() {
-            return b.into();
-        }
-    }
-    "main".into()
-}
-
-#[derive(Debug)]
-struct CommitInfo {
-    hash: String,
-    author: String,
-    date: String,
-    message: String,
-}
-
-fn get_commit_logs(
-    limit: Option<usize>,
-    since: Option<&str>,
-    until: Option<&str>,
-    range: Option<&str>,
-) -> Result<Vec<CommitInfo>> {
-    let mut args_vec: Vec<String> = vec![
-        "log".into(),
-        "--pretty=format:%H|%an|%ad|%s".into(),
-        "--date=iso".into(),
-    ];
-
-    if let Some(n) = limit {
-        args_vec.push(format!("-n{}", n));
-    }
-    if let Some(s) = since {
-        args_vec.push(format!("--since={}", s));
-    }
-    if let Some(u) = until {
-        args_vec.push(format!("--until={}", u));
-    }
-    if let Some(r) = range {
-        args_vec.push(r.to_string());
-    }
-
-    let args: Vec<&str> = args_vec.iter().map(|s| s.as_str()).collect();
-    let output = run_git(&args)?;
-
-    Ok(output
-        .lines()
-        .filter(|l| !l.is_empty())
-        .filter_map(|l| {
-            let p: Vec<&str> = l.splitn(4, '|').collect();
-            if p.len() >= 4 {
-                Some(CommitInfo {
-                    hash: p[0].into(),
-                    author: p[1].into(),
-                    date: p[2].into(),
-                    message: p[3].into(),
-                })
-            } else {
-                None
-            }
-        })
-        .collect())
-}
-
-fn get_commit_diff(hash: &str, max_chars: usize) -> Result<Option<String>> {
-    let parent_ref = format!("{}^", hash);
-    let has_parent = run_git(&["rev-parse", &parent_ref]).is_ok();
-
-    let diff = if has_parent {
-        let diff_ref = format!("{}^!", hash);
-        let mut args = vec!["diff", &diff_ref, "--unified=3", "--", "."];
-        args.extend(EXCLUDE_PATTERNS);
-        run_git(&args)?
-    } else {
-        let mut args = vec!["diff-tree", "--patch", "--unified=3", "--root", hash, "--", "."];
-        args.extend(EXCLUDE_PATTERNS);
-        run_git(&args)?
-    };
-
-    if diff.trim().is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(truncate_diff(diff, max_chars)))
-}
-
-fn get_diff(target: Option<&str>, staged: bool, max_chars: usize) -> Result<String> {
-    let mut args = vec!["diff", "--unified=3"];
-    if staged {
-        args.push("--cached");
-    } else if let Some(t) = target {
-        args.push(t);
-    }
-    args.extend(&["--", "."]);
-    args.extend(EXCLUDE_PATTERNS);
-    Ok(truncate_diff(run_git(&args)?, max_chars))
-}
-
-fn get_diff_stats(target: Option<&str>, staged: bool) -> Result<String> {
-    let mut args = vec!["diff", "--stat"];
-    if staged {
-        args.push("--cached");
-    } else if let Some(t) = target {
-        args.push(t);
-    }
-    run_git(&args)
-}
-
-fn get_current_version() -> String {
-    run_git(&["describe", "--tags", "--abbrev=0"])
-        .map(|s| s.trim().to_string())
-        .ok()
-        .filter(|s| !s.is_empty())
-        .unwrap_or_else(|| "0.0.0".into())
-}
-
-fn truncate_diff(diff: String, max: usize) -> String {
-    if diff.len() <= max {
-        return diff;
-    }
-    let mut t = diff[..max].to_string();
-    if let Some(p) = t.rfind("\ndiff --git") {
-        if p > max / 2 {
-            t.truncate(p);
-        }
-    }
-    t.push_str("\n\n[... truncated ...]");
-    t
-}
-
-fn build_range(from: Option<&str>, to: Option<&str>, base_branch: &str) -> Option<String> {
-    let end = to.unwrap_or("HEAD");
-    from.map(|r| format!("{}..{}", r, end))
-        .or_else(|| {
-            let branch = get_current_branch();
-            if branch != base_branch {
-                Some(format!("{}..{}", base_branch, if to.is_some() { end } else { &branch }))
-            } else {
-                None
-            }
-        })
-}
-
-fn build_diff_target(from: Option<&str>, to: Option<&str>, base_branch: &str) -> String {
-    let end = to.unwrap_or("HEAD");
-    match from {
-        Some(r) => format!("{}..{}", r, end),
-        None => {
-            let branch = get_current_branch();
-            if branch != base_branch {
-                format!("{}...{}", base_branch, if to.is_some() { end } else { &branch })
-            } else {
-                let tag = get_current_version();
-                if tag != "0.0.0" {
-                    format!("{}..{}", tag, end)
-                } else {
-                    String::new()
-                }
-            }
-        }
-    }
 }
 
 // =============================================================================
 // COMMANDS
 // =============================================================================
-
 async fn cmd_commit(client: &LlmClient, push: bool, all: bool, tag: bool) -> Result<()> {
     let staged = run_git(&["diff", "--cached"]).unwrap_or_default();
     let unstaged = run_git(&["diff"]).unwrap_or_default();
@@ -1200,9 +145,7 @@ async fn cmd_commit(client: &LlmClient, push: bool, all: bool, tag: bool) -> Res
         diff.push_str(&staged);
     }
     if !unstaged.trim().is_empty() {
-        if !diff.is_empty() {
-            diff.push('\n');
-        }
+        if !diff.is_empty() { diff.push('\n'); }
         diff.push_str(&unstaged);
     }
 
@@ -1229,10 +172,7 @@ async fn cmd_commit(client: &LlmClient, push: bool, all: bool, tag: bool) -> Res
 
         match input.trim().to_lowercase().as_str() {
             "" => break msg,
-            "g" => {
-                println!("Regenerating...\n");
-                continue;
-            }
+            "g" => { println!("Regenerating...\n"); continue; }
             "e" => {
                 print!("New message: ");
                 io::stdout().flush()?;
@@ -1240,10 +180,7 @@ async fn cmd_commit(client: &LlmClient, push: bool, all: bool, tag: bool) -> Res
                 io::stdin().read_line(&mut ed)?;
                 break if ed.trim().is_empty() { msg } else { ed.trim().into() };
             }
-            _ => {
-                println!("Canceled.");
-                return Ok(());
-            }
+            _ => { println!("Canceled."); return Ok(()); }
         }
     };
 
@@ -1254,7 +191,7 @@ async fn cmd_commit(client: &LlmClient, push: bool, all: bool, tag: bool) -> Res
 
     println!("Committing...");
     let full_msg = if tag {
-        format!("{} [AI:{}]", commit_message, client.model)
+        format!("{} [AI:{}]", commit_message, client.model())
     } else {
         commit_message
     };
@@ -1282,9 +219,7 @@ async fn cmd_commit(client: &LlmClient, push: bool, all: bool, tag: bool) -> Res
 
 async fn cmd_staged(client: &LlmClient) -> Result<()> {
     let diff = get_diff(None, true, 100000)?;
-    if diff.trim().is_empty() {
-        bail!("No staged changes.");
-    }
+    if diff.trim().is_empty() { bail!("No staged changes."); }
     let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
     let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await?;
     println!("{}", msg);
@@ -1293,9 +228,7 @@ async fn cmd_staged(client: &LlmClient) -> Result<()> {
 
 async fn cmd_unstaged(client: &LlmClient) -> Result<()> {
     let diff = get_diff(None, false, 100000)?;
-    if diff.trim().is_empty() {
-        bail!("No unstaged changes.");
-    }
+    if diff.trim().is_empty() { bail!("No unstaged changes."); }
     let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
     let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt).await?;
     println!("{}", msg);
@@ -1328,7 +261,6 @@ async fn cmd_history(
     };
 
     println!("Fetching commits ({})...", display);
-
     let commits = get_commit_logs(limit, since.as_deref(), until.as_deref(), range.as_deref())?;
 
     if commits.is_empty() {
@@ -1348,10 +280,7 @@ async fn cmd_history(
 
         let diff = match get_commit_diff(&c.hash, 12000)? {
             Some(d) if !d.trim().is_empty() => d,
-            _ => {
-                println!("  - No diff");
-                continue;
-            }
+            _ => { println!("  - No diff"); continue; }
         };
 
         let prompt = HISTORY_USER_PROMPT
@@ -1390,21 +319,13 @@ async fn cmd_pr(
     println!("PR: {} -> {}\n", branch, target_base);
 
     let (diff, stats, commits_text) = if staged {
-        (
-            get_diff(None, true, 15000)?,
-            get_diff_stats(None, true)?,
-            "(staged changes)".into(),
-        )
+        (get_diff(None, true, 15000)?, get_diff_stats(None, true)?, "(staged changes)".into())
     } else {
         let diff_target = build_diff_target(base.as_deref(), to.as_deref(), base_branch);
         let range = build_range(base.as_deref(), to.as_deref(), base_branch);
 
         let commits = get_commit_logs(Some(20), None, None, range.as_deref())?;
-        let ct = commits
-            .iter()
-            .map(|c| format!("- {}", c.message))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let ct = commits.iter().map(|c| format!("- {}", c.message)).collect::<Vec<_>>().join("\n");
 
         let diff_target_ref = if diff_target.is_empty() { None } else { Some(diff_target.as_str()) };
 
@@ -1428,7 +349,6 @@ async fn cmd_pr(
 
     let r = client.chat(PR_SYSTEM_PROMPT, &prompt).await?;
     println!("{}", r);
-
     Ok(())
 }
 
@@ -1449,7 +369,6 @@ async fn cmd_changelog(
     let end = to.as_deref().unwrap_or("HEAD");
     let range = from.as_ref().map(|r| format!("{}..{}", r, end));
 
-    // Build display string
     let display = match (&from, &to, &since, &until) {
         (Some(r), Some(t), _, _) => format!("{}..{}", r, t),
         (Some(r), None, _, _) => format!("{}..HEAD", r),
@@ -1461,7 +380,6 @@ async fn cmd_changelog(
     };
 
     println!("Changelog for {}...\n", display);
-
     let commits = get_commit_logs(limit, since.as_deref(), until.as_deref(), range.as_deref())?;
 
     if commits.is_empty() {
@@ -1484,7 +402,6 @@ async fn cmd_changelog(
 
     let r = client.chat(CHANGELOG_SYSTEM_PROMPT, &prompt).await?;
     println!("{}", r);
-
     Ok(())
 }
 
@@ -1497,7 +414,6 @@ async fn cmd_explain(
     base_branch: &str,
     staged: bool,
 ) -> Result<()> {
-    // Build display string (same logic as cmd_changelog)
     let display = match (&from, &to, &since, &until) {
         (Some(r), Some(t), _, _) => format!("{}..{}", r, t),
         (Some(r), None, _, _) => format!("{}..HEAD", r),
@@ -1530,16 +446,9 @@ async fn cmd_explain(
         }
 
         let diff_target = build_diff_target(effective_from.as_deref(), to.as_deref(), base_branch);
-        let diff_target_ref = if diff_target.is_empty() {
-            None
-        } else {
-            Some(diff_target.as_str())
-        };
+        let diff_target_ref = if diff_target.is_empty() { None } else { Some(diff_target.as_str()) };
 
-        (
-            get_diff(diff_target_ref, false, 15000)?,
-            get_diff_stats(diff_target_ref, false)?,
-        )
+        (get_diff(diff_target_ref, false, 15000)?, get_diff_stats(diff_target_ref, false)?)
     };
 
     if diff.trim().is_empty() {
@@ -1554,10 +463,8 @@ async fn cmd_explain(
 
     let r = client.chat(EXPLAIN_SYSTEM_PROMPT, &prompt).await?;
     println!("{}", r);
-
     Ok(())
 }
-
 
 async fn cmd_version(
     client: &LlmClient,
@@ -1585,14 +492,12 @@ async fn cmd_version(
 
     let r = client.chat(VERSION_SYSTEM_PROMPT, &prompt).await?;
     println!("{}", r);
-
     Ok(())
 }
 
 fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
     let mut config = file.clone();
 
-    // Resolve provider to URL
     let resolved_url = cli.provider.as_ref()
         .and_then(|p| provider_to_url(p).map(String::from))
         .or_else(|| cli.base_url.clone());
@@ -1615,26 +520,16 @@ fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
 
 fn cmd_config() -> Result<()> {
     let config = Config::load();
-    let path = Config::path()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|| "(unknown)".into());
+    let path = Config::path().map(|p| p.display().to_string()).unwrap_or_else(|| "(unknown)".into());
 
     let base_url = config.base_url.as_deref().unwrap_or("https://api.openai.com/v1");
-    
-    // Detect provider from URL
-    let provider_name = if base_url.contains("anthropic.com") {
-        "claude"
-    } else if base_url.contains("generativelanguage.googleapis.com") {
-        "gemini"
-    } else if base_url.contains("api.groq.com") {
-        "groq"
-    } else if base_url.contains("localhost:11434") || base_url.contains("127.0.0.1:11434") {
-        "ollama"
-    } else if base_url.contains("api.openai.com") {
-        "openai"
-    } else {
-        "custom"
-    };
+
+    let provider_name = if base_url.contains("anthropic.com") { "claude" }
+        else if base_url.contains("generativelanguage.googleapis.com") { "gemini" }
+        else if base_url.contains("api.groq.com") { "groq" }
+        else if base_url.contains("localhost:11434") || base_url.contains("127.0.0.1:11434") { "ollama" }
+        else if base_url.contains("api.openai.com") { "openai" }
+        else { "custom" };
 
     let is_claude = base_url.contains("anthropic.com");
     let is_groq = base_url.contains("api.groq.com");
@@ -1646,37 +541,22 @@ fn cmd_config() -> Result<()> {
         .map(|k| format!("{}...", &k[..8.min(k.len())]))
         .unwrap_or_else(|| "(not set)".into()));
     println!("model:       {}", config.model.as_deref().unwrap_or("(not set)"));
-    println!("max_tokens:  {}", config.max_tokens
-        .map(|t| t.to_string())
-        .unwrap_or_else(|| "(not set)".into()));
-    println!("temperature: {}", config.temperature
-        .map(|t| t.to_string())
-        .unwrap_or_else(|| "(not set)".into()));
+    println!("max_tokens:  {}", config.max_tokens.map(|t| t.to_string()).unwrap_or_else(|| "(not set)".into()));
+    println!("temperature: {}", config.temperature.map(|t| t.to_string()).unwrap_or_else(|| "(not set)".into()));
     println!("base_url:    {} ({})", config.base_url.as_deref().unwrap_or("(not set)"), provider_name);
     println!("base_branch: {}", config.base_branch.as_deref().unwrap_or("(not set)"));
 
     println!("\nPriority: --api-key > env var > config file");
-    println!(
-        "Env vars checked: {}",
-        if is_claude {
-            "ANTHROPIC_API_KEY"
-        } else if is_groq {
-            "GROQ_API_KEY (fallback: OPENAI_API_KEY)"
-        } else if is_gemini {
-            "GEMINI_API_KEY"
-        } else if is_ollama {
-            "(none required)"
-        } else {
-            "OPENAI_API_KEY"
-        }
-    );
+    println!("Env vars checked: {}", if is_claude { "ANTHROPIC_API_KEY" }
+        else if is_groq { "GROQ_API_KEY (fallback: OPENAI_API_KEY)" }
+        else if is_gemini { "GEMINI_API_KEY" }
+        else if is_ollama { "(none required)" }
+        else { "OPENAI_API_KEY" });
     Ok(())
 }
 
-
 async fn cmd_models(client: &LlmClient) -> Result<()> {
     println!("Fetching available models...\n");
-
     let models = client.list_models().await?;
 
     if models.is_empty() {
@@ -1687,14 +567,12 @@ async fn cmd_models(client: &LlmClient) -> Result<()> {
             println!("  {}", model);
         }
     }
-
     Ok(())
 }
 
 // =============================================================================
 // MAIN
 // =============================================================================
-
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
@@ -1702,11 +580,8 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
     let file_config = Config::load();
 
-    // Handle non-git commands first
     match &cli.command {
-        Commands::Init => {
-            return cmd_init(&cli, &file_config);
-        }
+        Commands::Init => return cmd_init(&cli, &file_config),
         Commands::Config => return cmd_config(),
         _ => {}
     }
@@ -1715,33 +590,383 @@ async fn main() -> Result<()> {
         bail!("Not a git repository");
     }
 
-    let config = ResolvedConfig::new(&cli, &file_config);
+    let config = ResolvedConfig::new(
+        cli.api_key.as_ref(),
+        cli.model.as_ref(),
+        cli.max_tokens,
+        cli.temperature,
+        cli.base_url.as_ref(),
+        cli.provider.as_ref(),
+        cli.base_branch.as_ref(),
+        &file_config,
+        get_default_branch,
+    );
     let client = LlmClient::new(&config)?;
 
     match cli.command {
-        Commands::Commit { push, all, tag, no_tag } => {
-            cmd_commit(&client, push, all, tag && !no_tag).await?
-        }
+        Commands::Commit { push, all, tag, no_tag } => cmd_commit(&client, push, all, tag && !no_tag).await?,
         Commands::Staged => cmd_staged(&client).await?,
         Commands::Unstaged => cmd_unstaged(&client).await?,
         Commands::History { from, to, since, until, limit, delay } => {
             cmd_history(&client, from, to, since, until, limit, delay).await?
         }
-        Commands::Pr { base, to, staged } => {
-            cmd_pr(&client, base, to, &config.base_branch, staged).await?
-        }
+        Commands::Pr { base, to, staged } => cmd_pr(&client, base, to, &config.base_branch, staged).await?,
         Commands::Changelog { from, to, since, until, limit } => {
             cmd_changelog(&client, from, to, since, until, limit).await?
         }
         Commands::Explain { from, to, since, until, staged } => {
             cmd_explain(&client, from, to, since, until, &config.base_branch, staged).await?
         }
-        Commands::Version { base, to, current } => {
-            cmd_version(&client, base, to, &config.base_branch, current).await?
-        }
-        Commands::Init { .. } | Commands::Config => unreachable!(),
+        Commands::Version { base, to, current } => cmd_version(&client, base, to, &config.base_branch, current).await?,
+        Commands::Init | Commands::Config => unreachable!(),
         Commands::Models => cmd_models(&client).await?,
     }
 
     Ok(())
+}
+
+// =============================================================================
+// CLI TESTS
+// =============================================================================
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn cli_parses_commit_command() {
+        let cli = Cli::try_parse_from(["gitar", "commit"]).unwrap();
+        assert!(matches!(cli.command, Commands::Commit { .. }));
+    }
+
+    #[test]
+    fn cli_parses_commit_with_flags() {
+        let cli = Cli::try_parse_from(["gitar", "commit", "-p", "-a"]).unwrap();
+        if let Commands::Commit { push, all, .. } = cli.command {
+            assert!(push);
+            assert!(all);
+        } else { panic!("Expected Commit command"); }
+    }
+
+    #[test]
+    fn cli_parses_staged_command() {
+        let cli = Cli::try_parse_from(["gitar", "staged"]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+    }
+
+    #[test]
+    fn cli_parses_unstaged_command() {
+        let cli = Cli::try_parse_from(["gitar", "unstaged"]).unwrap();
+        assert!(matches!(cli.command, Commands::Unstaged));
+    }
+
+    #[test]
+    fn cli_parses_pr_with_base() {
+        let cli = Cli::try_parse_from(["gitar", "pr", "develop"]).unwrap();
+        if let Commands::Pr { base, to, staged } = cli.command {
+            assert_eq!(base, Some("develop".into()));
+            assert!(to.is_none());
+            assert!(!staged);
+        } else { panic!("Expected Pr command"); }
+    }
+
+    #[test]
+    fn cli_parses_pr_with_to() {
+        let cli = Cli::try_parse_from(["gitar", "pr", "main", "--to", "feature/oauth"]).unwrap();
+        if let Commands::Pr { base, to, staged } = cli.command {
+            assert_eq!(base, Some("main".into()));
+            assert_eq!(to, Some("feature/oauth".into()));
+            assert!(!staged);
+        } else { panic!("Expected Pr command"); }
+    }
+
+    #[test]
+    fn cli_parses_changelog_with_ref() {
+        let cli = Cli::try_parse_from(["gitar", "changelog", "v1.0.0"]).unwrap();
+        if let Commands::Changelog { from, to, .. } = cli.command {
+            assert_eq!(from, Some("v1.0.0".into()));
+            assert!(to.is_none());
+        } else { panic!("Expected Changelog command"); }
+    }
+
+    #[test]
+    fn cli_parses_changelog_with_to() {
+        let cli = Cli::try_parse_from(["gitar", "changelog", "v1.0.0", "--to", "v1.0.1"]).unwrap();
+        if let Commands::Changelog { from, to, .. } = cli.command {
+            assert_eq!(from, Some("v1.0.0".into()));
+            assert_eq!(to, Some("v1.0.1".into()));
+        } else { panic!("Expected Changelog command"); }
+    }
+
+    #[test]
+    fn cli_parses_history_with_options() {
+        let cli = Cli::try_parse_from([
+            "gitar", "history", "v1.0.0", "--since", "2024-01-01", "-n", "10", "--delay", "1000",
+        ]).unwrap();
+        if let Commands::History { from, to, since, limit, delay, .. } = cli.command {
+            assert_eq!(from, Some("v1.0.0".into()));
+            assert!(to.is_none());
+            assert_eq!(since, Some("2024-01-01".into()));
+            assert_eq!(limit, Some(10));
+            assert_eq!(delay, 1000);
+        } else { panic!("Expected History command"); }
+    }
+
+    #[test]
+    fn cli_parses_history_with_to() {
+        let cli = Cli::try_parse_from(["gitar", "history", "v1.0.0", "--to", "v1.0.1"]).unwrap();
+        if let Commands::History { from, to, .. } = cli.command {
+            assert_eq!(from, Some("v1.0.0".into()));
+            assert_eq!(to, Some("v1.0.1".into()));
+        } else { panic!("Expected History command"); }
+    }
+
+    #[test]
+    fn cli_parses_global_options() {
+        let cli = Cli::try_parse_from([
+            "gitar", "--model", "gpt-4", "--max-tokens", "2048", "--temperature", "0.5", "staged",
+        ]).unwrap();
+        assert_eq!(cli.model, Some("gpt-4".into()));
+        assert_eq!(cli.max_tokens, Some(2048));
+        assert_eq!(cli.temperature, Some(0.5));
+    }
+
+    #[test]
+    fn cli_parses_version_command() {
+        let cli = Cli::try_parse_from(["gitar", "version", "v1.0.0", "--current", "1.2.3"]).unwrap();
+        if let Commands::Version { base, to, current } = cli.command {
+            assert_eq!(base, Some("v1.0.0".into()));
+            assert!(to.is_none());
+            assert_eq!(current, Some("1.2.3".into()));
+        } else { panic!("Expected Version command"); }
+    }
+
+    #[test]
+    fn cli_parses_version_with_to() {
+        let cli = Cli::try_parse_from(["gitar", "version", "v1.0.0", "--to", "v1.0.1"]).unwrap();
+        if let Commands::Version { base, to, current } = cli.command {
+            assert_eq!(base, Some("v1.0.0".into()));
+            assert_eq!(to, Some("v1.0.1".into()));
+            assert!(current.is_none());
+        } else { panic!("Expected Version command"); }
+    }
+
+    #[test]
+    fn cli_parses_explain_command() {
+        let cli = Cli::try_parse_from(["gitar", "explain", "--staged"]).unwrap();
+        if let Commands::Explain { from, to, since, until, staged } = cli.command {
+            assert!(from.is_none());
+            assert!(to.is_none());
+            assert!(since.is_none());
+            assert!(until.is_none());
+            assert!(staged);
+        } else { panic!("Expected Explain command"); }
+    }
+
+    #[test]
+    fn cli_parses_explain_with_date_filters() {
+        let cli = Cli::try_parse_from([
+            "gitar", "explain", "v1.0.0", "--since", "2024-01-01", "--until", "2024-12-31",
+        ]).unwrap();
+        if let Commands::Explain { from, to, since, until, staged } = cli.command {
+            assert_eq!(from, Some("v1.0.0".into()));
+            assert!(to.is_none());
+            assert_eq!(since, Some("2024-01-01".into()));
+            assert_eq!(until, Some("2024-12-31".into()));
+            assert!(!staged);
+        } else { panic!("Expected Explain command"); }
+    }
+
+    #[test]
+    fn cli_parses_explain_with_to() {
+        let cli = Cli::try_parse_from(["gitar", "explain", "v1.0.0", "--to", "v1.0.1"]).unwrap();
+        if let Commands::Explain { from, to, staged, .. } = cli.command {
+            assert_eq!(from, Some("v1.0.0".into()));
+            assert_eq!(to, Some("v1.0.1".into()));
+            assert!(!staged);
+        } else { panic!("Expected Explain command"); }
+    }
+
+    #[test]
+    fn cli_parses_init_command() {
+        let cli = Cli::try_parse_from(["gitar", "--model", "claude-3", "--base-branch", "develop", "init"]).unwrap();
+        assert!(matches!(cli.command, Commands::Init));
+        assert_eq!(cli.model, Some("claude-3".into()));
+        assert_eq!(cli.base_branch, Some("develop".into()));
+    }
+
+    #[test]
+    fn cli_parses_config_command() {
+        let cli = Cli::try_parse_from(["gitar", "config"]).unwrap();
+        assert!(matches!(cli.command, Commands::Config));
+    }
+
+    #[test]
+    fn cli_parses_models_command() {
+        let cli = Cli::try_parse_from(["gitar", "models"]).unwrap();
+        assert!(matches!(cli.command, Commands::Models));
+    }
+
+    #[test]
+    fn cli_commit_no_tag_flag() {
+        let cli = Cli::try_parse_from(["gitar", "commit", "--no-tag"]).unwrap();
+        if let Commands::Commit { tag, no_tag, .. } = cli.command {
+            assert!(tag);
+            assert!(no_tag);
+        } else { panic!("Expected Commit command"); }
+    }
+
+    #[test]
+    fn cli_with_provider_claude() {
+        let cli = Cli::try_parse_from(["gitar", "--provider", "claude", "staged"]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+        assert_eq!(cli.provider, Some("claude".into()));
+    }
+
+    #[test]
+    fn cli_with_provider_gemini() {
+        let cli = Cli::try_parse_from(["gitar", "--provider", "gemini", "staged"]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+        assert_eq!(cli.provider, Some("gemini".into()));
+    }
+
+    #[test]
+    fn cli_with_provider_groq() {
+        let cli = Cli::try_parse_from(["gitar", "--provider", "groq", "staged"]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+        assert_eq!(cli.provider, Some("groq".into()));
+    }
+
+    #[test]
+    fn cli_with_provider_openai() {
+        let cli = Cli::try_parse_from(["gitar", "--provider", "openai", "staged"]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+        assert_eq!(cli.provider, Some("openai".into()));
+    }
+
+    #[test]
+    fn cli_with_provider_anthropic_alias() {
+        let cli = Cli::try_parse_from(["gitar", "--provider", "anthropic", "staged"]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+        assert_eq!(cli.provider, Some("anthropic".into()));
+    }
+
+    #[test]
+    fn cli_with_provider_ollama() {
+        let cli = Cli::try_parse_from(["gitar", "--provider", "ollama", "staged"]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+        assert_eq!(cli.provider, Some("ollama".into()));
+    }
+
+    #[test]
+    fn cli_with_provider_local_alias() {
+        let cli = Cli::try_parse_from(["gitar", "--provider", "local", "staged"]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+        assert_eq!(cli.provider, Some("local".into()));
+    }
+
+    #[test]
+    fn cli_rejects_invalid_provider() {
+        let result = Cli::try_parse_from(["gitar", "--provider", "invalid", "staged"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_provider_and_base_url_both_accepted() {
+        let cli = Cli::try_parse_from([
+            "gitar", "--provider", "claude", "--base-url", "https://custom.api", "staged",
+        ]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+        assert_eq!(cli.provider, Some("claude".into()));
+        assert_eq!(cli.base_url, Some("https://custom.api".into()));
+    }
+
+    #[test]
+    fn cli_provider_with_model() {
+        let cli = Cli::try_parse_from([
+            "gitar", "--provider", "gemini", "--model", "gemini-2.5-pro", "staged",
+        ]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+        assert_eq!(cli.provider, Some("gemini".into()));
+        assert_eq!(cli.model, Some("gemini-2.5-pro".into()));
+    }
+
+    #[test]
+    fn cli_provider_with_api_key() {
+        let cli = Cli::try_parse_from([
+            "gitar", "--provider", "groq", "--api-key", "gsk_test123", "staged",
+        ]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+        assert_eq!(cli.provider, Some("groq".into()));
+        assert_eq!(cli.api_key, Some("gsk_test123".into()));
+    }
+
+    #[test]
+    fn cli_ollama_with_model() {
+        let cli = Cli::try_parse_from([
+            "gitar", "--provider", "ollama", "--model", "llama3.2:latest", "staged",
+        ]).unwrap();
+        assert!(matches!(cli.command, Commands::Staged));
+        assert_eq!(cli.provider, Some("ollama".into()));
+        assert_eq!(cli.model, Some("llama3.2:latest".into()));
+    }
+
+    #[test]
+    fn cli_provider_with_commit_command() {
+        let cli = Cli::try_parse_from(["gitar", "--provider", "gemini", "commit", "-a"]).unwrap();
+        if let Commands::Commit { all, .. } = cli.command {
+            assert!(all);
+        } else { panic!("Expected Commit command"); }
+        assert_eq!(cli.provider, Some("gemini".into()));
+    }
+
+    #[test]
+    fn cli_provider_with_history_command() {
+        let cli = Cli::try_parse_from([
+            "gitar", "--provider", "ollama", "--model", "llama3.2", "history", "-n", "5",
+        ]).unwrap();
+        if let Commands::History { limit, .. } = cli.command {
+            assert_eq!(limit, Some(5));
+        } else { panic!("Expected History command"); }
+        assert_eq!(cli.provider, Some("ollama".into()));
+        assert_eq!(cli.model, Some("llama3.2".into()));
+    }
+
+    #[test]
+    fn cli_parses_anthropic_base_url() {
+        let cli = Cli::try_parse_from([
+            "gitar", "--base-url", "https://api.anthropic.com/v1", "staged",
+        ]).unwrap();
+        assert_eq!(cli.base_url, Some("https://api.anthropic.com/v1".into()));
+    }
+
+    #[test]
+    fn cli_parses_claude_model() {
+        let cli = Cli::try_parse_from([
+            "gitar", "--model", "claude-sonnet-4-5-20250929", "staged",
+        ]).unwrap();
+        assert_eq!(cli.model, Some("claude-sonnet-4-5-20250929".into()));
+    }
+
+    #[test]
+    fn cli_parses_gemini_base_url() {
+        let cli = Cli::try_parse_from([
+            "gitar", "--base-url", "https://generativelanguage.googleapis.com", "staged",
+        ]).unwrap();
+        assert_eq!(cli.base_url, Some("https://generativelanguage.googleapis.com".into()));
+    }
+
+    #[test]
+    fn cli_parses_groq_base_url() {
+        let cli = Cli::try_parse_from([
+            "gitar", "--base-url", "https://api.groq.com/openai/v1", "staged",
+        ]).unwrap();
+        assert_eq!(cli.base_url, Some("https://api.groq.com/openai/v1".into()));
+    }
+
+    #[test]
+    fn cli_parses_gemini_model() {
+        let cli = Cli::try_parse_from(["gitar", "--model", "gemini-2.5-flash", "staged"]).unwrap();
+        assert_eq!(cli.model, Some("gemini-2.5-flash".into()));
+    }
 }
