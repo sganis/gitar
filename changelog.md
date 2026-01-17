@@ -1,3 +1,28 @@
+# v1.0.5
+
+## Features
+
+- Add streaming support for chat responses with --stream CLI flag for OpenAI, Claude, and Gemini providers
+- Add git hook command for automatic commit message generation during git commit operations
+- Add cross-platform git hook installation with improved error handling and security guidance
+
+## Improvements
+
+- Refactor configuration to support explicit LLM provider sections with improved resolution logic
+- Reorganize LLM provider modules into dedicated providers directory for better code organization
+- Refactor main.rs into modular architecture by extracting API clients, config, Git utilities, and prompts into separate modules
+- Preserve existing default provider in init command
+- Disable streaming for commit messages to ensure clean git commit output
+- Unify git hook script to use single cross-platform shell version
+- Update documentation with improved installation instructions and git hook usage
+
+## Infrastructure
+
+- Bump version to 1.0.5
+- Remove unused provider getter method
+- Rename unused stream variable to follow Rust naming conventions
+
+
 # v1.0.4
 
 ## Features
