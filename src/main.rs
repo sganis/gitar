@@ -976,7 +976,7 @@ async fn main() -> Result<()> {
             no_tag,
             write_to,
             silent,
-            _stream,
+            stream: _,
         } => {
             // no need to stream so small commit message usualy single-line
             // let do_stream = stream || config.stream;
