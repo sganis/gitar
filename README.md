@@ -33,7 +33,7 @@ The name combines **Git** + **Ai** + **Rust** (and happens to sound like *guitar
 
 ## Why Rust?
 
-gitar is built with Rust for:
+Gitar is built with Rust for:
 
 - **Performance** — Fast startup, low memory footprint
 - **Single binary** — No Python/Node.js runtime, no dependencies
@@ -141,7 +141,7 @@ gitar diff --compare            # Compare smart diff algorithms side-by-side
 
 If your machine **does not have direct internet access** (corporate / air-gapped / restricted network), you can still use gitar by tunneling traffic through another machine.
 
-gitar supports **HTTP and SOCKS proxies** via the `ALL_PROXY` environment variable.
+Gitar supports **HTTP and SOCKS proxies** via the `ALL_PROXY` environment variable.
 
 On your **local machine**, open a SOCKS proxy tunnel:
 
@@ -163,14 +163,14 @@ Now tell gitar to use it:
 export ALL_PROXY="socks5h://localhost:8000"
 ```
 
-gitar will now route **all LLM API traffic** through the SSH tunnel.
+Gitar will now route **all LLM API traffic** through the SSH tunnel.
 
 
 ---
 
 ## Git Hook
 
-gitar can **automatically generate commit messages every time you run `git commit`** by installing a Git hook.
+Gitar can **automatically generate commit messages every time you run `git commit`** by installing a Git hook.
 
 ### Install the hook
 
@@ -266,7 +266,7 @@ gitar diff --compare
 
 ## Security & Privacy
 
-gitar sends **only what it needs** for the command you run (for example: a diff, a commit range log, or staged changes).
+Gitar sends **only what it needs** for the command you run (for example: a diff, a commit range log, or staged changes).
 
 Tips:
 
