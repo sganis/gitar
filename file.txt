@@ -1,1 +1,0 @@
-Add git hook support for automatic commit message generation with install/uninstall commands and improve README documentation with security notes, installation examples, and hook usage instructions
