@@ -27,6 +27,7 @@ The name combines **git** + **AI** + **Rust** (and happens to sound like *guitar
 - **version** — Suggest semantic version bumps based on changes
 - **models** — List available models (when the provider exposes a models endpoint)
 - **hook** — Install Git hook to auto-generate commit messages on `git commit`
+- **diff** — Preview/compare what would be sent to the LLM (debug tool)
 
 ---
 
@@ -197,6 +198,56 @@ gitar version                   # Suggest version bump
 gitar models                    # List available models (when supported)
 
 gitar hook install              # Install git commit hook
+
+gitar diff --compare            # Compare smart diff algorithms side-by-side
+```
+
+---
+
+## Smart Diff Algorithms (Context Optimization)
+
+Large diffs can blow up context windows and cost tokens. gitar can **shape** the diff before sending it to your LLM, using one of four algorithms.
+
+Most commands accept:
+
+```bash
+--alg <1..4>
+```
+
+### Algorithms
+
+* **1 — Full Diff**
+  Sends the raw `git diff` (best fidelity, worst token usage).
+
+* **2 — Selective Files**
+  Splits the diff by file, filters out obvious noise (lockfiles / vendored / generated paths), ranks files by importance, and packs whole-file patches until the size limit is hit.
+
+* **3 — Selective Hunks**
+  Extracts hunks across files, scores them (structural changes, meaningful additions/removals, etc.), then packs the highest scoring hunks first. Includes a per-file cap so one file can’t dominate.
+
+* **4 — Semantic JSON (IR)** *(default)*
+  Produces a compact JSON “intermediate representation” with:
+
+  * a file summary (path, status, adds/dels, priority)
+  * top-ranked hunks with short previews
+    It adaptively shrinks previews / hunk count until it fits the size budget.
+
+### Examples
+
+Use a different algorithm when you know you’re doing a big refactor:
+
+```bash
+gitar commit --alg 3
+gitar pr --alg 4
+gitar changelog v1.0.0 --alg 2
+gitar explain --staged --alg 4
+```
+
+Debug what will be sent to the model:
+
+```bash
+gitar diff --alg 2 --max-chars 15000 --stats
+gitar diff --compare
 ```
 
 ---
@@ -216,4 +267,5 @@ Tips:
 ## License
 
 MIT
+
 
