@@ -1,6 +1,9 @@
 // src/gemini.rs
 use anyhow::{bail, Context, Result};
+use futures_util::StreamExt;
 use reqwest::Client;
+use serde_json::Value;
+use std::io::{self, Write};
 
 use crate::types::*;
 
@@ -30,21 +33,31 @@ pub async fn chat(
     _temperature: f32,
     system: &str,
     user: &str,
+    stream: bool,
 ) -> Result<String> {
     let base = normalize_base_url(base_url);
     let model_path = normalize_model_path(model);
-    let url = format!("{}/{}:generateContent", base, model_path);
+
+    let url = if stream {
+        format!("{}/{}:streamGenerateContent", base, model_path)
+    } else {
+        format!("{}/{}:generateContent", base, model_path)
+    };
 
     let request = GeminiGenerateContentRequest {
         system_instruction: if system.trim().is_empty() {
             None
         } else {
             Some(GeminiContent {
-                parts: vec![GeminiPart { text: system.to_string() }],
+                parts: vec![GeminiPart {
+                    text: system.to_string(),
+                }],
             })
         },
         contents: vec![GeminiContent {
-            parts: vec![GeminiPart { text: user.to_string() }],
+            parts: vec![GeminiPart {
+                text: user.to_string(),
+            }],
         }],
     };
 
@@ -64,9 +77,8 @@ pub async fn chat(
         .context("Failed to send request")?;
 
     let status = response.status();
-    let body = response.text().await.context("Failed to read response body")?;
-
     if !status.is_success() {
+        let body = response.text().await.context("Failed to read error body")?;
         if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
             if let Some(detail) = err.error {
                 if let Some(msg) = detail.message {
@@ -76,6 +88,64 @@ pub async fn chat(
         }
         bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
     }
+
+    if stream {
+        let mut full_text = String::new();
+        let mut buf = String::new();
+        let mut s = response.bytes_stream();
+
+        while let Some(item) = s.next().await {
+            let chunk = item.context("Error while reading stream")?;
+            buf.push_str(&String::from_utf8_lossy(&chunk));
+
+            let vals =
+                drain_gemini_stream_values(&mut buf).context("Failed to parse Gemini stream")?;
+
+            for v in vals {
+                let t = extract_gemini_text_from_value(&v);
+                if !t.is_empty() {
+                    print!("{}", t);
+                    io::stdout().flush()?;
+                    full_text.push_str(&t);
+                }
+            }
+        }
+
+        // Best-effort final drain/parsing
+        let leftover = buf.trim();
+        if !leftover.is_empty() {
+            // Sometimes the full stream arrives as a complete JSON array at the end.
+            if let Ok(arr) = serde_json::from_str::<Vec<Value>>(leftover) {
+                for v in arr {
+                    let t = extract_gemini_text_from_value(&v);
+                    if !t.is_empty() {
+                        print!("{}", t);
+                        io::stdout().flush()?;
+                        full_text.push_str(&t);
+                    }
+                }
+            } else if let Ok(one) = serde_json::from_str::<Value>(leftover) {
+                let t = extract_gemini_text_from_value(&one);
+                if !t.is_empty() {
+                    print!("{}", t);
+                    io::stdout().flush()?;
+                    full_text.push_str(&t);
+                }
+            }
+        }
+        
+        println!();
+        if full_text.is_empty() {
+            bail!("No response content from Gemini API (stream ended without content)");
+        }
+        return Ok(full_text);
+    }
+
+    // Non-streaming (keep strict struct parsing)
+    let body = response
+        .text()
+        .await
+        .context("Failed to read response body")?;
 
     let resp: GeminiGenerateContentResponse =
         serde_json::from_str(&body).context("Failed to parse Gemini response")?;
@@ -91,11 +161,7 @@ pub async fn chat(
     text.context("No response content from Gemini API")
 }
 
-pub async fn list_models(
-    http: &Client,
-    base_url: &str,
-    api_key: Option<&str>,
-) -> Result<Vec<String>> {
+pub async fn list_models(http: &Client, base_url: &str, api_key: Option<&str>) -> Result<Vec<String>> {
     let base = normalize_base_url(base_url);
     let url = format!("{}/models", base);
 
@@ -129,6 +195,105 @@ pub async fn list_models(
         .into_iter()
         .map(|m| m.name.strip_prefix("models/").unwrap_or(&m.name).to_string())
         .collect())
+}
+
+// =============================================================================
+// Streaming helpers (Value-based, tolerant to metadata chunks)
+// =============================================================================
+
+fn extract_gemini_text_from_value(v: &Value) -> String {
+    // candidates[0].content.parts[*].text
+    let mut out = String::new();
+
+    let parts = v
+        .get("candidates")
+        .and_then(|c| c.as_array())
+        .and_then(|c| c.first())
+        .and_then(|c0| c0.get("content"))
+        .and_then(|content| content.get("parts"))
+        .and_then(|p| p.as_array());
+
+    let Some(parts) = parts else {
+        return out; // metadata-only chunk (role/finishReason/usageMetadata/etc)
+    };
+
+    for p in parts {
+        if let Some(t) = p.get("text").and_then(|t| t.as_str()) {
+            out.push_str(t);
+        }
+    }
+
+    out
+}
+
+/// Drain complete JSON Values from a buffer that contains streamed JSON arrays.
+///
+/// Handles:
+/// - leading '['
+/// - commas between objects
+/// - ']' at end
+/// - arbitrary chunk boundaries (buffered)
+fn drain_gemini_stream_values(buf: &mut String) -> Result<Vec<Value>> {
+    let mut out = Vec::new();
+
+    loop {
+        // Trim leading whitespace
+        let trimmed = buf.trim_start();
+        if trimmed.len() != buf.len() {
+            buf.drain(..(buf.len() - trimmed.len()));
+        }
+        if buf.is_empty() {
+            break;
+        }
+
+        // Drop leading array separators: '[', ',', ']'
+        loop {
+            let Some(first) = buf.chars().next() else { break };
+            match first {
+                '[' | ',' | ']' => {
+                    buf.drain(..first.len_utf8());
+                    // trim again
+                    let t = buf.trim_start();
+                    if t.len() != buf.len() {
+                        buf.drain(..(buf.len() - t.len()));
+                    }
+                    if buf.is_empty() {
+                        break;
+                    }
+                }
+                _ => break,
+            }
+        }
+        if buf.is_empty() {
+            break;
+        }
+
+        let mut it = serde_json::Deserializer::from_str(buf).into_iter::<Value>();
+        match it.next() {
+            Some(Ok(v)) => {
+                let offset = it.byte_offset();
+                if offset == 0 {
+                    break;
+                }
+                buf.drain(..offset);
+                out.push(v);
+            }
+            Some(Err(e)) => {
+                if e.is_eof() {
+                    break; // wait for more bytes
+                }
+                let preview = buf.chars().take(200).collect::<String>();
+                bail!(
+                    "Gemini stream JSON parse error: {}. Buffer starts with: {}",
+                    e,
+                    preview
+                );
+            }
+            None => break,
+        }
+    }
+
+    Ok(out)
 }
 
 // =============================================================================
@@ -202,29 +367,41 @@ mod tests {
     }
 
     #[test]
-    fn gemini_request_empty_system_handled() {
-        let system = "   ";
-        let system_instruction = if system.trim().is_empty() {
-            None
-        } else {
-            Some(GeminiContent {
-                parts: vec![GeminiPart { text: system.to_string() }],
-            })
-        };
-        assert!(system_instruction.is_none());
+    fn extract_text_from_value_parts() {
+        let v: Value = serde_json::json!({
+          "candidates": [
+            { "content": { "parts": [ {"text":"Hello "}, {"text":"World"} ] } }
+          ]
+        });
+        assert_eq!(super::extract_gemini_text_from_value(&v), "Hello World");
     }
 
     #[test]
-    fn strip_models_prefix() {
-        let name = "models/gemini-2.5-flash";
-        let result = name.strip_prefix("models/").unwrap_or(name);
-        assert_eq!(result, "gemini-2.5-flash");
+    fn extract_text_from_value_metadata_only_is_empty() {
+        let v: Value = serde_json::json!({
+          "candidates": [
+            { "content": { "role": "model" }, "finishReason": "STOP" }
+          ],
+          "usageMetadata": { "promptTokenCount": 1 }
+        });
+        assert_eq!(super::extract_gemini_text_from_value(&v), "");
     }
 
     #[test]
-    fn strip_models_prefix_not_present() {
-        let name = "gemini-2.5-flash";
-        let result = name.strip_prefix("models/").unwrap_or(name);
-        assert_eq!(result, "gemini-2.5-flash");
+    fn drain_values_parses_array_across_chunks_and_ignores_metadata() {
+        let mut buf = String::new();
+        buf.push_str("[");
+        buf.push_str(r#"{"candidates":[{"content":{"parts":[{"text":"Hi"}]}}]},"#);
+        // not complete second yet
+        let v = super::drain_gemini_stream_values(&mut buf).unwrap();
+        assert_eq!(v.len(), 1);
+
+        buf.push_str(
+            r#"{"candidates":[{"content":{"role":"model"},"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":1}}]"#,
+        );
+
+        let v = super::drain_gemini_stream_values(&mut buf).unwrap();
+        assert_eq!(v.len(), 1);
+        assert!(buf.trim().is_empty());
     }
 }

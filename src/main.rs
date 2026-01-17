@@ -62,12 +62,11 @@ struct Cli {
     #[arg(
         long,
         global = true,
-        value_parser = ["openai", "claude", "anthropic", "gemini", "google", "groq", "ollama", "local"]
+        value_parser = ["openai", "claude", "gemini", "google", "groq", "ollama", "local"]
     )]
     provider: Option<String>,
 
     /// Stream responses to stdout (when supported by the provider).
-    /// Note: git hook mode never streams (hooks expect file output only).
     #[arg(long, global = true, default_value_t = false)]
     stream: bool,
 
@@ -822,6 +821,9 @@ fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         if cli.base_url.is_some() {
             pc.base_url = cli.base_url.clone();
         }
+        if cli.stream {
+            pc.stream = Some(true);
+        }
 
         // Always set as default provider
         config.default_provider = Some(p.clone());
@@ -888,6 +890,12 @@ fn cmd_config() -> Result<()> {
                     .map(|t| t.to_string())
                     .unwrap_or_else(|| "(default)".into())
             );
+            println!(
+                "  stream:      {}",
+                p.stream
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "(default: false)".into())
+            );
             if let Some(url) = &p.base_url {
                 println!("  base_url:    {}", url);
             }
@@ -943,6 +951,7 @@ async fn main() -> Result<()> {
         cli.base_url.as_ref(),
         cli.provider.as_ref(),
         cli.base_branch.as_ref(),
+        if cli.stream { Some(true) } else { None },
         &file_config,
         get_default_branch,
     );
@@ -958,8 +967,8 @@ async fn main() -> Result<()> {
             silent,
             stream,
         } => {
-            // combine global + per-command
-            let do_stream = cli.stream || stream;
+            // combine global config + per-command flag
+            let do_stream = stream || config.stream;
             cmd_commit(
                 &client,
                 push,
@@ -971,8 +980,8 @@ async fn main() -> Result<()> {
             )
             .await?
         }
-        Commands::Staged => cmd_staged(&client, cli.stream).await?,
-        Commands::Unstaged => cmd_unstaged(&client, cli.stream).await?,
+        Commands::Staged => cmd_staged(&client, config.stream).await?,
+        Commands::Unstaged => cmd_unstaged(&client, config.stream).await?,
         Commands::History {
             from,
             to,
@@ -980,9 +989,9 @@ async fn main() -> Result<()> {
             until,
             limit,
             delay,
-        } => cmd_history(&client, from, to, since, until, limit, delay, cli.stream).await?,
+        } => cmd_history(&client, from, to, since, until, limit, delay, config.stream).await?,
         Commands::Pr { base, to, staged } => {
-            cmd_pr(&client, base, to, &config.base_branch, staged, cli.stream).await?
+            cmd_pr(&client, base, to, &config.base_branch, staged, config.stream).await?
         }
         Commands::Changelog {
             from,
@@ -990,7 +999,7 @@ async fn main() -> Result<()> {
             since,
             until,
             limit,
-        } => cmd_changelog(&client, from, to, since, until, limit, cli.stream).await?,
+        } => cmd_changelog(&client, from, to, since, until, limit, config.stream).await?,
         Commands::Explain {
             from,
             to,
@@ -1005,11 +1014,11 @@ async fn main() -> Result<()> {
             until,
             &config.base_branch,
             staged,
-            cli.stream,
+            config.stream,
         )
         .await?,
         Commands::Version { base, to, current } => {
-            cmd_version(&client, base, to, &config.base_branch, current, cli.stream).await?
+            cmd_version(&client, base, to, &config.base_branch, current, config.stream).await?
         }
         Commands::Init | Commands::Config | Commands::Hook { .. } => unreachable!(),
         Commands::Models => cmd_models(&client).await?,

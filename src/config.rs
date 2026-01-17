@@ -70,6 +70,7 @@ pub struct ProviderConfig {
     pub max_tokens: Option<u32>,
     pub temperature: Option<f32>,
     pub base_url: Option<String>,
+    pub stream: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -137,6 +138,7 @@ pub struct ResolvedConfig {
     pub temperature: f32,
     pub base_url: String,
     pub base_branch: String,
+    pub stream: bool,
 }
 
 impl ResolvedConfig {
@@ -149,6 +151,7 @@ impl ResolvedConfig {
         cli_base_url: Option<&String>,
         cli_provider: Option<&String>,
         cli_base_branch: Option<&String>,
+        cli_stream: Option<bool>,
         file: &Config,
         default_branch_fn: impl Fn() -> String,
     ) -> Self {
@@ -198,6 +201,11 @@ impl ResolvedConfig {
             .or_else(|| file.base_branch.clone())
             .unwrap_or_else(default_branch_fn);
 
+        // Stream: CLI > provider config > default (false)
+        let stream = cli_stream
+            .or_else(|| provider_config.and_then(|p| p.stream))
+            .unwrap_or(false);
+
         Self {
             provider,
             api_key,
@@ -206,6 +214,7 @@ impl ResolvedConfig {
             temperature,
             base_url,
             base_branch,
+            stream,
         }
     }
 }
@@ -237,6 +246,7 @@ mod tests {
                 max_tokens: Some(1000),
                 temperature: Some(0.7),
                 base_url: None,
+                stream: None,
             }),
             claude: None,
             gemini: None,
@@ -312,12 +322,13 @@ mod tests {
         let file = Config::default();
         let provider = "openai".to_string();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None,
+            None, None, None, None, None, Some(&provider), None, None,
             &file, || "main".into(),
         );
         assert_eq!(resolved.provider, "openai");
         assert_eq!(resolved.model, "gpt-4o");
         assert_eq!(resolved.base_url, PROVIDER_OPENAI);
+        assert!(!resolved.stream);
     }
 
     #[test]
@@ -330,18 +341,20 @@ mod tests {
                 max_tokens: Some(2000),
                 temperature: Some(0.8),
                 base_url: None,
+                stream: Some(true),
             }),
             ..Default::default()
         };
         let provider = "claude".to_string();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None,
+            None, None, None, None, None, Some(&provider), None, None,
             &file, || "main".into(),
         );
         assert_eq!(resolved.provider, "claude");
         assert_eq!(resolved.api_key, Some("sk-ant-test".into()));
         assert_eq!(resolved.model, "claude-opus-4-5-20251101");
         assert_eq!(resolved.max_tokens, 2000);
+        assert!(resolved.stream);
     }
 
     #[test]
@@ -350,6 +363,7 @@ mod tests {
             openai: Some(ProviderConfig {
                 api_key: Some("file-key".into()),
                 model: Some("gpt-4o".into()),
+                stream: Some(true),
                 ..Default::default()
             }),
             ..Default::default()
@@ -359,11 +373,12 @@ mod tests {
         let cli_model = "gpt-4o-mini".to_string();
         let resolved = ResolvedConfig::new(
             Some(&cli_key), Some(&cli_model), Some(500), Some(0.9),
-            None, Some(&provider), None,
+            None, Some(&provider), None, Some(false),
             &file, || "main".into(),
         );
         assert_eq!(resolved.api_key, Some("cli-key".into()));
         assert_eq!(resolved.model, "gpt-4o-mini");
+        assert!(!resolved.stream);
     }
 
     #[test]
@@ -378,10 +393,54 @@ mod tests {
             ..Default::default()
         };
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None,
             &file, || "main".into(),
         );
         assert_eq!(resolved.provider, "gemini");
         assert_eq!(resolved.api_key, Some("gemini-key".into()));
+    }
+
+    #[test]
+    fn resolved_config_stream_defaults_to_false() {
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(
+            None, None, None, None, None, None, None, None,
+            &file, || "main".into(),
+        );
+        assert!(!resolved.stream);
+    }
+
+    #[test]
+    fn resolved_config_uses_stream_from_provider_config() {
+        let file = Config {
+            openai: Some(ProviderConfig {
+                stream: Some(true),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let provider = "openai".to_string();
+        let resolved = ResolvedConfig::new(
+            None, None, None, None, None, Some(&provider), None, None,
+            &file, || "main".into(),
+        );
+        assert!(resolved.stream);
+    }
+
+    #[test]
+    fn resolved_config_cli_stream_overrides_config() {
+        let file = Config {
+            openai: Some(ProviderConfig {
+                stream: Some(false),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let provider = "openai".to_string();
+        let resolved = ResolvedConfig::new(
+            None, None, None, None, None, Some(&provider), None, Some(true),
+            &file, || "main".into(),
+        );
+        assert!(resolved.stream);
     }
 }

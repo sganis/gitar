@@ -79,6 +79,7 @@ impl LlmClient {
                 self.temperature,
                 system,
                 user,
+                stream,
             )
             .await;
         }
@@ -157,6 +158,7 @@ mod tests {
             temperature: 0.5,
             base_url: base_url.into(),
             base_branch: "main".into(),
+            stream: false,
         }
     }
 
@@ -274,6 +276,7 @@ mod tests {
             temperature: 0.5,
             base_url: "https://api.openai.com/v1/".into(),
             base_branch: "main".into(),
+            stream: false,
         };
         let client = LlmClient::new(&config).unwrap();
         assert!(!client.base_url.ends_with('/'));
