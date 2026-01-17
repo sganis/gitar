@@ -31,17 +31,6 @@ The name combines **Git** + **Ai** + **Rust** (and happens to sound like *guitar
 
 ---
 
-## Why Rust?
-
-Gitar is built with Rust for:
-
-- **Performance** — Fast startup, low memory footprint
-- **Single binary** — No Python/Node.js runtime, no dependencies
-- **Cross-platform** — Linux, macOS, Windows
-- **Reliability** — Memory safety without garbage collection
-
----
-
 ## Installation
 
 ### Download pre-built binary (recommended)
