@@ -36,7 +36,7 @@ DIFF ALGORITHMS:
 
 STYLE PRESETS:
     --preset rust       Rust conventions (crate/module focused)
-    --preset js         JavaScript/TypeScript (component/hook focused)
+    --preset js         JavaScript conventions (component/hook focused)
     --preset python     Python conventions (module/endpoint focused)
     --preset auto       Auto-detect from project files (default)"
 )]
@@ -60,11 +60,11 @@ pub struct Cli {
     )]
     pub provider: Option<String>,
 
-    /// Commit message style preset
+    /// Commit message style preset (rust, js, python, auto)
     #[arg(
         long,
         global = true,
-        value_parser = ["rust", "rs", "javascript", "js", "python", "py", "auto"]
+        value_parser = ["rust", "rs", "javascript", "js", "python", "py", "auto", "default"]
     )]
     pub preset: Option<String>,
 

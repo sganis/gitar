@@ -4,7 +4,6 @@ use reqwest::{Client, Proxy};
 
 use crate::config::ResolvedConfig;
 use crate::providers::{claude, gemini, openai};
-use crate::preset::Preset;
 
 pub struct LlmClient {
     http: Client,
@@ -21,7 +20,7 @@ impl LlmClient {
         let mut builder = Client::builder()
             .danger_accept_invalid_certs(true)
             .timeout(std::time::Duration::from_secs(120));
-        
+
         // TLS verification: secure by default
         if config.insecure_tls {
             eprintln!("WARNING: TLS certificate verification disabled. This is insecure!");
@@ -129,6 +128,7 @@ impl LlmClient {
 mod tests {
     use super::*;
     use crate::config::ResolvedConfig;
+    use crate::preset::Preset;
 
     // Stable, explicit URLs (avoid depending on config constants that might be
     // provider names rather than URLs).

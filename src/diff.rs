@@ -105,7 +105,6 @@ pub struct FileChunk {
 pub struct DiffStats {
     pub total_files: usize,
     pub included_files: usize,
-    pub excluded_files: usize,
     pub total_chars: usize,
     pub output_chars: usize,
     pub estimated_tokens: usize,
@@ -115,8 +114,6 @@ pub struct DiffStats {
 
 impl DiffStats {
     pub fn display(&self) -> String {
-        //let provider = self.provider.as_deref().unwrap_or("default");
-        //let model = self.model.as_deref().unwrap_or("default");
         let reduction_pct = if self.total_chars > 0 {
             (1.0 - self.output_chars as f64 / self.total_chars as f64) * 100.0
         } else {
@@ -130,8 +127,6 @@ impl DiffStats {
              Chars      : {} → {} ({:.1}% reduction)\n\
              Est Tokens : ~{}\n\
              --------------------------------------------------\n",
-            //provider,
-            //model,
             self.algorithm.num(),
             self.algorithm.name(),
             self.included_files,
@@ -140,7 +135,7 @@ impl DiffStats {
             self.total_chars,
             self.output_chars,
             reduction_pct,
-            self.estimated_tokens            
+            self.estimated_tokens
         )
     }
 }
@@ -264,7 +259,6 @@ fn alg_full(raw_diff: &str, diff_stats: Option<&str>, max_chars: usize) -> (Stri
     let stats = DiffStats {
         total_files,
         included_files: total_files,
-        excluded_files: 0,
         total_chars,
         output_chars: output.len(),
         estimated_tokens: (output.len() as f32 / CHARS_PER_TOKEN) as usize,
@@ -338,7 +332,6 @@ fn alg_files(raw_diff: &str, diff_stats: Option<&str>, max_chars: usize) -> (Str
     let stats = DiffStats {
         total_files,
         included_files: included,
-        excluded_files: total_files.saturating_sub(included),
         total_chars,
         output_chars: output.len(),
         estimated_tokens: (output.len() as f32 / CHARS_PER_TOKEN) as usize,
@@ -419,7 +412,6 @@ fn alg_hunks(raw_diff: &str, diff_stats: Option<&str>, max_chars: usize) -> (Str
     let stats = DiffStats {
         total_files,
         included_files: included_files.len(),
-        excluded_files: total_files.saturating_sub(included_files.len()),
         total_chars,
         output_chars: output.len(),
         estimated_tokens: (output.len() as f32 / CHARS_PER_TOKEN) as usize,
@@ -608,7 +600,11 @@ fn summarize_files(chunks: &[FileChunk]) -> Vec<IrFile> {
     files
 }
 
-fn extract_ranked_hunks_for_ir(chunks: &[FileChunk], max_hunks: usize, preview_lines: usize) -> Vec<IrHunk> {
+fn extract_ranked_hunks_for_ir(
+    chunks: &[FileChunk],
+    max_hunks: usize,
+    preview_lines: usize,
+) -> Vec<IrHunk> {
     let mut all: Vec<ScoredHunk> = Vec::new();
 
     for c in chunks {
@@ -712,7 +708,10 @@ fn build_ir_json(
         s.push_str("\",\"s\":\"");
         s.push_str(&f.status);
         s.push_str("\",");
-        s.push_str(&format!("\"pri\":{},\"a\":{},\"d\":{}", f.priority, f.adds, f.dels));
+        s.push_str(&format!(
+            "\"pri\":{},\"a\":{},\"d\":{}",
+            f.priority, f.adds, f.dels
+        ));
         s.push('}');
     }
     s.push_str("],");
@@ -728,7 +727,10 @@ fn build_ir_json(
         s.push_str("\",\"hdr\":\"");
         s.push_str(&json_escape(&h.header));
         s.push_str("\",");
-        s.push_str(&format!("\"a\":{},\"d\":{},\"sc\":{:.2},", h.adds, h.dels, h.score));
+        s.push_str(&format!(
+            "\"a\":{},\"d\":{},\"sc\":{:.2},",
+            h.adds, h.dels, h.score
+        ));
         s.push_str("\"pv\":\"");
         s.push_str(&json_escape(&h.preview));
         s.push_str("\"}");
@@ -783,7 +785,6 @@ fn alg_semantic(raw_diff: &str, diff_stats: Option<&str>, max_chars: usize) -> (
     let stats = DiffStats {
         total_files,
         included_files: files.len(),
-        excluded_files: total_files.saturating_sub(files.len()),
         total_chars,
         output_chars: json.len(),
         estimated_tokens: (json.len() as f32 / CHARS_PER_TOKEN) as usize,
@@ -860,16 +861,6 @@ index ccccccc..ddddddd 100644
         assert_eq!(DiffAlg::Semantic.num(), 4);
     }
 
-    // #[test]
-    // fn test_full_includes_all() {
-    //     let (output, stats) = alg_full(SAMPLE_DIFF, None, 10_000); 
-    //     assert!(output.contains("Cargo.lock")); // full doesn't exclude
-    //     assert_eq!(stats.algorithm, DiffAlg::Full);
-    //     assert_eq!(stats.excluded_files, 0);
-    //     assert!(!stats.truncated);
-    //     assert_eq!(stats.total_chars, stats.output_chars); // no reduction
-    // }
-
     #[test]
     fn test_files_excludes_lock_files() {
         let (output, stats) = alg_files(SAMPLE_DIFF, None, 10_000);
@@ -904,7 +895,6 @@ index ccccccc..ddddddd 100644
         let stats = DiffStats {
             total_files: 5,
             included_files: 3,
-            excluded_files: 2,
             total_chars: 1000,
             output_chars: 500,
             estimated_tokens: 142,

@@ -5,20 +5,18 @@ mod commands;
 mod config;
 mod diff;
 mod git;
-mod prompt;
 mod preset;
+mod prompt;
 mod providers;
 mod types;
 
 use anyhow::{bail, Result};
 use clap::Parser;
-use std::path::PathBuf;
 use cli::{Cli, Commands};
 use client::LlmClient;
 use commands::*;
 use config::{Config, ResolvedConfig};
 use git::{get_default_branch, is_git_repo};
-
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -62,8 +60,7 @@ async fn main() -> Result<()> {
         );
     }
 
-    let repo_root = git::get_repo_root()?;            // String
-    let repo_root_path = PathBuf::from(&repo_root);   // PathBuf
+    let repo_root_path = git::get_repo_root_path()?;
 
     // Build config and LLM client for remaining commands
     let config = ResolvedConfig::new(
@@ -98,6 +95,7 @@ async fn main() -> Result<()> {
             let do_stream = config.stream || stream;
             cmd_commit(
                 &client,
+                config.preset,
                 push,
                 all,
                 tag && !no_tag,
@@ -111,11 +109,11 @@ async fn main() -> Result<()> {
         }
 
         Commands::Staged { alg } => {
-            cmd_staged(&client, config.stream, alg, config.max_diff_chars).await?
+            cmd_staged(&client, config.preset, config.stream, alg, config.max_diff_chars).await?
         }
 
         Commands::Unstaged { alg } => {
-            cmd_unstaged(&client, config.stream, alg, config.max_diff_chars).await?
+            cmd_unstaged(&client, config.preset, config.stream, alg, config.max_diff_chars).await?
         }
 
         Commands::History {
@@ -129,6 +127,7 @@ async fn main() -> Result<()> {
         } => {
             cmd_history(
                 &client,
+                config.preset,
                 from,
                 to,
                 since,

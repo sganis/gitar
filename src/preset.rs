@@ -188,6 +188,7 @@ mod tests {
     fn from_str_rust() {
         assert_eq!(Preset::from_str("rust"), Some(Preset::Rust));
         assert_eq!(Preset::from_str("rs"), Some(Preset::Rust));
+        assert_eq!(Preset::from_str("RUST"), Some(Preset::Rust));
     }
 
     #[test]
@@ -205,6 +206,7 @@ mod tests {
     #[test]
     fn from_str_auto() {
         assert_eq!(Preset::from_str("auto"), None);
+        assert_eq!(Preset::from_str("default"), None);
     }
 
     #[test]

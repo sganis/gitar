@@ -17,12 +17,22 @@ jobs:
       matrix:
         include:
           # -------------------------
-          # Linux x86_64
+          # Linux x86_64 (glibc)
           # -------------------------
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             pkg_os: linux
             pkg_arch: x86_64
+            artifact_ext: tar.gz
+            binary_name: gitar
+
+          # -------------------------
+          # Linux x86_64 (musl - static)
+          # -------------------------
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+            pkg_os: linux
+            pkg_arch: x86_64-musl
             artifact_ext: tar.gz
             binary_name: gitar
 
@@ -65,8 +75,8 @@ jobs:
             pkg_arch: x86_64
             artifact_ext: zip
             binary_name: gitar.exe
-          
-            # -------------------------
+
+          # -------------------------
           # Windows ARM64
           # -------------------------
           - os: windows-11-arm
@@ -75,7 +85,6 @@ jobs:
             pkg_arch: arm64
             artifact_ext: zip
             binary_name: gitar.exe
-
 
     steps:
       - name: Checkout
@@ -108,6 +117,14 @@ jobs:
       - name: Install cross (linux aarch64 only)
         if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
         run: cargo install cross --locked
+
+      - name: Install musl tools (linux musl only)
+        if: ${{ runner.os == 'Linux' && matrix.target == 'x86_64-unknown-linux-musl' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y musl-tools
 
       - name: Build Rust project
         shell: bash

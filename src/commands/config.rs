@@ -1,10 +1,11 @@
 // src/commands/config.rs
 use anyhow::{bail, Result};
-#[cfg(target_os = "linux")]
-use std::os::unix::fs::PermissionsExt;
 
 use crate::cli::Cli;
 use crate::config::{normalize_provider, Config, DEFAULT_MAX_DIFF_CHARS};
+use crate::git;
+use crate::preset::Preset;
+use std::path::PathBuf;
 
 pub fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
     let mut config = file.clone();
@@ -57,6 +58,19 @@ pub fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         config.base_branch = cli.base_branch.clone();
     }
 
+    // Handle preset: normalize aliases to canonical names
+    if let Some(ref preset_str) = cli.preset {
+        let lower = preset_str.to_lowercase();
+        let normalized = match lower.as_str() {
+            "rs" => "rust",
+            "js" => "javascript",
+            "py" => "python",
+            "auto" | "default" => "auto",
+            _ => &lower,
+        };
+        config.preset = Some(normalized.to_string());
+    }
+
     config.save()?;
 
     if let Some(p) = &provider {
@@ -67,6 +81,13 @@ pub fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         }
     }
 
+    if cli.preset.is_some() {
+        println!(
+            "Preset set to: {}",
+            config.preset.as_deref().unwrap_or("auto")
+        );
+    }
+
     Ok(())
 }
 
@@ -75,6 +96,22 @@ pub fn cmd_config() -> Result<()> {
     let path = Config::path()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "(unknown)".into());
+
+    // Detect preset for display
+    let detected_preset = if git::is_git_repo() {
+        git::get_repo_root()
+            .map(|root| Preset::detect(&PathBuf::from(root)))
+            .ok()
+    } else {
+        None
+    };
+
+    let effective_preset = config
+        .preset
+        .as_ref()
+        .and_then(|s| Preset::from_str(s))
+        .or(detected_preset)
+        .unwrap_or(Preset::Default);
 
     println!("Config file: {}\n", path);
     println!(
@@ -92,6 +129,13 @@ pub fn cmd_config() -> Result<()> {
             .map(|n| n.to_string())
             .unwrap_or_else(|| format!("(default: {})", DEFAULT_MAX_DIFF_CHARS))
     );
+
+    // Show preset with detection info
+    let preset_display = match &config.preset {
+        Some(p) => format!("{} (configured)", p),
+        None => format!("{} (auto-detected)", effective_preset.name()),
+    };
+    println!("preset:           {}", preset_display);
 
     let providers = [
         ("openai", &config.openai, "OPENAI_API_KEY"),
@@ -139,8 +183,14 @@ pub fn cmd_config() -> Result<()> {
         }
     }
 
-    println!("\nUsage: gitar --provider <n> [command]");
-    println!("Priority: CLI args > provider config > env var > defaults");
+    println!("\nPreset detection (if auto):");
+    println!("  Cargo.toml       -> rust");
+    println!("  package.json     -> javascript");
+    println!("  pyproject.toml   -> python");
+    println!("  setup.py         -> python");
+    println!("  requirements.txt -> python");
+
+    println!("\nUsage: gitar --provider <n> [--preset <p>] [command]");
+    println!("Priority: CLI args > config file > auto-detect > defaults");
     Ok(())
 }
-
