@@ -1,4 +1,5 @@
 // src/config.rs
+use crate::preset::Preset;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -84,6 +85,8 @@ pub struct Config {
     pub max_diff_chars: Option<usize>,
     /// Disable TLS certificate verification (INSECURE)
     pub insecure_tls: Option<bool>,
+    /// Commit message style preset: "rust", "javascript", "python", or "auto"
+    pub preset: Option<String>,
     pub openai: Option<ProviderConfig>,
     pub claude: Option<ProviderConfig>,
     pub gemini: Option<ProviderConfig>,
@@ -148,6 +151,7 @@ pub struct ResolvedConfig {
     pub stream: bool,
     pub max_diff_chars: usize,
     pub insecure_tls: bool,
+    pub preset: Preset,
 }
 
 impl ResolvedConfig {
@@ -162,8 +166,10 @@ impl ResolvedConfig {
         cli_base_branch: Option<&String>,
         cli_stream: Option<bool>,
         cli_insecure_tls: Option<bool>,
+        cli_preset: Option<&String>,
         file: &Config,
         default_branch_fn: impl Fn() -> String,
+        repo_root: &std::path::Path,
     ) -> Self {
         // Determine provider: CLI > config default > "openai"
         let provider = cli_provider
@@ -224,6 +230,9 @@ impl ResolvedConfig {
             .or(file.insecure_tls)
             .unwrap_or(false);
 
+        // Preset: CLI > config > auto-detect
+        let preset = Preset::resolve(cli_preset, file.preset.as_ref(), repo_root);
+
         Self {
             provider,
             api_key,
@@ -235,6 +244,7 @@ impl ResolvedConfig {
             stream,
             max_diff_chars,
             insecure_tls,
+            preset,
         }
     }
 }
@@ -245,6 +255,11 @@ impl ResolvedConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::TempDir;
+
+    fn temp_repo() -> TempDir {
+        TempDir::new().unwrap()
+    }
 
     #[test]
     fn config_default_is_empty() {
@@ -253,6 +268,7 @@ mod tests {
         assert!(config.base_branch.is_none());
         assert!(config.max_diff_chars.is_none());
         assert!(config.insecure_tls.is_none());
+        assert!(config.preset.is_none());
         assert!(config.openai.is_none());
         assert!(config.claude.is_none());
     }
@@ -264,6 +280,7 @@ mod tests {
             base_branch: Some("main".into()),
             max_diff_chars: Some(30000),
             insecure_tls: None,
+            preset: Some("rust".into()),
             openai: Some(ProviderConfig {
                 api_key: Some("sk-test123".into()),
                 model: Some("gpt-4o".into()),
@@ -280,6 +297,7 @@ mod tests {
         let toml_str = toml::to_string(&config).unwrap();
         assert!(toml_str.contains("default_provider = \"claude\""));
         assert!(toml_str.contains("max_diff_chars = 30000"));
+        assert!(toml_str.contains("preset = \"rust\""));
         assert!(toml_str.contains("[openai]"));
     }
 
@@ -290,6 +308,7 @@ mod tests {
             base_branch = "develop"
             max_diff_chars = 100000
             insecure_tls = true
+            preset = "python"
 
             [openai]
             api_key = "sk-test"
@@ -302,6 +321,7 @@ mod tests {
         assert_eq!(config.default_provider, Some("gemini".into()));
         assert_eq!(config.max_diff_chars, Some(100000));
         assert_eq!(config.insecure_tls, Some(true));
+        assert_eq!(config.preset, Some("python".into()));
         assert!(config.openai.is_some());
         assert!(config.claude.is_some());
     }
@@ -350,9 +370,10 @@ mod tests {
         std::env::remove_var("OPENAI_API_KEY");
         let file = Config::default();
         let provider = "openai".to_string();
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, None, None,
-            &file, || "main".into(),
+            None, None, None, None, None, Some(&provider), None, None, None, None,
+            &file, || "main".into(), repo.path(),
         );
         assert_eq!(resolved.provider, "openai");
         assert_eq!(resolved.model, "gpt-4o");
@@ -368,9 +389,10 @@ mod tests {
             max_diff_chars: Some(25000),
             ..Default::default()
         };
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(),
+            None, None, None, None, None, None, None, None, None, None,
+            &file, || "main".into(), repo.path(),
         );
         assert_eq!(resolved.max_diff_chars, 25000);
     }
@@ -390,9 +412,10 @@ mod tests {
             ..Default::default()
         };
         let provider = "claude".to_string();
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, None, None,
-            &file, || "main".into(),
+            None, None, None, None, None, Some(&provider), None, None, None, None,
+            &file, || "main".into(), repo.path(),
         );
         assert_eq!(resolved.provider, "claude");
         assert_eq!(resolved.api_key, Some("sk-ant-test".into()));
@@ -415,10 +438,11 @@ mod tests {
         let provider = "openai".to_string();
         let cli_key = "cli-key".to_string();
         let cli_model = "gpt-4o-mini".to_string();
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
             Some(&cli_key), Some(&cli_model), Some(500), Some(0.9),
-            None, Some(&provider), None, Some(false), None,
-            &file, || "main".into(),
+            None, Some(&provider), None, Some(false), None, None,
+            &file, || "main".into(), repo.path(),
         );
         assert_eq!(resolved.api_key, Some("cli-key".into()));
         assert_eq!(resolved.model, "gpt-4o-mini");
@@ -436,9 +460,10 @@ mod tests {
             }),
             ..Default::default()
         };
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(),
+            None, None, None, None, None, None, None, None, None, None,
+            &file, || "main".into(), repo.path(),
         );
         assert_eq!(resolved.provider, "gemini");
         assert_eq!(resolved.api_key, Some("gemini-key".into()));
@@ -447,9 +472,10 @@ mod tests {
     #[test]
     fn resolved_config_stream_defaults_to_false() {
         let file = Config::default();
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(),
+            None, None, None, None, None, None, None, None, None, None,
+            &file, || "main".into(), repo.path(),
         );
         assert!(!resolved.stream);
     }
@@ -464,9 +490,10 @@ mod tests {
             ..Default::default()
         };
         let provider = "openai".to_string();
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, None, None,
-            &file, || "main".into(),
+            None, None, None, None, None, Some(&provider), None, None, None, None,
+            &file, || "main".into(), repo.path(),
         );
         assert!(resolved.stream);
     }
@@ -481,9 +508,10 @@ mod tests {
             ..Default::default()
         };
         let provider = "openai".to_string();
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, Some(true), None,
-            &file, || "main".into(),
+            None, None, None, None, None, Some(&provider), None, Some(true), None, None,
+            &file, || "main".into(), repo.path(),
         );
         assert!(resolved.stream);
     }
@@ -491,9 +519,10 @@ mod tests {
     #[test]
     fn resolved_config_insecure_tls_defaults_to_false() {
         let file = Config::default();
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(),
+            None, None, None, None, None, None, None, None, None, None,
+            &file, || "main".into(), repo.path(),
         );
         assert!(!resolved.insecure_tls);
     }
@@ -504,9 +533,10 @@ mod tests {
             insecure_tls: Some(true),
             ..Default::default()
         };
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(),
+            None, None, None, None, None, None, None, None, None, None,
+            &file, || "main".into(), repo.path(),
         );
         assert!(resolved.insecure_tls);
     }
@@ -517,9 +547,10 @@ mod tests {
             insecure_tls: Some(false),
             ..Default::default()
         };
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, Some(true),
-            &file, || "main".into(),
+            None, None, None, None, None, None, None, None, Some(true), None,
+            &file, || "main".into(), repo.path(),
         );
         assert!(resolved.insecure_tls);
     }
@@ -530,10 +561,51 @@ mod tests {
             insecure_tls: Some(true),
             ..Default::default()
         };
+        let repo = temp_repo();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, Some(false),
-            &file, || "main".into(),
+            None, None, None, None, None, None, None, None, Some(false), None,
+            &file, || "main".into(), repo.path(),
         );
         assert!(!resolved.insecure_tls);
+    }
+
+    #[test]
+    fn resolved_config_preset_auto_detects_rust() {
+        let file = Config::default();
+        let repo = temp_repo();
+        std::fs::write(repo.path().join("Cargo.toml"), "").unwrap();
+        let resolved = ResolvedConfig::new(
+            None, None, None, None, None, None, None, None, None, None,
+            &file, || "main".into(), repo.path(),
+        );
+        assert_eq!(resolved.preset, Preset::Rust);
+    }
+
+    #[test]
+    fn resolved_config_preset_cli_overrides_detect() {
+        let file = Config::default();
+        let repo = temp_repo();
+        std::fs::write(repo.path().join("Cargo.toml"), "").unwrap();
+        let cli_preset = "python".to_string();
+        let resolved = ResolvedConfig::new(
+            None, None, None, None, None, None, None, None, None, Some(&cli_preset),
+            &file, || "main".into(), repo.path(),
+        );
+        assert_eq!(resolved.preset, Preset::Python);
+    }
+
+    #[test]
+    fn resolved_config_preset_config_overrides_detect() {
+        let file = Config {
+            preset: Some("javascript".into()),
+            ..Default::default()
+        };
+        let repo = temp_repo();
+        std::fs::write(repo.path().join("Cargo.toml"), "").unwrap();
+        let resolved = ResolvedConfig::new(
+            None, None, None, None, None, None, None, None, None, None,
+            &file, || "main".into(), repo.path(),
+        );
+        assert_eq!(resolved.preset, Preset::JavaScript);
     }
 }

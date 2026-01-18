@@ -32,7 +32,13 @@ DIFF ALGORITHMS:
     --alg 1    Full: complete git diff (ignores --max-chars)
     --alg 2    Files: selective files, ranked by priority
     --alg 3    Hunks: selective hunks, ranked by importance
-    --alg 4    Semantic: JSON IR with scored hunks (default)"
+    --alg 4    Semantic: JSON IR with scored hunks (default)
+
+STYLE PRESETS:
+    --preset rust       Rust conventions (crate/module focused)
+    --preset js         JavaScript/TypeScript (component/hook focused)
+    --preset python     Python conventions (module/endpoint focused)
+    --preset auto       Auto-detect from project files (default)"
 )]
 pub struct Cli {
     #[arg(long, global = true)]
@@ -53,6 +59,14 @@ pub struct Cli {
         value_parser = ["openai", "claude", "gemini", "google", "groq", "ollama", "local"]
     )]
     pub provider: Option<String>,
+
+    /// Commit message style preset (rust, js, python, auto)
+    #[arg(
+        long,
+        global = true,
+        value_parser = ["rust", "rs", "javascript", "js", "typescript", "ts", "python", "py", "auto", "default"]
+    )]
+    pub preset: Option<String>,
 
     /// Stream responses to stdout (when supported by the provider).
     #[arg(long, global = true, default_value_t = false)]
@@ -578,5 +592,72 @@ mod tests {
                 assert_eq!(alg, alg_val);
             }
         }
+    }
+
+    // Preset tests
+    #[test]
+    fn cli_parses_preset_rust() {
+        let cli = Cli::try_parse_from(["gitar", "--preset", "rust", "staged"]).unwrap();
+        assert_eq!(cli.preset, Some("rust".into()));
+    }
+
+    #[test]
+    fn cli_parses_preset_rs_alias() {
+        let cli = Cli::try_parse_from(["gitar", "--preset", "rs", "staged"]).unwrap();
+        assert_eq!(cli.preset, Some("rs".into()));
+    }
+
+    #[test]
+    fn cli_parses_preset_javascript() {
+        let cli = Cli::try_parse_from(["gitar", "--preset", "javascript", "staged"]).unwrap();
+        assert_eq!(cli.preset, Some("javascript".into()));
+    }
+
+    #[test]
+    fn cli_parses_preset_js_alias() {
+        let cli = Cli::try_parse_from(["gitar", "--preset", "js", "staged"]).unwrap();
+        assert_eq!(cli.preset, Some("js".into()));
+    }
+
+    #[test]
+    fn cli_parses_preset_typescript() {
+        let cli = Cli::try_parse_from(["gitar", "--preset", "typescript", "staged"]).unwrap();
+        assert_eq!(cli.preset, Some("typescript".into()));
+    }
+
+    #[test]
+    fn cli_parses_preset_ts_alias() {
+        let cli = Cli::try_parse_from(["gitar", "--preset", "ts", "staged"]).unwrap();
+        assert_eq!(cli.preset, Some("ts".into()));
+    }
+
+    #[test]
+    fn cli_parses_preset_python() {
+        let cli = Cli::try_parse_from(["gitar", "--preset", "python", "staged"]).unwrap();
+        assert_eq!(cli.preset, Some("python".into()));
+    }
+
+    #[test]
+    fn cli_parses_preset_py_alias() {
+        let cli = Cli::try_parse_from(["gitar", "--preset", "py", "staged"]).unwrap();
+        assert_eq!(cli.preset, Some("py".into()));
+    }
+
+    #[test]
+    fn cli_parses_preset_auto() {
+        let cli = Cli::try_parse_from(["gitar", "--preset", "auto", "staged"]).unwrap();
+        assert_eq!(cli.preset, Some("auto".into()));
+    }
+
+    #[test]
+    fn cli_rejects_invalid_preset() {
+        let result = Cli::try_parse_from(["gitar", "--preset", "invalid", "staged"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_preset_default_is_none() {
+        let cli = Cli::try_parse_from(["gitar", "staged"]).unwrap();
+        assert!(cli.preset.is_none());
     }
 }

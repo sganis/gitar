@@ -92,6 +92,22 @@ pub fn is_git_repo() -> bool {
         .unwrap_or(false)
 }
 
+/// Returns the repo root (top-level) directory as a String.
+/// Equivalent to: `git rev-parse --show-toplevel`
+pub fn get_repo_root() -> Result<String> {
+    let out = run_git(&["rev-parse", "--show-toplevel"])?;
+    let root = out.trim().to_string();
+    if root.is_empty() {
+        bail!("git rev-parse --show-toplevel returned empty output");
+    }
+    Ok(root)
+}
+
+/// Same as get_repo_root(), but as a PathBuf.
+pub fn get_repo_root_path() -> Result<PathBuf> {
+    Ok(PathBuf::from(get_repo_root()?))
+}
+
 pub fn get_git_dir() -> Option<PathBuf> {
     let output = Command::new("git")
         .args(["rev-parse", "--git-dir"])
@@ -318,6 +334,28 @@ mod tests {
         assert!(output.is_some());
         assert!(output.unwrap().contains("git version"));
     }
+
+    #[test]
+    fn get_repo_root_returns_non_empty_in_repo_or_errors() {
+        if is_git_repo() {
+            let root = get_repo_root().unwrap();
+            assert!(!root.trim().is_empty());
+        } else {
+            let _ = get_repo_root().err();
+        }
+    }
+
+    #[test]
+    fn get_repo_root_path_returns_pathbuf_in_repo_or_errors() {
+        if is_git_repo() {
+            let root = get_repo_root_path().unwrap();
+            assert!(!root.as_os_str().is_empty());
+        } else {
+            let _ = get_repo_root_path().err();
+        }
+    }
+
+    // ... keep all your existing tests below (unchanged) ...
 
     #[test]
     fn truncate_diff_short_unchanged() {

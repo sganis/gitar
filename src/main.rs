@@ -6,17 +6,19 @@ mod config;
 mod diff;
 mod git;
 mod prompt;
+mod preset;
 mod providers;
 mod types;
 
 use anyhow::{bail, Result};
 use clap::Parser;
-
+use std::path::PathBuf;
 use cli::{Cli, Commands};
 use client::LlmClient;
 use commands::*;
 use config::{Config, ResolvedConfig};
 use git::{get_default_branch, is_git_repo};
+
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -60,6 +62,9 @@ async fn main() -> Result<()> {
         );
     }
 
+    let repo_root = git::get_repo_root()?;            // String
+    let repo_root_path = PathBuf::from(&repo_root);   // PathBuf
+
     // Build config and LLM client for remaining commands
     let config = ResolvedConfig::new(
         cli.api_key.as_ref(),
@@ -71,8 +76,10 @@ async fn main() -> Result<()> {
         cli.base_branch.as_ref(),
         if cli.stream { Some(true) } else { None },
         if cli.insecure_tls { Some(true) } else { None },
+        cli.preset.as_ref(),
         &file_config,
         get_default_branch,
+        &repo_root_path,
     );
     let client = LlmClient::new(&config)?;
 

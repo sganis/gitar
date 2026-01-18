@@ -1,4 +1,5 @@
-// src/prompts.rs
+// src/prompt.rs
+use crate::preset::Preset;
 
 pub const HISTORY_SYSTEM_PROMPT: &str = r#"You are an expert software engineer who writes clear, informative Git commit messages.
 
@@ -162,6 +163,23 @@ pub const VERSION_USER_PROMPT: &str = r#"Recommend version bump.
 {diff}
 ```"#;
 
+/// Build system prompt with preset hints injected
+pub fn build_system_prompt(base_prompt: &str, preset: Preset) -> String {
+    let hints = preset.hints();
+    let style_section = hints.format(preset.name());
+    format!("{}{}", base_prompt, style_section)
+}
+
+/// Build commit system prompt with preset
+pub fn commit_system_prompt(preset: Preset) -> String {
+    build_system_prompt(COMMIT_SYSTEM_PROMPT, preset)
+}
+
+/// Build history system prompt with preset
+pub fn history_system_prompt(preset: Preset) -> String {
+    build_system_prompt(HISTORY_SYSTEM_PROMPT, preset)
+}
+
 // =============================================================================
 // MODULE TESTS
 // =============================================================================
@@ -296,5 +314,68 @@ mod tests {
         assert!(prompt.contains("diff here"));
         assert!(!prompt.contains("{stats}"));
         assert!(!prompt.contains("{diff}"));
+    }
+
+    // Preset integration tests
+    #[test]
+    fn build_system_prompt_includes_preset_hints() {
+        let prompt = build_system_prompt(COMMIT_SYSTEM_PROMPT, Preset::Rust);
+        assert!(prompt.contains(COMMIT_SYSTEM_PROMPT));
+        assert!(prompt.contains("Style (rust project)"));
+        assert!(prompt.contains("crate"));
+        assert!(prompt.contains("module"));
+    }
+
+    #[test]
+    fn commit_system_prompt_with_rust_preset() {
+        let prompt = commit_system_prompt(Preset::Rust);
+        assert!(prompt.contains("crate"));
+        assert!(prompt.contains("workspace"));
+        assert!(prompt.contains("technical, precise"));
+    }
+
+    #[test]
+    fn commit_system_prompt_with_js_preset() {
+        let prompt = commit_system_prompt(Preset::JavaScript);
+        assert!(prompt.contains("component"));
+        assert!(prompt.contains("hook"));
+        assert!(prompt.contains("user-facing"));
+    }
+
+    #[test]
+    fn commit_system_prompt_with_python_preset() {
+        let prompt = commit_system_prompt(Preset::Python);
+        assert!(prompt.contains("endpoint"));
+        assert!(prompt.contains("model"));
+        assert!(prompt.contains("behavior-focused"));
+    }
+
+    #[test]
+    fn history_system_prompt_with_preset() {
+        let prompt = history_system_prompt(Preset::Rust);
+        assert!(prompt.contains(HISTORY_SYSTEM_PROMPT));
+        assert!(prompt.contains("Style (rust project)"));
+    }
+
+    #[test]
+    fn preset_hints_contain_examples() {
+        let prompt = commit_system_prompt(Preset::Rust);
+        assert!(prompt.contains("Good examples:"));
+        assert!(prompt.contains("Add streaming support"));
+    }
+
+    #[test]
+    fn preset_hints_contain_avoid() {
+        let prompt = commit_system_prompt(Preset::Rust);
+        assert!(prompt.contains("Avoid:"));
+        assert!(prompt.contains("vague"));
+    }
+
+    #[test]
+    fn default_preset_provides_generic_hints() {
+        let prompt = commit_system_prompt(Preset::Default);
+        assert!(prompt.contains("Style (default project)"));
+        assert!(prompt.contains("module"));
+        assert!(prompt.contains("feature"));
     }
 }

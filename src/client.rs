@@ -4,6 +4,7 @@ use reqwest::{Client, Proxy};
 
 use crate::config::ResolvedConfig;
 use crate::providers::{claude, gemini, openai};
+use crate::preset::Preset;
 
 pub struct LlmClient {
     http: Client,
@@ -171,6 +172,7 @@ mod tests {
             stream: false,
             max_diff_chars: 10_000,
             insecure_tls: false,
+            preset: Preset::Default,
         }
     }
 
@@ -290,7 +292,8 @@ mod tests {
             base_branch: "main".into(),
             stream: false,
             max_diff_chars: 10_000,
-            insecure_tls: false
+            insecure_tls: false,
+            preset: Preset::Default,
         };
         let client = LlmClient::new(&config).unwrap();
         assert!(!client.base_url.ends_with('/'));
