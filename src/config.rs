@@ -43,11 +43,12 @@ pub fn normalize_provider(provider: &str) -> &'static str {
 
 fn default_model_for_provider(provider: &str) -> &'static str {
     match provider {
+        "openai" => "gpt-5-chat-latest",
         "claude" => "claude-sonnet-4-5-20250929",
         "gemini" => "gemini-2.5-flash",
         "groq" => "llama-3.3-70b-versatile",
         "ollama" => "llama3.2:latest",
-        _ => "gpt-4o",
+        _ => "",
     }
 }
 
