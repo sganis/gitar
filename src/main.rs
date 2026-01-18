@@ -4,8 +4,8 @@ mod client;
 mod commands;
 mod config;
 mod git;
-mod prompts;
-mod providers;
+mod prompt;
+mod provider;
 mod types;
 
 use anyhow::{bail, Result};

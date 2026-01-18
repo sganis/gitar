@@ -6,7 +6,7 @@ use serde_json::Value;
 use std::io::{self, Write};
 use tokio::time::sleep;
 
-use crate::providers::retry::{check_response_for_retry, RetryConfig, RetryDecision};
+use crate::provider::retry::{check_response_for_retry, RetryConfig, RetryDecision};
 use crate::types::*;
 
 fn normalize_base_url(base_url: &str) -> String {

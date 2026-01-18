@@ -3,8 +3,8 @@ use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::git::{get_commit_diff, get_commit_logs};
-use crate::prompts::preset::Preset;
-use crate::prompts::template::{history_system, HISTORY_USER};
+use crate::prompt::preset::Preset;
+use crate::prompt::template::{history_system, HISTORY_USER};
 
 use super::apply_smart_diff;
 

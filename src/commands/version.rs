@@ -3,7 +3,7 @@ use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::git::{build_diff_target, get_current_version, get_diff};
-use crate::prompts::template::{VERSION_SYSTEM, VERSION_USER};
+use crate::prompt::template::{VERSION_SYSTEM, VERSION_USER};
 
 use super::apply_smart_diff;
 

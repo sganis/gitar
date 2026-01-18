@@ -5,7 +5,7 @@ use reqwest::Client;
 use std::io::{self, Write};
 use tokio::time::sleep;
 
-use crate::providers::retry::{check_response_for_retry, RetryConfig, RetryDecision};
+use crate::provider::retry::{check_response_for_retry, RetryConfig, RetryDecision};
 use crate::types::*;
 
 pub async fn chat(

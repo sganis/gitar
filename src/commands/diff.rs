@@ -1,8 +1,8 @@
 // src/commands/diff.rs
 use anyhow::Result;
 
-use crate::prompts::diff::{get_llm_diff_preview};
-use crate::prompts::algo::{DiffAlg};
+use crate::prompt::diff::{get_llm_diff_preview};
+use crate::prompt::algo::{DiffAlg};
 use crate::git::{get_diff, get_diff_stats};
 
 pub fn cmd_diff(

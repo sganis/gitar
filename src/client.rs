@@ -3,7 +3,7 @@ use anyhow::Result;
 use reqwest::{Client, Proxy};
 
 use crate::config::ResolvedConfig;
-use crate::providers::{claude, gemini, openai};
+use crate::provider::{claude, gemini, openai};
 
 pub struct LlmClient {
     http: Client,
@@ -82,7 +82,7 @@ impl LlmClient {
 mod tests {
     use super::*;
     use crate::config::ResolvedConfig;
-    use crate::prompts::{Preset, SecretAction};
+    use crate::prompt::{Preset, SecretAction};
 
     fn make_config(provider: &str, url: &str) -> ResolvedConfig {
         ResolvedConfig {

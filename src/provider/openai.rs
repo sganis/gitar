@@ -7,7 +7,7 @@ use std::io::{self, Write};
 use std::sync::{LazyLock, Mutex};
 use tokio::time::sleep;
 
-use crate::providers::retry::{check_response_for_retry, RetryConfig, RetryDecision};
+use crate::provider::retry::{check_response_for_retry, RetryConfig, RetryDecision};
 use crate::types::*;
 
 pub static REASONING_MODELS: LazyLock<Mutex<HashSet<String>>> =

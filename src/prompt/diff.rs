@@ -68,7 +68,7 @@ pub fn get_llm_diff_preview(
     algo: DiffAlg,
     _include_header: bool,
 ) -> (String, DiffStats) {
-    let result = crate::prompts::algo::shape_diff(raw_diff, diff_stats, max_chars, algo);
+    let result = crate::prompt::algo::shape_diff(raw_diff, diff_stats, max_chars, algo);
     (result.content, result.stats)
 }
 /// Process staged changes
