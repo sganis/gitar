@@ -1,11 +1,13 @@
-// src/openai.rs
+// src/providers/openai.rs
 use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
 use reqwest::Client;
 use std::collections::HashSet;
 use std::io::{self, Write};
 use std::sync::{LazyLock, Mutex};
+use tokio::time::sleep;
 
+use crate::providers::retry::{check_response_for_retry, RetryConfig, RetryDecision};
 use crate::types::*;
 
 pub static REASONING_MODELS: LazyLock<Mutex<HashSet<String>>> =
@@ -38,8 +40,14 @@ pub async fn chat(
     ];
 
     if stream {
-        let request_json =
-            build_chat_request_json(model, &messages, is_reasoning_model, max_tokens, temperature, true);
+        let request_json = build_chat_request_json(
+            model,
+            &messages,
+            is_reasoning_model,
+            max_tokens,
+            temperature,
+            true,
+        );
 
         let resp = send_chat_request_stream(http, &url, api_key, request_json).await;
 
@@ -59,13 +67,25 @@ pub async fn chat(
         return resp;
     }
 
-    // Non-streaming path (existing behavior)
+    // Non-streaming path
     let request = ChatCompletionRequest {
         model: model.to_string(),
         messages: messages.clone(),
-        max_tokens: if is_reasoning_model { None } else { Some(max_tokens) },
-        max_completion_tokens: if is_reasoning_model { Some(max_tokens) } else { None },
-        temperature: if is_reasoning_model { None } else { Some(temperature) },
+        max_tokens: if is_reasoning_model {
+            None
+        } else {
+            Some(max_tokens)
+        },
+        max_completion_tokens: if is_reasoning_model {
+            Some(max_tokens)
+        } else {
+            None
+        },
+        temperature: if is_reasoning_model {
+            None
+        } else {
+            Some(temperature)
+        },
     };
 
     let response = send_chat_request(http, &url, api_key, &request).await;
@@ -98,43 +118,50 @@ async fn send_chat_request(
     api_key: Option<&str>,
     request: &ChatCompletionRequest,
 ) -> Result<String> {
-    let mut req_builder = http
-        .post(url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "application/json");
+    let config = RetryConfig::default();
 
-    if let Some(key) = api_key {
-        req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
-    }
+    for attempt in 0..=config.max_retries {
+        let mut req_builder = http
+            .post(url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json");
 
-    let response = req_builder
-        .json(request)
-        .send()
-        .await
-        .context("Failed to send request")?;
+        if let Some(key) = api_key {
+            req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
+        }
 
-    let status = response.status();
-    let body = response.text().await.context("Failed to read response body")?;
+        let response = req_builder
+            .json(request)
+            .send()
+            .await
+            .context("Failed to send request")?;
 
-    if !status.is_success() {
-        if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
-            if let Some(detail) = err.error {
-                if let Some(msg) = detail.message {
-                    bail!("API error ({}): {}", status, msg);
-                }
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .context("Failed to read response body")?;
+
+        match check_response_for_retry(status, &body, attempt, &config)? {
+            RetryDecision::Success => {}
+            RetryDecision::Retry { delay } => {
+                sleep(delay).await;
+                continue;
             }
         }
-        bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
+
+        let resp: ChatCompletionResponse =
+            serde_json::from_str(&body).context("Failed to parse response")?;
+
+        return resp
+            .choices
+            .first()
+            .and_then(|c| c.message.content.as_ref())
+            .map(|s| s.trim().to_string())
+            .context("No response content from API");
     }
 
-    let resp: ChatCompletionResponse =
-        serde_json::from_str(&body).context("Failed to parse response")?;
-
-    resp.choices
-        .first()
-        .and_then(|c| c.message.content.as_ref())
-        .map(|s| s.trim().to_string())
-        .context("No response content from API")
+    bail!("All retry attempts exhausted for OpenAI API")
 }
 
 async fn send_chat_request_stream(
@@ -143,124 +170,137 @@ async fn send_chat_request_stream(
     api_key: Option<&str>,
     request_json: serde_json::Value,
 ) -> Result<String> {
-    let mut req_builder = http
-        .post(url)
-        .header("Content-Type", "application/json")
-        .header("Accept", "text/event-stream");
+    let config = RetryConfig::default();
 
-    if let Some(key) = api_key {
-        req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
-    }
+    for attempt in 0..=config.max_retries {
+        let mut req_builder = http
+            .post(url)
+            .header("Content-Type", "application/json")
+            .header("Accept", "text/event-stream");
 
-    let response = req_builder
-        .json(&request_json)
-        .send()
-        .await
-        .context("Failed to send request")?;
-
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.context("Failed to read error body")?;
-        // Keep consistent error parsing behavior
-        if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
-            if let Some(detail) = err.error {
-                if let Some(msg) = detail.message {
-                    bail!("API error ({}): {}", status, msg);
-                }
-            }
+        if let Some(key) = api_key {
+            req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
         }
-        bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
-    }
 
-    let mut full_text = String::new();
-    let mut s = response.bytes_stream();
+        let response = req_builder
+            .json(&request_json)
+            .send()
+            .await
+            .context("Failed to send request")?;
 
-    while let Some(item) = s.next().await {
-        let chunk = item.context("Error while reading stream")?;
-        let text = String::from_utf8_lossy(&chunk);
+        let status = response.status();
 
-        // OpenAI-compatible SSE usually sends "data: {...}" lines and "data: [DONE]"
-        for line in text.lines() {
-            let data = line
-                .strip_prefix("data: ")
-                .or_else(|| line.strip_prefix("data:"))
-                .map(|x| x.trim());
+        if !status.is_success() {
+            let body = response
+                .text()
+                .await
+                .context("Failed to read error body")?;
 
-            let Some(data) = data else { continue };
-
-            if data == "[DONE]" {
-                // End of stream
-                println!();
-                return Ok(full_text);
-            }
-
-            // Primary format: choices[].delta.content
-            if let Ok(delta) = serde_json::from_str::<OpenAiStreamChunk>(data) {
-                if let Some(t) = delta
-                    .choices
-                    .first()
-                    .and_then(|c| c.delta.content.as_ref())
-                {
-                    print!("{}", t);
-                    io::stdout().flush()?;
-                    full_text.push_str(t);
+            match check_response_for_retry(status, &body, attempt, &config)? {
+                RetryDecision::Success => unreachable!(),
+                RetryDecision::Retry { delay } => {
+                    sleep(delay).await;
                     continue;
                 }
             }
+        }
 
-            // Some providers may stream final content in `message.content` (rare). Best-effort:
-            if let Ok(fallback) = serde_json::from_str::<ChatCompletionResponse>(data) {
-                if let Some(t) = fallback
-                    .choices
-                    .first()
-                    .and_then(|c| c.message.content.as_ref())
-                {
-                    let t = t.as_str();
-                    print!("{}", t);
-                    io::stdout().flush()?;
-                    full_text.push_str(t);
+        let mut full_text = String::new();
+        let mut s = response.bytes_stream();
+
+        while let Some(item) = s.next().await {
+            let chunk = item.context("Error while reading stream")?;
+            let text = String::from_utf8_lossy(&chunk);
+
+            for line in text.lines() {
+                let data = line
+                    .strip_prefix("data: ")
+                    .or_else(|| line.strip_prefix("data:"))
+                    .map(|x| x.trim());
+
+                let Some(data) = data else { continue };
+
+                if data == "[DONE]" {
+                    println!();
+                    return Ok(full_text);
+                }
+
+                if let Ok(delta) = serde_json::from_str::<OpenAiStreamChunk>(data) {
+                    if let Some(t) = delta
+                        .choices
+                        .first()
+                        .and_then(|c| c.delta.content.as_ref())
+                    {
+                        print!("{}", t);
+                        io::stdout().flush()?;
+                        full_text.push_str(t);
+                        continue;
+                    }
+                }
+
+                if let Ok(fallback) = serde_json::from_str::<ChatCompletionResponse>(data) {
+                    if let Some(t) = fallback
+                        .choices
+                        .first()
+                        .and_then(|c| c.message.content.as_ref())
+                    {
+                        let t = t.as_str();
+                        print!("{}", t);
+                        io::stdout().flush()?;
+                        full_text.push_str(t);
+                    }
                 }
             }
         }
+
+        if full_text.is_empty() {
+            bail!("No response content from API (stream ended without content)");
+        }
+        println!();
+        return Ok(full_text);
     }
 
-    // If stream ends without [DONE], still return what we have.
-    if full_text.is_empty() {
-        bail!("No response content from API (stream ended without content)");
-    }
-    println!();
-    Ok(full_text)
+    bail!("All retry attempts exhausted for OpenAI API")
 }
 
-pub async fn list_models(http: &Client, base_url: &str, api_key: Option<&str>) -> Result<Vec<String>> {
+pub async fn list_models(
+    http: &Client,
+    base_url: &str,
+    api_key: Option<&str>,
+) -> Result<Vec<String>> {
     let url = format!("{}/models", base_url);
+    let config = RetryConfig::default();
 
-    let mut req_builder = http.get(&url).header("Accept", "application/json");
+    for attempt in 0..=config.max_retries {
+        let mut req_builder = http.get(&url).header("Accept", "application/json");
 
-    if let Some(key) = api_key {
-        req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
-    }
+        if let Some(key) = api_key {
+            req_builder = req_builder.header("Authorization", format!("Bearer {}", key));
+        }
 
-    let response = req_builder.send().await.context("Failed to send request")?;
+        let response = req_builder.send().await.context("Failed to send request")?;
 
-    let status = response.status();
-    let body = response.text().await.context("Failed to read response body")?;
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .context("Failed to read response body")?;
 
-    if !status.is_success() {
-        if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
-            if let Some(detail) = err.error {
-                if let Some(msg) = detail.message {
-                    bail!("API error ({}): {}", status, msg);
-                }
+        match check_response_for_retry(status, &body, attempt, &config)? {
+            RetryDecision::Success => {}
+            RetryDecision::Retry { delay } => {
+                sleep(delay).await;
+                continue;
             }
         }
-        bail!("API error ({}): {}", status, &body[..body.len().min(500)]);
+
+        let resp: ModelsResponse =
+            serde_json::from_str(&body).context("Failed to parse models response")?;
+
+        return Ok(resp.data.into_iter().map(|m| m.id).collect());
     }
 
-    let resp: ModelsResponse =
-        serde_json::from_str(&body).context("Failed to parse models response")?;
-
-    Ok(resp.data.into_iter().map(|m| m.id).collect())
+    bail!("All retry attempts exhausted for OpenAI API")
 }
 
 // =============================================================================
@@ -283,7 +323,6 @@ pub(crate) fn build_chat_request_json(
 
     if is_reasoning_model {
         v["max_completion_tokens"] = serde_json::json!(max_tokens);
-        // Some reasoning models reject temperature.
     } else {
         v["max_tokens"] = serde_json::json!(max_tokens);
         v["temperature"] = serde_json::json!(temperature);
@@ -337,7 +376,10 @@ mod tests {
     #[test]
     fn reasoning_models_can_insert_and_check() {
         REASONING_MODELS.lock().unwrap().clear();
-        REASONING_MODELS.lock().unwrap().insert("o1-preview".to_string());
+        REASONING_MODELS
+            .lock()
+            .unwrap()
+            .insert("o1-preview".to_string());
         assert!(REASONING_MODELS.lock().unwrap().contains("o1-preview"));
         assert!(!REASONING_MODELS.lock().unwrap().contains("gpt-4o"));
         REASONING_MODELS.lock().unwrap().clear();
@@ -348,8 +390,14 @@ mod tests {
         let request = ChatCompletionRequest {
             model: "gpt-4o".to_string(),
             messages: vec![
-                ChatMessage { role: "system".to_string(), content: "test".to_string() },
-                ChatMessage { role: "user".to_string(), content: "hello".to_string() },
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: "test".to_string(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: "hello".to_string(),
+                },
             ],
             max_tokens: Some(500),
             max_completion_tokens: None,
@@ -366,8 +414,14 @@ mod tests {
         let request = ChatCompletionRequest {
             model: "o1-preview".to_string(),
             messages: vec![
-                ChatMessage { role: "system".to_string(), content: "test".to_string() },
-                ChatMessage { role: "user".to_string(), content: "hello".to_string() },
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: "test".to_string(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: "hello".to_string(),
+                },
             ],
             max_tokens: None,
             max_completion_tokens: Some(500),
@@ -382,8 +436,14 @@ mod tests {
     #[test]
     fn openai_request_json_stream_normal_model() {
         let messages = vec![
-            ChatMessage { role: "system".to_string(), content: "sys".to_string() },
-            ChatMessage { role: "user".to_string(), content: "hi".to_string() },
+            ChatMessage {
+                role: "system".to_string(),
+                content: "sys".to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            },
         ];
 
         let v = build_chat_request_json("gpt-4o", &messages, false, 123, 0.7, true);
@@ -393,7 +453,9 @@ mod tests {
         assert_eq!(vv["stream"], true);
         assert_eq!(vv["max_tokens"], 123);
 
-        let temp = vv["temperature"].as_f64().expect("temperature should be number");
+        let temp = vv["temperature"]
+            .as_f64()
+            .expect("temperature should be number");
         assert_f64_approx(temp, 0.7, 1e-6);
 
         assert!(vv.get("max_completion_tokens").is_none());
@@ -402,8 +464,14 @@ mod tests {
     #[test]
     fn openai_request_json_stream_reasoning_model() {
         let messages = vec![
-            ChatMessage { role: "system".to_string(), content: "sys".to_string() },
-            ChatMessage { role: "user".to_string(), content: "hi".to_string() },
+            ChatMessage {
+                role: "system".to_string(),
+                content: "sys".to_string(),
+            },
+            ChatMessage {
+                role: "user".to_string(),
+                content: "hi".to_string(),
+            },
         ];
 
         let v = build_chat_request_json("o1-preview", &messages, true, 999, 0.2, true);

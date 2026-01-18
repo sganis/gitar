@@ -1,9 +1,11 @@
-// src/claude.rs
+// src/providers/claude.rs
 use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
 use reqwest::Client;
 use std::io::{self, Write};
+use tokio::time::sleep;
 
+use crate::providers::retry::{check_response_for_retry, RetryConfig, RetryDecision};
 use crate::types::*;
 
 pub async fn chat(
@@ -18,6 +20,7 @@ pub async fn chat(
     stream: bool,
 ) -> Result<String> {
     let url = format!("{}/messages", base_url);
+    let config = RetryConfig::default();
 
     let request = ClaudeRequest {
         model: model.to_string(),
@@ -31,113 +34,135 @@ pub async fn chat(
         stream: Some(stream),
     };
 
-    let mut req_builder = http
-        .post(&url)
-        .header("Content-Type", "application/json")
-        .header("anthropic-version", "2023-06-01");
+    for attempt in 0..=config.max_retries {
+        let mut req_builder = http
+            .post(&url)
+            .header("Content-Type", "application/json")
+            .header("anthropic-version", "2023-06-01");
 
-    if let Some(key) = api_key {
-        req_builder = req_builder.header("x-api-key", key);
-    }
+        if let Some(key) = api_key {
+            req_builder = req_builder.header("x-api-key", key);
+        }
 
-    let response = req_builder
-        .json(&request)
-        .send()
-        .await
-        .context("Failed to send request")?;
+        let response = req_builder
+            .json(&request)
+            .send()
+            .await
+            .context("Failed to send request")?;
 
-    let status = response.status();
-    if !status.is_success() {
-        let body = response.text().await.context("Failed to read error body")?;
-        bail!("API error ({}): {}", status, body);
-    }
+        let status = response.status();
 
-    if stream {
-        let mut full_text = String::new();
-        let mut s = response.bytes_stream();
-
-        while let Some(item) = s.next().await {
-            let chunk = item.context("Error while reading stream")?;
-            let text = String::from_utf8_lossy(&chunk);
-
-            // Anthropic SSE format sends "data: {...}" lines
-            for line in text.lines() {
-                if let Some(data) = line.strip_prefix("data: ") {
-                    let data = data.trim();
-                    if data == "[DONE]" {
-                        break;
+        // For streaming, we need to handle retry before consuming the body
+        if stream {
+            if !status.is_success() {
+                let body = response.text().await.context("Failed to read error body")?;
+                match check_response_for_retry(status, &body, attempt, &config)? {
+                    RetryDecision::Success => unreachable!(),
+                    RetryDecision::Retry { delay } => {
+                        sleep(delay).await;
+                        continue;
                     }
+                }
+            }
 
-                    // We are looking for 'content_block_delta' types
-                    if let Ok(delta) = serde_json::from_str::<ClaudeStreamDelta>(data) {
-                        if let Some(t) = delta.delta.and_then(|d| d.text) {
-                            print!("{}", t);
-                            io::stdout().flush()?;
-                            full_text.push_str(&t);
+            let mut full_text = String::new();
+            let mut s = response.bytes_stream();
+
+            while let Some(item) = s.next().await {
+                let chunk = item.context("Error while reading stream")?;
+                let text = String::from_utf8_lossy(&chunk);
+
+                for line in text.lines() {
+                    if let Some(data) = line.strip_prefix("data: ") {
+                        let data = data.trim();
+                        if data == "[DONE]" {
+                            break;
+                        }
+
+                        if let Ok(delta) = serde_json::from_str::<ClaudeStreamDelta>(data) {
+                            if let Some(t) = delta.delta.and_then(|d| d.text) {
+                                print!("{}", t);
+                                io::stdout().flush()?;
+                                full_text.push_str(&t);
+                            }
                         }
                     }
                 }
             }
+
+            println!();
+            return Ok(full_text);
         }
 
-        println!(); // New line after stream ends
-        return Ok(full_text);
-    }
+        // Non-streaming path
+        let body = response
+            .text()
+            .await
+            .context("Failed to read response body")?;
 
-    // Existing non-streaming logic
-    let body = response
-        .text()
-        .await
-        .context("Failed to read response body")?;
-    let resp: ClaudeResponse =
-        serde_json::from_str(&body).context("Failed to parse Claude response")?;
-
-    resp.content
-        .first()
-        .and_then(|c| c.text.as_ref())
-        .map(|s| s.trim().to_string())
-        .context("No response content from Claude API")
-}
-
-pub async fn list_models(http: &Client, base_url: &str, api_key: Option<&str>) -> Result<Vec<String>> {
-    let url = format!("{}/models", base_url);
-
-    let mut req_builder = http
-        .get(&url)
-        .header("Accept", "application/json")
-        .header("anthropic-version", "2023-06-01");
-
-    if let Some(key) = api_key {
-        req_builder = req_builder.header("x-api-key", key);
-    }
-
-    let response = req_builder.send().await.context("Failed to send request")?;
-
-    let status = response.status();
-    let body = response
-        .text()
-        .await
-        .context("Failed to read response body")?;
-
-    if !status.is_success() {
-        if let Ok(err) = serde_json::from_str::<ApiError>(&body) {
-            if let Some(detail) = err.error {
-                if let Some(msg) = detail.message {
-                    bail!("API error ({}): {}", status, msg);
-                }
+        match check_response_for_retry(status, &body, attempt, &config)? {
+            RetryDecision::Success => {}
+            RetryDecision::Retry { delay } => {
+                sleep(delay).await;
+                continue;
             }
         }
-        bail!(
-            "API error ({}): {}",
-            status,
-            &body[..body.len().min(500)]
-        );
+
+        let resp: ClaudeResponse =
+            serde_json::from_str(&body).context("Failed to parse Claude response")?;
+
+        return resp
+            .content
+            .first()
+            .and_then(|c| c.text.as_ref())
+            .map(|s| s.trim().to_string())
+            .context("No response content from Claude API");
     }
 
-    let resp: ModelsResponse =
-        serde_json::from_str(&body).context("Failed to parse models response")?;
+    bail!("All retry attempts exhausted for Claude API")
+}
 
-    Ok(resp.data.into_iter().map(|m| m.id).collect())
+pub async fn list_models(
+    http: &Client,
+    base_url: &str,
+    api_key: Option<&str>,
+) -> Result<Vec<String>> {
+    let url = format!("{}/models", base_url);
+    let config = RetryConfig::default();
+
+    for attempt in 0..=config.max_retries {
+        let mut req_builder = http
+            .get(&url)
+            .header("Accept", "application/json")
+            .header("anthropic-version", "2023-06-01");
+
+        if let Some(key) = api_key {
+            req_builder = req_builder.header("x-api-key", key);
+        }
+
+        let response = req_builder.send().await.context("Failed to send request")?;
+
+        let status = response.status();
+        let body = response
+            .text()
+            .await
+            .context("Failed to read response body")?;
+
+        match check_response_for_retry(status, &body, attempt, &config)? {
+            RetryDecision::Success => {}
+            RetryDecision::Retry { delay } => {
+                sleep(delay).await;
+                continue;
+            }
+        }
+
+        let resp: ModelsResponse =
+            serde_json::from_str(&body).context("Failed to parse models response")?;
+
+        return Ok(resp.data.into_iter().map(|m| m.id).collect());
+    }
+
+    bail!("All retry attempts exhausted for Claude API")
 }
 
 // =============================================================================
@@ -181,7 +206,9 @@ mod tests {
         assert_eq!(v["max_tokens"], 1024);
         assert_eq!(v["stream"], false);
 
-        let temp = v["temperature"].as_f64().expect("temperature should be a number");
+        let temp = v["temperature"]
+            .as_f64()
+            .expect("temperature should be a number");
         assert_f64_approx(temp, 0.7, 1e-6);
 
         assert_eq!(v["messages"].as_array().unwrap().len(), 1);
@@ -226,7 +253,6 @@ mod tests {
                 model
             );
 
-            // Expect a YYYYMMDD-like suffix after a dash, e.g. "-20250514"
             let last_dash = model.rfind('-').unwrap();
             let suffix = &model[last_dash + 1..];
 

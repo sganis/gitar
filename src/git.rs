@@ -1,5 +1,5 @@
 // src/git.rs
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -39,9 +39,25 @@ pub fn run_git(args: &[&str]) -> Result<String> {
         .args(args)
         .output()
         .map_err(|e| anyhow::anyhow!("Failed to execute git: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let error_msg = if !stderr.is_empty() {
+            stderr.to_string()
+        } else if !stdout.is_empty() {
+            stdout.to_string()
+        } else {
+            format!("exit code {}", output.status.code().unwrap_or(-1))
+        };
+        bail!("git {} failed: {}", args.join(" "), error_msg.trim());
+    }
+
     Ok(String::from_utf8_lossy(&output.stdout).to_string())
 }
 
+/// Run git command and return (stdout, stderr, success) tuple.
+/// Unlike run_git(), this does not fail on non-zero exit.
 pub fn run_git_status(args: &[&str]) -> (String, String, bool) {
     match Command::new("git").args(args).output() {
         Ok(o) => (
@@ -50,6 +66,21 @@ pub fn run_git_status(args: &[&str]) -> (String, String, bool) {
             o.status.success(),
         ),
         Err(e) => (String::new(), e.to_string(), false),
+    }
+}
+
+/// Run git command, returning Ok(stdout) on success or Ok(None) on failure.
+/// Useful for commands where failure is expected (e.g., checking if ref exists).
+pub fn run_git_optional(args: &[&str]) -> Result<Option<String>> {
+    let output = Command::new("git")
+        .args(args)
+        .output()
+        .map_err(|e| anyhow::anyhow!("Failed to execute git: {}", e))?;
+
+    if output.status.success() {
+        Ok(Some(String::from_utf8_lossy(&output.stdout).to_string()))
+    } else {
+        Ok(None)
     }
 }
 
@@ -90,8 +121,9 @@ pub fn get_current_branch() -> String {
 }
 
 pub fn get_default_branch() -> String {
+    // Use run_git_optional since these refs might not exist
     for b in ["main", "master"] {
-        if run_git(&["rev-parse", "--verify", b]).is_ok() {
+        if let Ok(Some(_)) = run_git_optional(&["rev-parse", "--verify", b]) {
             return b.into();
         }
     }
@@ -147,7 +179,7 @@ pub fn get_commit_logs(
 
 pub fn get_commit_diff(hash: &str, max_chars: usize) -> Result<Option<String>> {
     let parent_ref = format!("{}^", hash);
-    let has_parent = run_git(&["rev-parse", &parent_ref]).is_ok();
+    let has_parent = run_git_optional(&["rev-parse", &parent_ref])?.is_some();
 
     let diff = if has_parent {
         let diff_ref = format!("{}^!", hash);
@@ -249,6 +281,43 @@ pub fn build_diff_target(from: Option<&str>, to: Option<&str>, base_branch: &str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn run_git_succeeds_on_valid_command() {
+        let result = run_git(&["--version"]);
+        assert!(result.is_ok());
+        assert!(result.unwrap().contains("git version"));
+    }
+
+    #[test]
+    fn run_git_fails_on_invalid_command() {
+        let result = run_git(&["invalid-command-xyz-123"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("git invalid-command-xyz-123 failed"));
+    }
+
+    #[test]
+    fn run_git_fails_on_invalid_ref() {
+        let result = run_git(&["rev-parse", "nonexistent-ref-xyz-123"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn run_git_optional_returns_none_on_failure() {
+        let result = run_git_optional(&["rev-parse", "nonexistent-ref-xyz-123"]);
+        assert!(result.is_ok());
+        assert!(result.unwrap().is_none());
+    }
+
+    #[test]
+    fn run_git_optional_returns_some_on_success() {
+        let result = run_git_optional(&["--version"]);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.is_some());
+        assert!(output.unwrap().contains("git version"));
+    }
 
     #[test]
     fn truncate_diff_short_unchanged() {
@@ -460,13 +529,6 @@ mod tests {
     fn exclude_patterns_contains_env() {
         let patterns: Vec<&str> = EXCLUDE_PATTERNS.to_vec();
         assert!(patterns.iter().any(|p| p.contains(".env")));
-    }
-
-    #[test]
-    fn run_git_returns_result() {
-        let result = run_git(&["--version"]);
-        assert!(result.is_ok());
-        assert!(result.unwrap().contains("git version"));
     }
 
     #[test]
