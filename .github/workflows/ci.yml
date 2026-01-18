@@ -16,19 +16,53 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # -------------------------
+          # Linux x86_64
+          # -------------------------
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
-            artifact_base: gitar-linux-x64
+            pkg_os: linux
+            pkg_arch: x86_64
             artifact_ext: tar.gz
             binary_name: gitar
+
+          # -------------------------
+          # Linux aarch64 (ARM)
+          # -------------------------
+          - os: ubuntu-latest
+            target: aarch64-unknown-linux-gnu
+            pkg_os: linux
+            pkg_arch: aarch64
+            artifact_ext: tar.gz
+            binary_name: gitar
+
+          # -------------------------
+          # macOS Apple Silicon
+          # -------------------------
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_base: gitar-macos-arm64
+            pkg_os: macos
+            pkg_arch: aarch64
             artifact_ext: tar.gz
             binary_name: gitar
+
+          # -------------------------
+          # macOS Intel
+          # -------------------------
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            pkg_os: macos
+            pkg_arch: x86_64
+            artifact_ext: tar.gz
+            binary_name: gitar
+
+          # -------------------------
+          # Windows x86_64
+          # -------------------------
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_base: gitar-windows-x64
+            pkg_os: windows
+            pkg_arch: x86_64
             artifact_ext: zip
             binary_name: gitar.exe
 
@@ -60,37 +94,54 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-${{ matrix.target }}-cargo-
 
+      - name: Install cross (linux aarch64 only)
+        if: ${{ matrix.target == 'aarch64-unknown-linux-gnu' }}
+        run: cargo install cross --locked
+
       - name: Build Rust project
-        run: cargo build --release --target ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ matrix.target }}" == "aarch64-unknown-linux-gnu" ]]; then
+            cross build --release --target "${{ matrix.target }}"
+          else
+            cargo build --release --target "${{ matrix.target }}"
+          fi
 
       - name: Test Rust project
+        if: ${{ matrix.target != 'aarch64-unknown-linux-gnu' }}
         run: cargo test --release
 
       - name: Package (Unix)
         if: runner.os != 'Windows'
+        shell: bash
         env:
-          ARTIFACT_NAME: ${{ matrix.artifact_base }}-${{ steps.version.outputs.version }}.${{ matrix.artifact_ext }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
+          set -euo pipefail
           mkdir -p dist
-          cp target/${{ matrix.target }}/release/${{ matrix.binary_name }} dist/
-          cd dist
-          tar -czvf "$ARTIFACT_NAME" ${{ matrix.binary_name }}
+          cp "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" dist/gitar
+          ARTIFACT_NAME="gitar-v${VERSION}-${{ matrix.pkg_os }}-${{ matrix.pkg_arch }}.${{ matrix.artifact_ext }}"
+          (cd dist && tar -czf "$ARTIFACT_NAME" gitar)
+          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
-        env:
-          ARTIFACT_NAME: ${{ matrix.artifact_base }}-${{ steps.version.outputs.version }}.${{ matrix.artifact_ext }}
         shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          New-Item -ItemType Directory -Force -Path dist
-          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" -Destination dist/
-          Compress-Archive -Path "dist/${{ matrix.binary_name }}" -DestinationPath "dist/$env:ARTIFACT_NAME"
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/${{ matrix.binary_name }}" -Destination "dist/gitar.exe"
+          $artifactName = "gitar-v$env:VERSION-${{ matrix.pkg_os }}-${{ matrix.pkg_arch }}.${{ matrix.artifact_ext }}"
+          Compress-Archive -Path "dist/gitar.exe" -DestinationPath "dist/$artifactName"
+          "ARTIFACT_NAME=$artifactName" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ matrix.artifact_base }}-${{ steps.version.outputs.version }}.${{ matrix.artifact_ext }}
-          path: dist/${{ matrix.artifact_base }}-${{ steps.version.outputs.version }}.${{ matrix.artifact_ext }}
+          name: ${{ env.ARTIFACT_NAME }}
+          path: dist/${{ env.ARTIFACT_NAME }}
           if-no-files-found: error
 
   release:
@@ -114,5 +165,5 @@ jobs:
         with:
           generate_release_notes: true
           files: |
-            artifacts/**/*.tar.gz
-            artifacts/**/*.zip
+            artifacts/**/gitar-v*.tar.gz
+            artifacts/**/gitar-v*.zip
