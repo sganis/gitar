@@ -216,7 +216,7 @@ Large diffs can blow up context windows and cost tokens. Gitar can **shape** the
 Most commands accept:
 
 ```bash
---alg <1..4>
+--algo <1..4>
 ```
 
 ### Algorithms
@@ -238,16 +238,16 @@ Most commands accept:
 Use a different algorithm when you know you’re doing a big refactor:
 
 ```bash
-gitar commit --alg 3
-gitar pr --alg 4
-gitar changelog v1.0.0 --alg 2
-gitar explain --staged --alg 4
+gitar commit --algo 3
+gitar pr --algo 4
+gitar changelog v1.0.0 --algo 2
+gitar explain --staged --algo 4
 ```
 
 Debug what will be sent to the model:
 
 ```bash
-gitar diff --alg 2 --max-chars 15000 --stats
+gitar diff --algo 2 --max-chars 15000 --stats
 gitar diff --compare
 ```
 

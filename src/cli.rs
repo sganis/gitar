@@ -26,13 +26,13 @@ use clap::{Parser, Subcommand};
     gitar version v1.0.0            # Version bump since tag
 
     gitar diff --compare            # Compare smart diff algorithms
-    gitar commit --alg 3            # Use hunk-level analysis for large refactors
+    gitar commit --algo 3            # Use hunk-level analysis for large refactors
 
 DIFF ALGORITHMS:
-    --alg 1    Full: complete git diff (ignores --max-chars)
-    --alg 2    Files: selective files, ranked by priority
-    --alg 3    Hunks: selective hunks, ranked by importance
-    --alg 4    Semantic: JSON IR with scored hunks (default)
+    --algo 1    Full: complete git diff (ignores --max-chars)
+    --algo 2    Files: selective files, ranked by priority
+    --algo 3    Hunks: selective hunks, ranked by importance
+    --algo 4    Semantic: JSON IR with scored hunks (default)
 
 STYLE PRESETS:
     --preset rust       Rust conventions (crate/module focused)
@@ -118,7 +118,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Generate an AI commit message for currently staged changes
@@ -127,7 +127,7 @@ pub enum Commands {
     Staged {
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Generate an AI commit message for unstaged working tree changes
@@ -136,7 +136,7 @@ pub enum Commands {
     Unstaged {
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Describe a range of commits in plain English (does not modify history)
@@ -170,7 +170,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Generate a pull request description from branch changes
@@ -192,7 +192,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Generate release notes (changelog) from a commit range
@@ -221,7 +221,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Explain changes in plain English for non-technical stakeholders
@@ -250,7 +250,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Suggest a semantic version bump (major/minor/patch) from changes
@@ -271,7 +271,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Manage git hooks for automatic commit message generation
@@ -304,7 +304,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=naive, 2=standard, 3=think, 4=ir
         #[arg(long, value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: Option<u8>,
+        algo: Option<u8>,
 
         /// Include git diff --stat header
         #[arg(long)]
@@ -362,9 +362,9 @@ mod tests {
 
     #[test]
     fn cli_parses_commit_with_alg() {
-        let cli = Cli::try_parse_from(["gitar", "commit", "--alg", "3"]).unwrap();
-        if let Commands::Commit { alg, .. } = cli.command {
-            assert_eq!(alg, 3);
+        let cli = Cli::try_parse_from(["gitar", "commit", "--algo", "3"]).unwrap();
+        if let Commands::Commit { algo, .. } = cli.command {
+            assert_eq!(algo, 3);
         } else {
             panic!("Expected Commit command");
         }
@@ -373,8 +373,8 @@ mod tests {
     #[test]
     fn cli_parses_commit_default_alg() {
         let cli = Cli::try_parse_from(["gitar", "commit"]).unwrap();
-        if let Commands::Commit { alg, .. } = cli.command {
-            assert_eq!(alg, 4);
+        if let Commands::Commit { algo, .. } = cli.command {
+            assert_eq!(algo, 4);
         } else {
             panic!("Expected Commit command");
         }
@@ -382,9 +382,9 @@ mod tests {
 
     #[test]
     fn cli_parses_staged_with_alg() {
-        let cli = Cli::try_parse_from(["gitar", "staged", "--alg", "4"]).unwrap();
-        if let Commands::Staged { alg } = cli.command {
-            assert_eq!(alg, 4);
+        let cli = Cli::try_parse_from(["gitar", "staged", "--algo", "4"]).unwrap();
+        if let Commands::Staged { algo } = cli.command {
+            assert_eq!(algo, 4);
         } else {
             panic!("Expected Staged command");
         }
@@ -392,10 +392,10 @@ mod tests {
 
     #[test]
     fn cli_parses_pr_with_alg() {
-        let cli = Cli::try_parse_from(["gitar", "pr", "main", "--alg", "3"]).unwrap();
-        if let Commands::Pr { base, alg, .. } = cli.command {
+        let cli = Cli::try_parse_from(["gitar", "pr", "main", "--algo", "3"]).unwrap();
+        if let Commands::Pr { base, algo, .. } = cli.command {
             assert_eq!(base, Some("main".into()));
-            assert_eq!(alg, 3);
+            assert_eq!(algo, 3);
         } else {
             panic!("Expected Pr command");
         }
@@ -413,9 +413,9 @@ mod tests {
 
     #[test]
     fn cli_parses_diff_with_alg() {
-        let cli = Cli::try_parse_from(["gitar", "diff", "--alg", "1"]).unwrap();
-        if let Commands::Diff { alg, .. } = cli.command {
-            assert_eq!(alg, Some(1));
+        let cli = Cli::try_parse_from(["gitar", "diff", "--algo", "1"]).unwrap();
+        if let Commands::Diff { algo, .. } = cli.command {
+            assert_eq!(algo, Some(1));
         } else {
             panic!("Expected Diff command");
         }
@@ -423,13 +423,13 @@ mod tests {
 
     #[test]
     fn cli_rejects_invalid_alg() {
-        let result = Cli::try_parse_from(["gitar", "commit", "--alg", "5"]);
+        let result = Cli::try_parse_from(["gitar", "commit", "--algo", "5"]);
         assert!(result.is_err());
     }
 
     #[test]
     fn cli_rejects_alg_zero() {
-        let result = Cli::try_parse_from(["gitar", "commit", "--alg", "0"]);
+        let result = Cli::try_parse_from(["gitar", "commit", "--algo", "0"]);
         assert!(result.is_err());
     }
 
@@ -587,9 +587,9 @@ mod tests {
     fn cli_parses_all_alg_values() {
         for alg_val in 1..=4 {
             let cli =
-                Cli::try_parse_from(["gitar", "commit", "--alg", &alg_val.to_string()]).unwrap();
-            if let Commands::Commit { alg, .. } = cli.command {
-                assert_eq!(alg, alg_val);
+                Cli::try_parse_from(["gitar", "commit", "--algo", &alg_val.to_string()]).unwrap();
+            if let Commands::Commit { algo, .. } = cli.command {
+                assert_eq!(algo, alg_val);
             }
         }
     }

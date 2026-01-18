@@ -48,14 +48,14 @@ pub fn cmd_diff(
         }
 
         println!("Algorithms:");
-        println!("  --alg 1  Full: complete git diff (ignores --max-chars)");
-        println!("  --alg 2  Files: selective files, ranked by priority (default)");
-        println!("  --alg 3  Hunks: selective hunks, ranked by importance");
-        println!("  --alg 4  Semantic: JSON IR with scored hunks");
+        println!("  --algo 1  Full: complete git diff (ignores --max-chars)");
+        println!("  --algo 2  Files: selective files, ranked by priority (default)");
+        println!("  --algo 3  Hunks: selective hunks, ranked by importance");
+        println!("  --algo 4  Semantic: JSON IR with scored hunks");
         return Ok(());
     }
 
-    // If --alg is specified, use that algorithm and show stats
+    // If --algo is specified, use that algorithm and show stats
     if let Some(alg_num) = alg {
         let algorithm = DiffAlg::from_num(alg_num);
         let (output, stats) =
@@ -67,7 +67,7 @@ pub fn cmd_diff(
             println!("{}", output);
         }
     } else {
-        // No --alg specified: just show raw diff (or with stats if requested)
+        // No --algo specified: just show raw diff (or with stats if requested)
         if let Some(ref stats) = diff_stats {
             println!("=== diff --stat ===\n{}\n", stats);
         }

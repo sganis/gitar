@@ -40,10 +40,10 @@ pub mod diff {
         raw_diff: &str,
         diff_stats: Option<&str>,
         max_chars: usize,
-        alg: DiffAlg,
+        algo: DiffAlg,
         _include_header: bool,
     ) -> (String, DiffStats) {
-        let result = crate::prompts::algo::shape_diff(raw_diff, diff_stats, max_chars, alg);
+        let result = crate::prompts::algo::shape_diff(raw_diff, diff_stats, max_chars, algo);
         (result.content, result.stats)
     }
 }
@@ -81,7 +81,7 @@ async fn main() -> Result<()> {
         target,
         staged,
         max_chars,
-        alg,
+        algo,
         stats,
         stats_only,
         compare,
@@ -91,7 +91,7 @@ async fn main() -> Result<()> {
             target.clone(),
             *staged,
             *max_chars,
-            *alg,
+            *algo,
             *stats,
             *stats_only,
             *compare,
@@ -128,7 +128,7 @@ async fn main() -> Result<()> {
             write_to,
             silent,
             stream,
-            alg,
+            algo,
         } => {
             let do_stream = config.stream || stream;
             cmd_commit(
@@ -140,18 +140,18 @@ async fn main() -> Result<()> {
                 write_to,
                 silent,
                 do_stream,
-                alg,
+                algo,
                 config.max_diff_chars,
             )
             .await?
         }
 
-        Commands::Staged { alg } => {
-            cmd_staged(&client, config.preset, config.stream, alg, config.max_diff_chars).await?
+        Commands::Staged { algo } => {
+            cmd_staged(&client, config.preset, config.stream, algo, config.max_diff_chars).await?
         }
 
-        Commands::Unstaged { alg } => {
-            cmd_unstaged(&client, config.preset, config.stream, alg, config.max_diff_chars).await?
+        Commands::Unstaged { algo } => {
+            cmd_unstaged(&client, config.preset, config.stream, algo, config.max_diff_chars).await?
         }
 
         Commands::History {
@@ -161,7 +161,7 @@ async fn main() -> Result<()> {
             until,
             limit,
             delay,
-            alg,
+            algo,
         } => {
             cmd_history(
                 &client,
@@ -173,7 +173,7 @@ async fn main() -> Result<()> {
                 limit,
                 delay,
                 config.stream,
-                alg,
+                algo,
                 config.max_diff_chars,
             )
             .await?
@@ -183,7 +183,7 @@ async fn main() -> Result<()> {
             base,
             to,
             staged,
-            alg,
+            algo,
         } => {
             cmd_pr(
                 &client,
@@ -192,7 +192,7 @@ async fn main() -> Result<()> {
                 &config.base_branch,
                 staged,
                 config.stream,
-                alg,
+                algo,
                 config.max_diff_chars,
             )
             .await?
@@ -204,7 +204,7 @@ async fn main() -> Result<()> {
             since,
             until,
             limit,
-            alg,
+            algo,
         } => {
             cmd_changelog(
                 &client,
@@ -214,7 +214,7 @@ async fn main() -> Result<()> {
                 until,
                 limit,
                 config.stream,
-                alg,
+                algo,
                 config.max_diff_chars,
             )
             .await?
@@ -226,7 +226,7 @@ async fn main() -> Result<()> {
             since,
             until,
             staged,
-            alg,
+            algo,
         } => {
             cmd_explain(
                 &client,
@@ -237,7 +237,7 @@ async fn main() -> Result<()> {
                 &config.base_branch,
                 staged,
                 config.stream,
-                alg,
+                algo,
                 config.max_diff_chars,
             )
             .await?
@@ -247,7 +247,7 @@ async fn main() -> Result<()> {
             base,
             to,
             current,
-            alg,
+            algo,
         } => {
             cmd_version(
                 &client,
@@ -256,7 +256,7 @@ async fn main() -> Result<()> {
                 &config.base_branch,
                 current,
                 config.stream,
-                alg,
+                algo,
                 config.max_diff_chars,
             )
             .await?
