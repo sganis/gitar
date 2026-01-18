@@ -1,6 +1,6 @@
 // src/commands/models.rs
 use anyhow::Result;
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::os::unix::fs::PermissionsExt;
 use crate::client::LlmClient;
 

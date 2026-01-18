@@ -1,6 +1,6 @@
 // src/commands/config.rs
 use anyhow::{bail, Result};
-#[cfg(unix)]
+#[cfg(target_os = "linux")]
 use std::os::unix::fs::PermissionsExt;
 
 use crate::cli::Cli;
