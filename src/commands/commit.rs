@@ -5,8 +5,8 @@ use std::io::{self, Write};
 
 use crate::client::LlmClient;
 use crate::git::{get_diff, run_git, run_git_status};
-use crate::preset::Preset;
-use crate::prompt::{commit_system_prompt, COMMIT_USER_PROMPT};
+use crate::prompts::preset::Preset;
+use crate::prompts::templates::{commit_system, COMMIT_USER};
 
 use super::{apply_smart_diff_with_context, AnalysisContext};
 
@@ -50,11 +50,11 @@ pub async fn cmd_commit(
     let diff =
         apply_smart_diff_with_context(&raw_diff, max_diff_chars, silent, alg, Some(&context))?;
 
-    let system = commit_system_prompt(preset);
+    let system = commit_system(preset);
 
     // Hook mode: never stream (hooks expect file output only)
     if let Some(ref output_file) = write_to {
-        let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
+        let prompt = COMMIT_USER.replace("{diff}", &diff);
         let msg = client.chat(&system, &prompt, false).await?;
         fs::write(output_file, format!("{}\n", msg.trim()))?;
         return Ok(());
@@ -62,7 +62,7 @@ pub async fn cmd_commit(
 
     // Interactive mode
     let commit_message = loop {
-        let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
+        let prompt = COMMIT_USER.replace("{diff}", &diff);
 
         let do_stream = stream && !silent;
         let msg = client.chat(&system, &prompt, do_stream).await?;
@@ -175,8 +175,8 @@ pub async fn cmd_staged(
     let diff =
         apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context))?;
 
-    let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
-    let system = commit_system_prompt(preset);
+    let prompt = COMMIT_USER.replace("{diff}", &diff);
+    let system = commit_system(preset);
     let msg = client.chat(&system, &prompt, stream).await?;
     if stream {
         println!();
@@ -204,8 +204,8 @@ pub async fn cmd_unstaged(
 
     let diff =
         apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context))?;
-    let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
-    let system = commit_system_prompt(preset);
+    let prompt = COMMIT_USER.replace("{diff}", &diff);
+    let system = commit_system(preset);
     let msg = client.chat(&system, &prompt, stream).await?;
     if stream {
         println!();

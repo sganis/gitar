@@ -9,7 +9,6 @@
 
 use anyhow::{bail, Result};
 use std::borrow::Cow;
-
 use super::algo::{shape_diff, DiffAlg, DiffStats, ShapedDiff};
 use super::secrets::{process_secrets, SecretAction, SecretScanResult};
 use crate::git;
@@ -61,6 +60,17 @@ impl DiffOptions {
 // PUBLIC API
 // =============================================================================
 
+/// Compatibility wrapper for existing code
+pub fn get_llm_diff_preview(
+    raw_diff: &str,
+    diff_stats: Option<&str>,
+    max_chars: usize,
+    algo: DiffAlg,
+    _include_header: bool,
+) -> (String, DiffStats) {
+    let result = crate::prompts::algo::shape_diff(raw_diff, diff_stats, max_chars, algo);
+    (result.content, result.stats)
+}
 /// Process staged changes
 pub fn process_staged(opts: &DiffOptions) -> Result<ProcessedDiff> {
     let raw = git::get_diff(None, true, opts.max_chars * 2)?;

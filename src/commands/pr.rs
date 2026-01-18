@@ -3,7 +3,7 @@ use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::git::{build_diff_target, build_range, get_commit_logs, get_current_branch, get_diff, get_diff_stats};
-use crate::prompt::{PR_SYSTEM_PROMPT, PR_USER_PROMPT};
+use crate::prompts::templates::{PR_SYSTEM, PR_USER};
 
 use super::apply_smart_diff;
 
@@ -62,13 +62,13 @@ pub async fn cmd_pr(
         return Ok(());
     }
 
-    let prompt = PR_USER_PROMPT
+    let prompt = PR_USER
         .replace("{branch}", &branch)
         .replace("{commits}", &commits_text)
         .replace("{stats}", &stats)
         .replace("{diff}", &diff);
 
-    let r = client.chat(PR_SYSTEM_PROMPT, &prompt, stream).await?;
+    let r = client.chat(PR_SYSTEM, &prompt, stream).await?;
     if stream {
         println!();
     } else {

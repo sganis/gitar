@@ -3,7 +3,7 @@ use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::git::{get_commit_logs, get_diff};
-use crate::prompt::{CHANGELOG_SYSTEM_PROMPT, CHANGELOG_USER_PROMPT};
+use crate::prompts::templates::{CHANGELOG_SYSTEM, CHANGELOG_USER};
 
 use super::apply_smart_diff;
 
@@ -79,13 +79,13 @@ pub async fn cmd_changelog(
         String::new()
     };
 
-    let prompt = CHANGELOG_USER_PROMPT
+    let prompt = CHANGELOG_USER
         .replace("{range}", &display)
         .replace("{count}", &commits.len().to_string())
         .replace("{commits}", &ct)
         .replace("{diff}", &diff);
 
-    let r = client.chat(CHANGELOG_SYSTEM_PROMPT, &prompt, stream).await?;
+    let r = client.chat(CHANGELOG_SYSTEM, &prompt, stream).await?;
     if stream {
         println!();
     } else {

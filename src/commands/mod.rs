@@ -22,7 +22,8 @@ pub use pr::cmd_pr;
 pub use version::cmd_version;
 
 use anyhow::Result;
-use crate::diff::{get_llm_diff_preview, DiffAlg, DiffStats};
+use crate::prompts::diff::get_llm_diff_preview;
+use crate::prompts::algo::{DiffAlg, DiffStats};
 
 /// Context information for analysis header
 #[derive(Debug, Default)]

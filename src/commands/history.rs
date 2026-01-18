@@ -3,8 +3,8 @@ use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::git::{get_commit_diff, get_commit_logs};
-use crate::preset::Preset;
-use crate::prompt::{history_system_prompt, HISTORY_USER_PROMPT};
+use crate::prompts::preset::Preset;
+use crate::prompts::templates::{history_system, HISTORY_USER};
 
 use super::apply_smart_diff;
 
@@ -81,11 +81,11 @@ pub async fn cmd_history(
 
         let diff = apply_smart_diff(&raw_diff, max_diff_chars, true, alg)?;
 
-        let prompt = HISTORY_USER_PROMPT
+        let prompt = HISTORY_USER
             .replace("{original_message}", &c.message)
             .replace("{diff}", &diff);
 
-        let system = history_system_prompt(preset);
+        let system = history_system(preset);
         match client.chat(&system, &prompt, stream).await {
             Ok(r) => {
                 if stream {

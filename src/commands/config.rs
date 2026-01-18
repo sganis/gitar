@@ -4,7 +4,7 @@ use anyhow::{bail, Result};
 use crate::cli::Cli;
 use crate::config::{normalize_provider, Config, DEFAULT_MAX_DIFF_CHARS};
 use crate::git;
-use crate::preset::Preset;
+use crate::prompts::preset::Preset;
 use std::path::PathBuf;
 
 pub fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {

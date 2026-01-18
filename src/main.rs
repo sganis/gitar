@@ -8,46 +8,6 @@ mod prompts;
 mod providers;
 mod types;
 
-// Backward compatibility re-exports for existing commands
-pub mod preset {
-    pub use crate::prompts::preset::*;
-}
-
-pub mod prompt {
-    pub use crate::prompts::templates::*;
-    // Re-export with old names for compatibility
-    pub use crate::prompts::templates::CHANGELOG_SYSTEM as CHANGELOG_SYSTEM_PROMPT;
-    pub use crate::prompts::templates::CHANGELOG_USER as CHANGELOG_USER_PROMPT;
-    pub use crate::prompts::templates::COMMIT_SYSTEM as COMMIT_SYSTEM_PROMPT;
-    pub use crate::prompts::templates::COMMIT_USER as COMMIT_USER_PROMPT;
-    pub use crate::prompts::templates::EXPLAIN_SYSTEM as EXPLAIN_SYSTEM_PROMPT;
-    pub use crate::prompts::templates::EXPLAIN_USER as EXPLAIN_USER_PROMPT;
-    pub use crate::prompts::templates::HISTORY_SYSTEM as HISTORY_SYSTEM_PROMPT;
-    pub use crate::prompts::templates::HISTORY_USER as HISTORY_USER_PROMPT;
-    pub use crate::prompts::templates::PR_SYSTEM as PR_SYSTEM_PROMPT;
-    pub use crate::prompts::templates::PR_USER as PR_USER_PROMPT;
-    pub use crate::prompts::templates::VERSION_SYSTEM as VERSION_SYSTEM_PROMPT;
-    pub use crate::prompts::templates::VERSION_USER as VERSION_USER_PROMPT;
-    pub use crate::prompts::templates::commit_system as commit_system_prompt;
-    pub use crate::prompts::templates::history_system as history_system_prompt;
-}
-
-pub mod diff {
-    pub use crate::prompts::algo::{DiffAlg, DiffStats};
-    
-    /// Compatibility wrapper for existing code
-    pub fn get_llm_diff_preview(
-        raw_diff: &str,
-        diff_stats: Option<&str>,
-        max_chars: usize,
-        algo: DiffAlg,
-        _include_header: bool,
-    ) -> (String, DiffStats) {
-        let result = crate::prompts::algo::shape_diff(raw_diff, diff_stats, max_chars, algo);
-        (result.content, result.stats)
-    }
-}
-
 use anyhow::{bail, Result};
 use clap::Parser;
 use cli::{Cli, Commands};

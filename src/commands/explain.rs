@@ -3,7 +3,7 @@ use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::git::{build_diff_target, get_commit_logs, get_diff, get_diff_stats};
-use crate::prompt::{EXPLAIN_SYSTEM_PROMPT, EXPLAIN_USER_PROMPT};
+use crate::prompts::templates::{EXPLAIN_SYSTEM, EXPLAIN_USER};
 
 use super::apply_smart_diff;
 
@@ -69,12 +69,12 @@ pub async fn cmd_explain(
         return Ok(());
     }
 
-    let prompt = EXPLAIN_USER_PROMPT
+    let prompt = EXPLAIN_USER
         .replace("{range}", if staged { "staged" } else { &display })
         .replace("{stats}", &stats)
         .replace("{diff}", &diff);
 
-    let r = client.chat(EXPLAIN_SYSTEM_PROMPT, &prompt, stream).await?;
+    let r = client.chat(EXPLAIN_SYSTEM, &prompt, stream).await?;
     if stream {
         println!();
     } else {

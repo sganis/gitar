@@ -3,7 +3,7 @@ use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::git::{build_diff_target, get_current_version, get_diff};
-use crate::prompt::{VERSION_SYSTEM_PROMPT, VERSION_USER_PROMPT};
+use crate::prompts::templates::{VERSION_SYSTEM, VERSION_USER};
 
 use super::apply_smart_diff;
 
@@ -36,11 +36,11 @@ pub async fn cmd_version(
 
     let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg)?;
 
-    let prompt = VERSION_USER_PROMPT
+    let prompt = VERSION_USER
         .replace("{version}", &current)
         .replace("{diff}", &diff);
 
-    let r = client.chat(VERSION_SYSTEM_PROMPT, &prompt, stream).await?;
+    let r = client.chat(VERSION_SYSTEM, &prompt, stream).await?;
     if stream {
         println!();
     } else {
