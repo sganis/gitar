@@ -82,6 +82,8 @@ pub struct Config {
     pub base_branch: Option<String>,
     /// Maximum characters to include in diff context for LLM
     pub max_diff_chars: Option<usize>,
+    /// Disable TLS certificate verification (INSECURE)
+    pub insecure_tls: Option<bool>,
     pub openai: Option<ProviderConfig>,
     pub claude: Option<ProviderConfig>,
     pub gemini: Option<ProviderConfig>,
@@ -145,6 +147,7 @@ pub struct ResolvedConfig {
     pub base_branch: String,
     pub stream: bool,
     pub max_diff_chars: usize,
+    pub insecure_tls: bool,
 }
 
 impl ResolvedConfig {
@@ -158,6 +161,7 @@ impl ResolvedConfig {
         cli_provider: Option<&String>,
         cli_base_branch: Option<&String>,
         cli_stream: Option<bool>,
+        cli_insecure_tls: Option<bool>,
         file: &Config,
         default_branch_fn: impl Fn() -> String,
     ) -> Self {
@@ -215,6 +219,11 @@ impl ResolvedConfig {
         // Max diff chars: config > default
         let max_diff_chars = file.max_diff_chars.unwrap_or(DEFAULT_MAX_DIFF_CHARS);
 
+        // Insecure TLS: CLI > config > default (false)
+        let insecure_tls = cli_insecure_tls
+            .or(file.insecure_tls)
+            .unwrap_or(false);
+
         Self {
             provider,
             api_key,
@@ -225,6 +234,7 @@ impl ResolvedConfig {
             base_branch,
             stream,
             max_diff_chars,
+            insecure_tls,
         }
     }
 }
@@ -242,6 +252,7 @@ mod tests {
         assert!(config.default_provider.is_none());
         assert!(config.base_branch.is_none());
         assert!(config.max_diff_chars.is_none());
+        assert!(config.insecure_tls.is_none());
         assert!(config.openai.is_none());
         assert!(config.claude.is_none());
     }
@@ -252,6 +263,7 @@ mod tests {
             default_provider: Some("claude".into()),
             base_branch: Some("main".into()),
             max_diff_chars: Some(30000),
+            insecure_tls: None,
             openai: Some(ProviderConfig {
                 api_key: Some("sk-test123".into()),
                 model: Some("gpt-4o".into()),
@@ -277,6 +289,7 @@ mod tests {
             default_provider = "gemini"
             base_branch = "develop"
             max_diff_chars = 100000
+            insecure_tls = true
 
             [openai]
             api_key = "sk-test"
@@ -288,6 +301,7 @@ mod tests {
         let config: Config = toml::from_str(toml_str).unwrap();
         assert_eq!(config.default_provider, Some("gemini".into()));
         assert_eq!(config.max_diff_chars, Some(100000));
+        assert_eq!(config.insecure_tls, Some(true));
         assert!(config.openai.is_some());
         assert!(config.claude.is_some());
     }
@@ -337,13 +351,14 @@ mod tests {
         let file = Config::default();
         let provider = "openai".to_string();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, None,
+            None, None, None, None, None, Some(&provider), None, None, None,
             &file, || "main".into(),
         );
         assert_eq!(resolved.provider, "openai");
         assert_eq!(resolved.model, "gpt-4o");
         assert_eq!(resolved.base_url, PROVIDER_OPENAI);
         assert!(!resolved.stream);
+        assert!(!resolved.insecure_tls);
         assert_eq!(resolved.max_diff_chars, DEFAULT_MAX_DIFF_CHARS);
     }
 
@@ -354,7 +369,7 @@ mod tests {
             ..Default::default()
         };
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None,
             &file, || "main".into(),
         );
         assert_eq!(resolved.max_diff_chars, 25000);
@@ -376,7 +391,7 @@ mod tests {
         };
         let provider = "claude".to_string();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, None,
+            None, None, None, None, None, Some(&provider), None, None, None,
             &file, || "main".into(),
         );
         assert_eq!(resolved.provider, "claude");
@@ -402,7 +417,7 @@ mod tests {
         let cli_model = "gpt-4o-mini".to_string();
         let resolved = ResolvedConfig::new(
             Some(&cli_key), Some(&cli_model), Some(500), Some(0.9),
-            None, Some(&provider), None, Some(false),
+            None, Some(&provider), None, Some(false), None,
             &file, || "main".into(),
         );
         assert_eq!(resolved.api_key, Some("cli-key".into()));
@@ -422,7 +437,7 @@ mod tests {
             ..Default::default()
         };
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None,
             &file, || "main".into(),
         );
         assert_eq!(resolved.provider, "gemini");
@@ -433,7 +448,7 @@ mod tests {
     fn resolved_config_stream_defaults_to_false() {
         let file = Config::default();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None,
+            None, None, None, None, None, None, None, None, None,
             &file, || "main".into(),
         );
         assert!(!resolved.stream);
@@ -450,7 +465,7 @@ mod tests {
         };
         let provider = "openai".to_string();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, None,
+            None, None, None, None, None, Some(&provider), None, None, None,
             &file, || "main".into(),
         );
         assert!(resolved.stream);
@@ -467,13 +482,58 @@ mod tests {
         };
         let provider = "openai".to_string();
         let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, Some(true),
+            None, None, None, None, None, Some(&provider), None, Some(true), None,
             &file, || "main".into(),
         );
         assert!(resolved.stream);
     }
+
+    #[test]
+    fn resolved_config_insecure_tls_defaults_to_false() {
+        let file = Config::default();
+        let resolved = ResolvedConfig::new(
+            None, None, None, None, None, None, None, None, None,
+            &file, || "main".into(),
+        );
+        assert!(!resolved.insecure_tls);
+    }
+
+    #[test]
+    fn resolved_config_insecure_tls_from_config() {
+        let file = Config {
+            insecure_tls: Some(true),
+            ..Default::default()
+        };
+        let resolved = ResolvedConfig::new(
+            None, None, None, None, None, None, None, None, None,
+            &file, || "main".into(),
+        );
+        assert!(resolved.insecure_tls);
+    }
+
+    #[test]
+    fn resolved_config_cli_insecure_tls_overrides_config() {
+        let file = Config {
+            insecure_tls: Some(false),
+            ..Default::default()
+        };
+        let resolved = ResolvedConfig::new(
+            None, None, None, None, None, None, None, None, Some(true),
+            &file, || "main".into(),
+        );
+        assert!(resolved.insecure_tls);
+    }
+
+    #[test]
+    fn resolved_config_cli_insecure_tls_can_disable() {
+        let file = Config {
+            insecure_tls: Some(true),
+            ..Default::default()
+        };
+        let resolved = ResolvedConfig::new(
+            None, None, None, None, None, None, None, None, Some(false),
+            &file, || "main".into(),
+        );
+        assert!(!resolved.insecure_tls);
+    }
 }
-
-
-
-

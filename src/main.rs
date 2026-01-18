@@ -70,6 +70,7 @@ async fn main() -> Result<()> {
         cli.provider.as_ref(),
         cli.base_branch.as_ref(),
         if cli.stream { Some(true) } else { None },
+        if cli.insecure_tls { Some(true) } else { None },
         &file_config,
         get_default_branch,
     );

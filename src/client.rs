@@ -20,6 +20,12 @@ impl LlmClient {
         let mut builder = Client::builder()
             .danger_accept_invalid_certs(true)
             .timeout(std::time::Duration::from_secs(120));
+        
+        // TLS verification: secure by default
+        if config.insecure_tls {
+            eprintln!("WARNING: TLS certificate verification disabled. This is insecure!");
+            builder = builder.danger_accept_invalid_certs(true);
+        }
 
         if let Ok(proxy_url) = std::env::var("ALL_PROXY") {
             let proxy_url = proxy_url.trim();
@@ -160,6 +166,7 @@ mod tests {
             base_branch: "main".into(),
             stream: false,
             max_diff_chars: 10_000,
+            insecure_tls: false,
         }
     }
 
@@ -279,6 +286,7 @@ mod tests {
             base_branch: "main".into(),
             stream: false,
             max_diff_chars: 10_000,
+            insecure_tls: false
         };
         let client = LlmClient::new(&config).unwrap();
         assert!(!client.base_url.ends_with('/'));

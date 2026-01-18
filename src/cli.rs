@@ -58,6 +58,10 @@ pub struct Cli {
     #[arg(long, global = true, default_value_t = false)]
     pub stream: bool,
 
+    /// Disable TLS certificate verification (INSECURE - use only for debugging)
+    #[arg(long, global = true, default_value_t = false)]
+    pub insecure_tls: bool,
+
     #[command(subcommand)]
     pub command: Commands,
 }
