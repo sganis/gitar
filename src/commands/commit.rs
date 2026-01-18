@@ -7,7 +7,7 @@ use crate::client::LlmClient;
 use crate::git::{get_diff, run_git, run_git_status};
 use crate::prompt::{COMMIT_SYSTEM_PROMPT, COMMIT_USER_PROMPT};
 
-use super::apply_smart_diff;
+use super::{apply_smart_diff_with_context, AnalysisContext};
 
 pub async fn cmd_commit(
     client: &LlmClient,
@@ -41,7 +41,13 @@ pub async fn cmd_commit(
         return Ok(());
     }
 
-    let diff = apply_smart_diff(&raw_diff, max_diff_chars, silent, alg)?;
+    // Build context for header
+    let context = AnalysisContext::new()
+        .with_branch()
+        .with_provider(client.provider())
+        .with_model(client.model());
+
+    let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, silent, alg, Some(&context))?;
 
     // Hook mode: never stream (hooks expect file output only)
     if let Some(ref output_file) = write_to {
@@ -149,7 +155,12 @@ pub async fn cmd_staged(client: &LlmClient, stream: bool, alg: u8, max_diff_char
         bail!("No staged changes.");
     }
 
-    let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg)?;
+    let context = AnalysisContext::new()
+        .with_branch()
+        .with_provider(client.provider())
+        .with_model(client.model());
+
+    let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context))?;
 
     let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
     let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt, stream).await?;
@@ -167,7 +178,12 @@ pub async fn cmd_unstaged(client: &LlmClient, stream: bool, alg: u8, max_diff_ch
         bail!("No unstaged changes.");
     }
 
-    let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg)?;
+    let context = AnalysisContext::new()
+        .with_branch()
+        .with_provider(client.provider())
+        .with_model(client.model());
+
+    let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context))?;
     let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
     let msg = client.chat(COMMIT_SYSTEM_PROMPT, &prompt, stream).await?;
     if stream {

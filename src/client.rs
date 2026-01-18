@@ -51,6 +51,10 @@ impl LlmClient {
         &self.model
     }
 
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
+
     fn is_claude_api(&self) -> bool {
         self.provider == "claude" || self.base_url.contains("anthropic.com")
     }
