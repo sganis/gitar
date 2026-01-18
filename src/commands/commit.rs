@@ -41,9 +41,7 @@ pub async fn cmd_commit(
         return Ok(());
     }
 
-    // Build context for header
     let context = AnalysisContext::new()
-        .with_branch()
         .with_provider(client.provider())
         .with_model(client.model());
 
@@ -156,7 +154,6 @@ pub async fn cmd_staged(client: &LlmClient, stream: bool, alg: u8, max_diff_char
     }
 
     let context = AnalysisContext::new()
-        .with_branch()
         .with_provider(client.provider())
         .with_model(client.model());
 
@@ -179,7 +176,6 @@ pub async fn cmd_unstaged(client: &LlmClient, stream: bool, alg: u8, max_diff_ch
     }
 
     let context = AnalysisContext::new()
-        .with_branch()
         .with_provider(client.provider())
         .with_model(client.model());
 

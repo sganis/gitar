@@ -22,15 +22,11 @@ pub use pr::cmd_pr;
 pub use version::cmd_version;
 
 use anyhow::Result;
-use crate::diff::{get_llm_diff_preview, split_diff_by_file, DiffAlg};
-use crate::git::get_current_branch;
+use crate::diff::{get_llm_diff_preview, DiffAlg, DiffStats};
 
 /// Context information for analysis header
 #[derive(Debug, Default)]
 pub struct AnalysisContext {
-    pub branch: Option<String>,
-    pub range: Option<String>,
-    pub commit_count: Option<usize>,
     pub provider: Option<String>,
     pub model: Option<String>,
 }
@@ -38,21 +34,6 @@ pub struct AnalysisContext {
 impl AnalysisContext {
     pub fn new() -> Self {
         Self::default()
-    }
-
-    pub fn with_branch(mut self) -> Self {
-        self.branch = Some(get_current_branch());
-        self
-    }
-
-    pub fn with_range(mut self, range: impl Into<String>) -> Self {
-        self.range = Some(range.into());
-        self
-    }
-
-    pub fn with_commits(mut self, count: usize) -> Self {
-        self.commit_count = Some(count);
-        self
     }
 
     pub fn with_provider(mut self, provider: impl Into<String>) -> Self {
@@ -65,50 +46,41 @@ impl AnalysisContext {
         self
     }
 
-    pub fn display(&self, files_changed: usize) -> String {
-        let mut lines = Vec::new();
+    pub fn display(&self, stats: &DiffStats) -> String {
+        let provider = self.provider.as_deref().unwrap_or("default");
+        let model = self.model.as_deref().unwrap_or("default");
 
-        // Line 1: Analysis summary
-        let mut summary = String::from("Analyzing ");
-        if let Some(count) = self.commit_count {
-            summary.push_str(&format!("{} commit{}", count, if count == 1 { "" } else { "s" }));
-            if let Some(ref range) = self.range {
-                summary.push_str(&format!(" ({})", range));
-            }
+        let reduction_pct = if stats.total_chars > 0 {
+            (1.0 - stats.output_chars as f64 / stats.total_chars as f64) * 100.0
         } else {
-            summary.push_str("working changes");
-        }
-        if let Some(ref branch) = self.branch {
-            summary.push_str(&format!(" on {}", branch));
-        }
-        lines.push(summary);
+            0.0
+        };
 
-        // Line 2: Files changed
-        lines.push(format!("Files changed: {}", files_changed));
-
-        // Line 3: Provider/Model (if available)
-        if self.provider.is_some() || self.model.is_some() {
-            let provider = self.provider.as_deref().unwrap_or("default");
-            let model = self.model.as_deref().unwrap_or("default");
-            lines.push(format!("Provider: {} | Model: {}", provider, model));
-        }
-
-        // Build bordered box
-        let max_len = lines.iter().map(|l| l.len()).max().unwrap_or(40).max(40);
-        let border = "─".repeat(max_len + 2);
-
-        let mut output = String::new();
-        output.push_str(&format!("╭─ Context {}╮\n", border.chars().skip(10).collect::<String>()));
-        for line in &lines {
-            output.push_str(&format!("│ {:<width$} │\n", line, width = max_len));
-        }
-        output.push_str(&format!("╰{}╯", border));
-
-        output
+        format!(
+            "### Context ###########################################\n\
+             Model      : {}/{}\n\
+             Diff algo  : {} - {}\n\
+             Files      : {}/{} included ({} excluded)\n\
+             Chars      : {} → {} ({:.1}% reduction)\n\
+             Est Tokens : ~{}\n\
+             Truncated  : {}\n",
+            provider,
+            model,
+            stats.algorithm.num(),
+            stats.algorithm.name(),
+            stats.included_files,
+            stats.total_files,
+            stats.excluded_files,
+            stats.total_chars,
+            stats.output_chars,
+            reduction_pct,
+            stats.estimated_tokens,
+            if stats.truncated { "yes" } else { "no" }
+        )
     }
 }
 
-/// Shared helper: apply smart diff algorithm with optional context header
+/// Shared helper: apply smart diff algorithm
 pub(crate) fn apply_smart_diff(
     raw_diff: &str,
     max_chars: usize,
@@ -130,15 +102,10 @@ pub(crate) fn apply_smart_diff_with_context(
     let (shaped_diff, stats) = get_llm_diff_preview(raw_diff, None, max_chars, algorithm, false);
 
     if !silent {
-        // Print context header if provided
-        if let Some(ctx) = context {
-            let files_changed = split_diff_by_file(raw_diff)
-                .iter()
-                .filter(|c| c.priority > 0)
-                .count();
-            eprintln!("{}", ctx.display(files_changed));
+        match context {
+            Some(ctx) => eprintln!("{}", ctx.display(&stats)),
+            None => eprintln!("{}", stats.display()),
         }
-        eprintln!("{}", stats.display());
     }
 
     Ok(shaped_diff)
