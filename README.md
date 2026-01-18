@@ -4,13 +4,13 @@
 
 **gitar** is an AI-powered Git assistant that generates **commit messages, PR descriptions, changelogs, explanations, and version bump suggestions** directly from your diffs and history.
 
-It supports:
-- **OpenAI**
-- **Anthropic Claude**
-- **Google Gemini**
-- **Groq**
-- **Ollama** (local models)
-- **Any OpenAI-compatible API** (OpenRouter, Together, Mistral, etc.)
+Gitar supports:
+
+- **openai** — OpenAI & compatible APIs (OpenRouter, Together, Mistral, …)
+- **claude** — Anthropic
+- **gemini** — Google
+- **groq**   — hosted LLM inference API
+- **ollama** — local models
 
 The name combines **Git** + **Ai** + **Rust** (and happens to sound like *guitar*).
 

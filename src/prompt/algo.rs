@@ -127,7 +127,7 @@ impl DiffStats {
         };
 
         format!(
-            "Alg: {} | Files: {}/{} | Chars: {} → {} | Tokens: ~{}{}\n  {}",
+            "Alg: {} | Files: {}/{} | Chars: {} → {} | Tokens: ~{}{}\n  {}\n",
             self.algorithm.name(),
             self.included_files,
             self.total_files,
