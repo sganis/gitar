@@ -15,7 +15,7 @@ impl Preset {
     pub fn from_str(s: &str) -> Option<Self> {
         match s.to_lowercase().as_str() {
             "rust" | "rs" => Some(Self::Rust),
-            "javascript" | "js" | "typescript" | "ts" => Some(Self::JavaScript),
+            "javascript" | "js" => Some(Self::JavaScript),
             "python" | "py" => Some(Self::Python),
             "default" | "auto" => None, // None means auto-detect
             _ => None,

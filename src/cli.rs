@@ -60,11 +60,11 @@ pub struct Cli {
     )]
     pub provider: Option<String>,
 
-    /// Commit message style preset (rust, js, python, auto)
+    /// Commit message style preset
     #[arg(
         long,
         global = true,
-        value_parser = ["rust", "rs", "javascript", "js", "typescript", "ts", "python", "py", "auto", "default"]
+        value_parser = ["rust", "rs", "javascript", "js", "python", "py", "auto"]
     )]
     pub preset: Option<String>,
 
