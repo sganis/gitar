@@ -10,7 +10,7 @@
 use anyhow::{bail, Result};
 use std::borrow::Cow;
 use super::algo::{shape_diff, DiffAlg, DiffStats, ShapedDiff};
-use super::secrets::{process_secrets, SecretAction, SecretScanResult};
+use super::secret::{process_secrets, SecretAction, SecretScanResult};
 use crate::git;
 
 // =============================================================================

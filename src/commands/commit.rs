@@ -6,7 +6,7 @@ use std::io::{self, Write};
 use crate::client::LlmClient;
 use crate::git::{get_diff, run_git, run_git_status};
 use crate::prompts::preset::Preset;
-use crate::prompts::templates::{commit_system, COMMIT_USER};
+use crate::prompts::template::{commit_system, COMMIT_USER};
 
 use super::{apply_smart_diff_with_context, AnalysisContext};
 

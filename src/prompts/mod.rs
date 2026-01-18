@@ -12,8 +12,8 @@
 pub mod algo;
 pub mod diff;
 pub mod preset;
-pub mod secrets;
-pub mod templates;
+pub mod secret;
+pub mod template;
 
 // Re-export for backward compatibility with existing code
 pub use algo::{compare_algorithms, shape_diff, DiffAlg, DiffStats, ShapedDiff};
@@ -22,4 +22,4 @@ pub use diff::{
     process_unstaged, DiffOptions, ProcessedDiff,
 };
 pub use preset::Preset;
-pub use secrets::SecretAction;
+pub use secret::SecretAction;
