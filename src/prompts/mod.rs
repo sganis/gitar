@@ -1,0 +1,19 @@
+// src/prompts/mod.rs
+//
+// Everything related to preparing context for LLMs.
+// Re-exports maintain backward compatibility with existing commands.
+
+pub mod algo;
+pub mod diff;
+pub mod preset;
+pub mod secrets;
+pub mod templates;
+
+// Re-export for backward compatibility with existing code
+pub use algo::{compare_algorithms, shape_diff, DiffAlg, DiffStats, ShapedDiff};
+pub use diff::{
+    build_context_header, process_commit, process_raw_diff, process_ref, process_staged,
+    process_unstaged, DiffOptions, ProcessedDiff,
+};
+pub use preset::Preset;
+pub use secrets::SecretAction;
