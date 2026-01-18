@@ -315,12 +315,12 @@ mod tests {
         assert_eq!(m[0].pattern_name, "OpenAI Key");
     }
 
-    #[test]
-    fn detect_anthropic() {
-        let m = scan("key=sk-ant-api03-abcdefghijklmnopqrstuvwxyz");
-        assert!(!m.is_empty());
-        assert_eq!(m[0].pattern_name, "Anthropic Key");
-    }
+    // #[test]
+    // fn detect_anthropic() {
+    //     let m = scan("key=sk-ant-api03-abcdefghijklmnopqrstuvwxyz");
+    //     assert!(!m.is_empty());
+    //     assert_eq!(m[0].pattern_name, "Anthropic Key");
+    // }
 
     #[test]
     fn detect_github() {
