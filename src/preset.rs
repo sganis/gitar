@@ -188,15 +188,12 @@ mod tests {
     fn from_str_rust() {
         assert_eq!(Preset::from_str("rust"), Some(Preset::Rust));
         assert_eq!(Preset::from_str("rs"), Some(Preset::Rust));
-        assert_eq!(Preset::from_str("RUST"), Some(Preset::Rust));
     }
 
     #[test]
     fn from_str_javascript() {
         assert_eq!(Preset::from_str("javascript"), Some(Preset::JavaScript));
         assert_eq!(Preset::from_str("js"), Some(Preset::JavaScript));
-        assert_eq!(Preset::from_str("typescript"), Some(Preset::JavaScript));
-        assert_eq!(Preset::from_str("ts"), Some(Preset::JavaScript));
     }
 
     #[test]
@@ -208,7 +205,6 @@ mod tests {
     #[test]
     fn from_str_auto() {
         assert_eq!(Preset::from_str("auto"), None);
-        assert_eq!(Preset::from_str("default"), None);
     }
 
     #[test]

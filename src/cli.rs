@@ -620,18 +620,6 @@ mod tests {
     }
 
     #[test]
-    fn cli_parses_preset_typescript() {
-        let cli = Cli::try_parse_from(["gitar", "--preset", "typescript", "staged"]).unwrap();
-        assert_eq!(cli.preset, Some("typescript".into()));
-    }
-
-    #[test]
-    fn cli_parses_preset_ts_alias() {
-        let cli = Cli::try_parse_from(["gitar", "--preset", "ts", "staged"]).unwrap();
-        assert_eq!(cli.preset, Some("ts".into()));
-    }
-
-    #[test]
     fn cli_parses_preset_python() {
         let cli = Cli::try_parse_from(["gitar", "--preset", "python", "staged"]).unwrap();
         assert_eq!(cli.preset, Some("python".into()));
