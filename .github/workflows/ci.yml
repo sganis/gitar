@@ -65,6 +65,17 @@ jobs:
             pkg_arch: x86_64
             artifact_ext: zip
             binary_name: gitar.exe
+          
+            # -------------------------
+          # Windows ARM64
+          # -------------------------
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            pkg_os: windows
+            pkg_arch: arm64
+            artifact_ext: zip
+            binary_name: gitar.exe
+
 
     steps:
       - name: Checkout

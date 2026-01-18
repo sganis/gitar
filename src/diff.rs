@@ -115,6 +115,8 @@ pub struct DiffStats {
 
 impl DiffStats {
     pub fn display(&self) -> String {
+        //let provider = self.provider.as_deref().unwrap_or("default");
+        //let model = self.model.as_deref().unwrap_or("default");
         let reduction_pct = if self.total_chars > 0 {
             (1.0 - self.output_chars as f64 / self.total_chars as f64) * 100.0
         } else {
@@ -122,23 +124,23 @@ impl DiffStats {
         };
 
         format!(
-            "╭─ Diff Stats ─────────────────────────────────╮\n\
-             │ Algorithm:  {} - {}\n\
-             │ Files:      {}/{} included ({} excluded)\n\
-             │ Chars:      {} → {} ({:.1}% reduction)\n\
-             │ Est Tokens: ~{}\n\
-             │ Truncated:  {}\n\
-             ╰──────────────────────────────────────────────╯",
+            "---- Gitar Context -----------------------------\n\
+             Diff algo  : {} - {}\n\
+             Files      : {}/{} included (truncated: {})\n\
+             Chars      : {} → {} ({:.1}% reduction)\n\
+             Est Tokens : ~{}\n\
+             --------------------------------------------------\n",
+            //provider,
+            //model,
             self.algorithm.num(),
             self.algorithm.name(),
             self.included_files,
             self.total_files,
-            self.excluded_files,
+            if self.truncated { "yes" } else { "no" },
             self.total_chars,
             self.output_chars,
             reduction_pct,
-            self.estimated_tokens,
-            if self.truncated { "yes" } else { "no" }
+            self.estimated_tokens            
         )
     }
 }
