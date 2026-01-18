@@ -1,6 +1,7 @@
 // src/providers/retry.rs
 use anyhow::{bail, Result};
 use reqwest::StatusCode;
+use serde::Deserialize;
 use std::time::Duration;
 
 /// Configuration for retry behavior
@@ -22,6 +23,25 @@ impl Default for RetryConfig {
             max_delay_ms: 30000,
         }
     }
+}
+
+/// Common API error response format
+#[derive(Debug, Deserialize)]
+struct ApiError {
+    error: Option<ApiErrorDetail>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiErrorDetail {
+    message: Option<String>,
+}
+
+/// Try to extract a user-friendly error message from an API response body
+fn extract_error_message(body: &str) -> Option<String> {
+    serde_json::from_str::<ApiError>(body)
+        .ok()
+        .and_then(|e| e.error)
+        .and_then(|d| d.message)
 }
 
 /// Determines if a status code should trigger a retry
@@ -75,7 +95,12 @@ pub fn format_retry_error(status: StatusCode, attempt: u32, max_retries: u32) ->
     };
 
     if attempt < max_retries {
-        format!("{} - retrying ({}/{})", status_desc, attempt + 1, max_retries)
+        format!(
+            "{} - retrying ({}/{})",
+            status_desc,
+            attempt + 1,
+            max_retries
+        )
     } else {
         format!("{} - all {} retries exhausted", status_desc, max_retries)
     }
@@ -102,8 +127,13 @@ pub fn check_response_for_retry(
     }
 
     // Non-retryable error or retries exhausted
-    let truncated_body = if body.len() > 500 { &body[..500] } else { body };
-    bail!("API error ({}): {}", status, truncated_body)
+    // Try to extract a meaningful error message from the response
+    let error_msg = extract_error_message(body).unwrap_or_else(|| {
+        let truncated = if body.len() > 500 { &body[..500] } else { body };
+        truncated.to_string()
+    });
+
+    bail!("API error ({}): {}", status, error_msg)
 }
 
 #[derive(Debug)]
@@ -236,5 +266,42 @@ mod tests {
             let r = rand_simple();
             assert!(r >= 0.0 && r <= 1.0);
         }
+    }
+
+    #[test]
+    fn extract_error_message_parses_json() {
+        let body = r#"{"error": {"message": "Invalid API key"}}"#;
+        let msg = extract_error_message(body);
+        assert_eq!(msg, Some("Invalid API key".to_string()));
+    }
+
+    #[test]
+    fn extract_error_message_handles_missing_message() {
+        let body = r#"{"error": {}}"#;
+        let msg = extract_error_message(body);
+        assert!(msg.is_none());
+    }
+
+    #[test]
+    fn extract_error_message_handles_invalid_json() {
+        let body = "not json";
+        let msg = extract_error_message(body);
+        assert!(msg.is_none());
+    }
+
+    #[test]
+    fn extract_error_message_handles_null_error() {
+        let body = r#"{"error": null}"#;
+        let msg = extract_error_message(body);
+        assert!(msg.is_none());
+    }
+
+    #[test]
+    fn check_response_uses_extracted_message() {
+        let config = RetryConfig::default();
+        let body = r#"{"error": {"message": "Quota exceeded"}}"#;
+        let result = check_response_for_retry(StatusCode::BAD_REQUEST, body, 0, &config);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Quota exceeded"));
     }
 }

@@ -48,19 +48,6 @@ pub struct ModelInfo {
 }
 
 // =============================================================================
-// COMMON ERROR TYPE
-// =============================================================================
-#[derive(Debug, Deserialize)]
-pub struct ApiError {
-    pub error: Option<ApiErrorDetail>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct ApiErrorDetail {
-    pub message: Option<String>,
-}
-
-// =============================================================================
 // CLAUDE API TYPES
 // =============================================================================
 #[derive(Debug, Serialize)]
@@ -217,32 +204,6 @@ mod tests {
         let json = r#"{"data": []}"#;
         let resp: ModelsResponse = serde_json::from_str(json).unwrap();
         assert!(resp.data.is_empty());
-    }
-
-    #[test]
-    fn api_error_deserializes() {
-        let json = r#"{"error": {"message": "Invalid API key"}}"#;
-        let err: ApiError = serde_json::from_str(json).unwrap();
-        assert!(err.error.is_some());
-        assert_eq!(
-            err.error.unwrap().message,
-            Some("Invalid API key".to_string())
-        );
-    }
-
-    #[test]
-    fn api_error_handles_missing_fields() {
-        let json = r#"{"error": {}}"#;
-        let err: ApiError = serde_json::from_str(json).unwrap();
-        assert!(err.error.is_some());
-        assert!(err.error.unwrap().message.is_none());
-    }
-
-    #[test]
-    fn api_error_handles_null_error() {
-        let json = r#"{"error": null}"#;
-        let err: ApiError = serde_json::from_str(json).unwrap();
-        assert!(err.error.is_none());
     }
 
     #[test]
