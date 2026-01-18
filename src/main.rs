@@ -1,7 +1,7 @@
 // src/main.rs
 mod cli;
 mod client;
-mod commands;
+mod command;
 mod config;
 mod git;
 mod prompt;
@@ -12,7 +12,7 @@ use anyhow::{bail, Result};
 use clap::Parser;
 use cli::{Cli, Commands};
 use client::LlmClient;
-use commands::*;
+use command::*;
 use config::{Config, ResolvedConfig};
 use git::{get_default_branch, is_git_repo};
 
