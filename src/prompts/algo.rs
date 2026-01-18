@@ -9,6 +9,11 @@
 // 3 - Hunks:    Selective hunks by importance
 // 4 - Semantic: JSON IR (token-efficient)
 
+// NOTE:
+// This module is not currently invoked by the active command path in your crate,
+// so some helpers can legitimately be unused for now.
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 
 const CHARS_PER_TOKEN: f32 = 3.5;
@@ -114,9 +119,11 @@ impl DiffStats {
         let files_str = if self.file_list.len() <= 5 {
             self.file_list.join(", ")
         } else {
-            format!("{}, ... +{} more",
+            format!(
+                "{}, ... +{} more",
                 self.file_list[..3].join(", "),
-                self.file_list.len() - 3)
+                self.file_list.len() - 3
+            )
         };
 
         format!(
@@ -218,7 +225,8 @@ fn alg_files(raw_diff: &str, diff_stat: Option<&str>, max_chars: usize) -> Shape
 
     chunks.retain(|c| c.priority > 0);
     chunks.sort_by(|a, b| {
-        b.priority.cmp(&a.priority)
+        b.priority
+            .cmp(&a.priority)
             .then_with(|| (b.adds + b.dels).cmp(&(a.adds + a.dels)))
     });
 
@@ -255,7 +263,11 @@ fn alg_files(raw_diff: &str, diff_stat: Option<&str>, max_chars: usize) -> Shape
     }
 
     if !excluded.is_empty() {
-        output.push_str(&format!("\n[{} file(s) excluded: {}]\n", excluded.len(), excluded.join(", ")));
+        output.push_str(&format!(
+            "\n[{} file(s) excluded: {}]\n",
+            excluded.len(),
+            excluded.join(", ")
+        ));
     }
 
     stats.included_files = included.len();
@@ -278,7 +290,11 @@ fn alg_hunks(raw_diff: &str, diff_stat: Option<&str>, max_chars: usize) -> Shape
         .flat_map(|c| extract_hunks(&c.content, &c.path, c.priority))
         .collect();
 
-    all_hunks.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    all_hunks.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut output = String::new();
 
@@ -342,10 +358,21 @@ fn alg_semantic(raw_diff: &str, diff_stat: Option<&str>, max_chars: usize) -> Sh
         let hunks = extract_ir_hunks(&chunks, max_hunks, preview_lines);
         json = build_ir_json(diff_stat, &files, &hunks, chunks.len(), raw_diff.len());
 
-        if json.len() <= max_chars { break; }
-        if preview_lines > 8 { preview_lines = (preview_lines * 2 / 3).max(8); continue; }
-        if max_hunks > 3 { max_hunks -= 2; continue; }
-        if preview_lines > 0 { preview_lines = 0; continue; }
+        if json.len() <= max_chars {
+            break;
+        }
+        if preview_lines > 8 {
+            preview_lines = (preview_lines * 2 / 3).max(8);
+            continue;
+        }
+        if max_hunks > 3 {
+            max_hunks -= 2;
+            continue;
+        }
+        if preview_lines > 0 {
+            preview_lines = 0;
+            continue;
+        }
 
         stats.truncated = true;
         json.truncate(max_chars);
@@ -386,8 +413,11 @@ pub fn split_diff_by_file(raw_diff: &str) -> Vec<FileChunk> {
         } else {
             content.push_str(line);
             content.push('\n');
-            if line.starts_with('+') && !line.starts_with("+++") { adds += 1; }
-            else if line.starts_with('-') && !line.starts_with("---") { dels += 1; }
+            if line.starts_with('+') && !line.starts_with("+++") {
+                adds += 1;
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                dels += 1;
+            }
         }
     }
 
@@ -406,10 +436,14 @@ pub fn split_diff_by_file(raw_diff: &str) -> Vec<FileChunk> {
 
 fn calculate_priority(path: &str) -> i32 {
     for ex in EXCLUDE_FILES {
-        if path.ends_with(ex) { return -100; }
+        if path.ends_with(ex) {
+            return -100;
+        }
     }
     for pat in EXCLUDE_PATTERNS {
-        if path.contains(pat) { return -100; }
+        if path.contains(pat) {
+            return -100;
+        }
     }
 
     let mut best = 20;
@@ -452,7 +486,11 @@ fn extract_hunks(file_diff: &str, file_path: &str, file_priority: i32) -> Vec<Sc
 
     if !current.is_empty() {
         let score = score_hunk(&current, file_priority);
-        hunks.push(ScoredHunk { file: file_path.to_string(), content: current, score });
+        hunks.push(ScoredHunk {
+            file: file_path.to_string(),
+            content: current,
+            score,
+        });
     }
 
     hunks
@@ -472,13 +510,16 @@ fn score_hunk(hunk: &str, file_priority: i32) -> f32 {
         }
     }
 
-    let meaningful = hunk.lines()
+    let meaningful = hunk
+        .lines()
         .filter(|l| (l.starts_with('+') || l.starts_with('-')) && l.trim().len() > 3)
         .count();
     score += meaningful as f32 * 2.0;
 
     let lines = hunk.lines().count();
-    if lines > 50 { score -= (lines - 50) as f32 * 0.5; }
+    if lines > 50 {
+        score -= (lines - 50) as f32 * 0.5;
+    }
 
     score
 }
@@ -486,13 +527,25 @@ fn score_hunk(hunk: &str, file_priority: i32) -> f32 {
 // --- Semantic IR ---
 
 #[derive(Debug, Clone)]
-struct IrFile { path: String, status: String, adds: usize, dels: usize }
+struct IrFile {
+    path: String,
+    status: String,
+    adds: usize,
+    dels: usize,
+}
 
 #[derive(Debug, Clone)]
-struct IrHunk { file: String, header: String, adds: usize, dels: usize, preview: String }
+struct IrHunk {
+    file: String,
+    header: String,
+    adds: usize,
+    dels: usize,
+    preview: String,
+}
 
 fn summarize_files(chunks: &[FileChunk]) -> Vec<IrFile> {
-    let mut files: Vec<IrFile> = chunks.iter()
+    let mut files: Vec<IrFile> = chunks
+        .iter()
         .filter(|c| c.priority > 0)
         .map(|c| IrFile {
             path: c.path.clone(),
@@ -507,27 +560,41 @@ fn summarize_files(chunks: &[FileChunk]) -> Vec<IrFile> {
 }
 
 fn detect_status(diff: &str) -> String {
-    if diff.contains("new file mode") { "A".into() }
-    else if diff.contains("deleted file mode") { "D".into() }
-    else if diff.contains("rename from") { "R".into() }
-    else { "M".into() }
+    if diff.contains("new file mode") {
+        "A".into()
+    } else if diff.contains("deleted file mode") {
+        "D".into()
+    } else if diff.contains("rename from") {
+        "R".into()
+    } else {
+        "M".into()
+    }
 }
 
 fn extract_ir_hunks(chunks: &[FileChunk], max_hunks: usize, preview_lines: usize) -> Vec<IrHunk> {
-    let mut all: Vec<ScoredHunk> = chunks.iter()
+    let mut all: Vec<ScoredHunk> = chunks
+        .iter()
         .filter(|c| c.priority > 0)
         .flat_map(|c| extract_hunks(&c.content, &c.path, c.priority))
         .collect();
 
-    all.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    all.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
 
     let mut per_file: HashMap<String, usize> = HashMap::new();
     let mut out = Vec::new();
 
     for h in all {
-        if out.len() >= max_hunks { break; }
+        if out.len() >= max_hunks {
+            break;
+        }
         let cnt = per_file.entry(h.file.clone()).or_insert(0);
-        if *cnt >= 4 { continue; }
+        if *cnt >= 4 {
+            continue;
+        }
 
         let mut adds = 0usize;
         let mut dels = 0usize;
@@ -535,9 +602,14 @@ fn extract_ir_hunks(chunks: &[FileChunk], max_hunks: usize, preview_lines: usize
         let mut header = String::new();
 
         for (i, line) in h.content.lines().enumerate() {
-            if i == 0 { header = line.to_string(); }
-            if line.starts_with('+') && !line.starts_with("+++") { adds += 1; }
-            else if line.starts_with('-') && !line.starts_with("---") { dels += 1; }
+            if i == 0 {
+                header = line.to_string();
+            }
+            if line.starts_with('+') && !line.starts_with("+++") {
+                adds += 1;
+            } else if line.starts_with('-') && !line.starts_with("---") {
+                dels += 1;
+            }
             if i < preview_lines {
                 preview.push_str(line);
                 preview.push('\n');
@@ -573,7 +645,13 @@ fn json_escape(s: &str) -> String {
     out
 }
 
-fn build_ir_json(stat: Option<&str>, files: &[IrFile], hunks: &[IrHunk], total: usize, chars: usize) -> String {
+fn build_ir_json(
+    stat: Option<&str>,
+    files: &[IrFile],
+    hunks: &[IrHunk],
+    total: usize,
+    chars: usize,
+) -> String {
     let (adds, dels) = files.iter().fold((0, 0), |(a, d), f| (a + f.adds, d + f.dels));
 
     let mut s = String::with_capacity(chars / 2);
@@ -585,25 +663,39 @@ fn build_ir_json(stat: Option<&str>, files: &[IrFile], hunks: &[IrHunk], total: 
 
     s.push_str(&format!(
         "\"summary\":{{\"files\":{},\"included\":{},\"adds\":{},\"dels\":{}}},",
-        total, files.len(), adds, dels
+        total,
+        files.len(),
+        adds,
+        dels
     ));
 
     s.push_str("\"files\":[");
     for (i, f) in files.iter().enumerate() {
-        if i > 0 { s.push(','); }
+        if i > 0 {
+            s.push(',');
+        }
         s.push_str(&format!(
             "{{\"p\":\"{}\",\"s\":\"{}\",\"a\":{},\"d\":{}}}",
-            json_escape(&f.path), f.status, f.adds, f.dels
+            json_escape(&f.path),
+            f.status,
+            f.adds,
+            f.dels
         ));
     }
     s.push_str("],");
 
     s.push_str("\"hunks\":[");
     for (i, h) in hunks.iter().enumerate() {
-        if i > 0 { s.push(','); }
+        if i > 0 {
+            s.push(',');
+        }
         s.push_str(&format!(
             "{{\"f\":\"{}\",\"h\":\"{}\",\"a\":{},\"d\":{},\"pv\":\"{}\"}}",
-            json_escape(&h.file), json_escape(&h.header), h.adds, h.dels, json_escape(&h.preview)
+            json_escape(&h.file),
+            json_escape(&h.header),
+            h.adds,
+            h.dels,
+            json_escape(&h.preview)
         ));
     }
     s.push_str("]}");

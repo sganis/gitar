@@ -3,6 +3,12 @@
 // Everything related to preparing context for LLMs.
 // Re-exports maintain backward compatibility with existing commands.
 
+// NOTE:
+// This module is currently not used by the active command pipeline (commands use crate::diff).
+// Because this is a binary crate, `pub use` items can still trigger `unused_imports` warnings.
+// We keep the re-exports for compatibility, but suppress the lint locally.
+#![allow(unused_imports)]
+
 pub mod algo;
 pub mod diff;
 pub mod preset;

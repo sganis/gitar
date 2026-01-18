@@ -2,6 +2,11 @@
 //
 // Orchestrates: git diff → algorithm shaping → secret scanning → result
 
+// NOTE:
+// This module is currently not wired into the active command pipeline.
+// Keep it available for future integration, but suppress dead_code in this module.
+#![allow(dead_code)]
+
 use anyhow::{bail, Result};
 use std::borrow::Cow;
 
@@ -63,7 +68,11 @@ pub fn process_staged(opts: &DiffOptions) -> Result<ProcessedDiff> {
         bail!("No staged changes");
     }
 
-    let stat = if opts.include_stats { git::get_diff_stats(None, true).ok() } else { None };
+    let stat = if opts.include_stats {
+        git::get_diff_stats(None, true).ok()
+    } else {
+        None
+    };
     process_raw_diff(&raw, stat.as_deref(), opts)
 }
 
@@ -74,7 +83,11 @@ pub fn process_unstaged(opts: &DiffOptions) -> Result<ProcessedDiff> {
         bail!("No unstaged changes");
     }
 
-    let stat = if opts.include_stats { git::get_diff_stats(None, false).ok() } else { None };
+    let stat = if opts.include_stats {
+        git::get_diff_stats(None, false).ok()
+    } else {
+        None
+    };
     process_raw_diff(&raw, stat.as_deref(), opts)
 }
 
@@ -85,7 +98,11 @@ pub fn process_ref(target: &str, opts: &DiffOptions) -> Result<ProcessedDiff> {
         bail!("No changes between refs");
     }
 
-    let stat = if opts.include_stats { git::get_diff_stats(Some(target), false).ok() } else { None };
+    let stat = if opts.include_stats {
+        git::get_diff_stats(Some(target), false).ok()
+    } else {
+        None
+    };
     process_raw_diff(&raw, stat.as_deref(), opts)
 }
 
@@ -126,11 +143,17 @@ pub fn build_context_header(stats: &DiffStats, model: &str) -> String {
 
     let mut h = String::from("---- Gitar Context ----\n");
     h.push_str(&format!("Model      : {}\n", model));
-    h.push_str(&format!("Diff algo  : {} - {}\n", stats.algorithm.num(), stats.algorithm.name()));
+    h.push_str(&format!(
+        "Diff algo  : {} - {}\n",
+        stats.algorithm.num(),
+        stats.algorithm.name()
+    ));
     h.push_str(&format!("Files      : {}\n", files));
     h.push_str(&format!("Chars      : {}\n", stats.output_chars));
     h.push_str(&format!("Est Tokens : ~{}\n", stats.estimated_tokens));
-    if stats.truncated { h.push_str("Truncated  : yes\n"); }
+    if stats.truncated {
+        h.push_str("Truncated  : yes\n");
+    }
     h.push_str("-----------------------\n");
     h
 }
@@ -174,7 +197,9 @@ fn format_block_error(r: &SecretScanResult) -> String {
     for (i, m) in r.matches.iter().take(8).enumerate() {
         msg.push_str(&format!(
             "  {}. [\x1b[33m{}\x1b[0m] L{}: {}\n",
-            i + 1, m.pattern_name, m.line_number,
+            i + 1,
+            m.pattern_name,
+            m.line_number,
             m.masked_preview().chars().take(60).collect::<String>()
         ));
     }
@@ -214,9 +239,14 @@ mod tests {
     #[test]
     fn header_format() {
         let stats = DiffStats {
-            total_files: 5, included_files: 3, total_chars: 1000,
-            output_chars: 500, estimated_tokens: 142, truncated: false,
-            algorithm: DiffAlg::Semantic, file_list: vec!["main.rs".into()],
+            total_files: 5,
+            included_files: 3,
+            total_chars: 1000,
+            output_chars: 500,
+            estimated_tokens: 142,
+            truncated: false,
+            algorithm: DiffAlg::Semantic,
+            file_list: vec!["main.rs".into()],
         };
         let h = build_context_header(&stats, "gpt-4o");
         assert!(h.contains("gpt-4o"));
@@ -229,20 +259,4 @@ mod tests {
         let r = process_raw_diff(raw, None, &DiffOptions::default()).unwrap();
         assert!(!r.secrets_redacted);
     }
-
-    // #[test]
-    // fn process_raw_redacts() {
-    //     let raw = "diff --git a/t.rs b/t.rs\n+const K: &str = \"sk-proj-abc123def456ghi789jkl012mno345pqr\";";
-    //     let r = process_raw_diff(raw, None, &DiffOptions::default()).unwrap();
-    //     assert!(r.secrets_redacted);
-    //     assert!(r.content.contains("[REDACTED"));
-    // }
-
-    // #[test]
-    // fn process_raw_blocks() {
-    //     let raw = "diff --git a/t.rs b/t.rs\n+const K: &str = \"sk-ant-api03-abcdefghijklmnopqrstuvwxyz\";";
-    //     let o = DiffOptions::new(10_000, 4, SecretAction::Block);
-    //     let r = process_raw_diff(raw, None, &o);
-    //     assert!(r.is_err());
-    // }
 }
