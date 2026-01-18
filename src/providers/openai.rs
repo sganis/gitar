@@ -369,20 +369,20 @@ mod tests {
 
     #[test]
     fn reasoning_models_starts_empty() {
-        REASONING_MODELS.lock().unwrap().clear();
-        assert!(REASONING_MODELS.lock().unwrap().is_empty());
+        let mut set = REASONING_MODELS.lock().unwrap();
+        set.clear();
+        assert!(set.is_empty());
     }
 
     #[test]
     fn reasoning_models_can_insert_and_check() {
-        REASONING_MODELS.lock().unwrap().clear();
-        REASONING_MODELS
-            .lock()
-            .unwrap()
-            .insert("o1-preview".to_string());
-        assert!(REASONING_MODELS.lock().unwrap().contains("o1-preview"));
-        assert!(!REASONING_MODELS.lock().unwrap().contains("gpt-4o"));
-        REASONING_MODELS.lock().unwrap().clear();
+        // Don't assert on real model names or rely on global state across parallel tests.
+        // Just prove the behavior: insert -> contains, using a unique test value.
+        let model = format!("__test_reasoning_model_{}_{}__", env!("CARGO_PKG_NAME"), std::process::id());
+
+        let mut set = REASONING_MODELS.lock().unwrap();
+        set.insert(model.clone());
+        assert!(set.contains(&model));
     }
 
     #[test]
