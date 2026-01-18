@@ -57,25 +57,24 @@ impl AnalysisContext {
         };
 
         format!(
-            "### Context ###########################################\n\
+            "---- Gitar Context -----------------------------\n\
              Model      : {}/{}\n\
              Diff algo  : {} - {}\n\
-             Files      : {}/{} included ({} excluded)\n\
+             Files      : {}/{} included (truncated: {})\n\
              Chars      : {} → {} ({:.1}% reduction)\n\
              Est Tokens : ~{}\n\
-             Truncated  : {}\n",
+             --------------------------------------------------\n",
             provider,
             model,
             stats.algorithm.num(),
             stats.algorithm.name(),
             stats.included_files,
             stats.total_files,
-            stats.excluded_files,
+            if stats.truncated { "yes" } else { "no" },
             stats.total_chars,
             stats.output_chars,
             reduction_pct,
-            stats.estimated_tokens,
-            if stats.truncated { "yes" } else { "no" }
+            stats.estimated_tokens            
         )
     }
 }
