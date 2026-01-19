@@ -102,16 +102,33 @@ async fn main() -> Result<()> {
                 do_stream,
                 algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }
 
         Commands::Staged { algo } => {
-            cmd_staged(&client, config.preset, config.stream, algo, config.max_diff_chars).await?
+            cmd_staged(
+                &client,
+                config.preset,
+                config.stream,
+                algo,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
         }
 
         Commands::Unstaged { algo } => {
-            cmd_unstaged(&client, config.preset, config.stream, algo, config.max_diff_chars).await?
+            cmd_unstaged(
+                &client,
+                config.preset,
+                config.stream,
+                algo,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
         }
 
         Commands::History {
@@ -135,6 +152,7 @@ async fn main() -> Result<()> {
                 config.stream,
                 algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }
@@ -154,6 +172,7 @@ async fn main() -> Result<()> {
                 config.stream,
                 algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }
@@ -176,6 +195,7 @@ async fn main() -> Result<()> {
                 config.stream,
                 algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }
@@ -199,6 +219,7 @@ async fn main() -> Result<()> {
                 config.stream,
                 algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }
@@ -218,6 +239,7 @@ async fn main() -> Result<()> {
                 config.stream,
                 algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }

@@ -1,4 +1,4 @@
-// src/prompts/secrets.rs - Secret detection and redaction
+// src/prompt/secret.rs - Secret detection and redaction
 //
 // Scans diffs for sensitive data before sending to LLMs.
 // Detects: API keys, tokens, private keys, passwords, connection strings.
@@ -104,10 +104,7 @@ impl SecretScanResult {
             };
             msg.push_str(&format!(
                 "   {}. [{}{}:L{}\x1b[0m] {}\n",
-                i + 1,
-                color,
-                m.pattern_name,
-                m.line_number,
+                i + 1, color, m.pattern_name, m.line_number,
                 m.masked_preview().chars().take(70).collect::<String>()
             ));
         }
@@ -121,7 +118,7 @@ impl SecretScanResult {
 }
 
 // =============================================================================
-// PATTERNS - Using a struct with compiled regexes
+// PATTERNS
 // =============================================================================
 
 struct CompiledPatterns {
@@ -132,8 +129,10 @@ impl CompiledPatterns {
     fn new() -> Self {
         let patterns = vec![
             // AI APIs
-            (Regex::new(r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}").unwrap(), "OpenAI Key", Severity::High),
-            (Regex::new(r"sk-ant-[A-Za-z0-9_-]{20,}").unwrap(), "Anthropic Key", Severity::High),
+            // Anthropic: sk-ant- prefix (check this BEFORE generic patterns)
+            (Regex::new(r"sk-ant-(?:api\d+-)?[A-Za-z0-9_-]{20,}").unwrap(), "Anthropic Key", Severity::High),
+            // OpenAI: sk-proj- prefix (modern project keys)
+            (Regex::new(r"sk-proj-[A-Za-z0-9_-]{20,}").unwrap(), "OpenAI Key", Severity::High),
             (Regex::new(r"AIza[A-Za-z0-9_-]{35}").unwrap(), "Google API Key", Severity::High),
 
             // Version Control
@@ -211,7 +210,7 @@ pub fn scan(text: &str) -> Vec<SecretMatch> {
 
 pub fn has_secrets(text: &str) -> bool {
     let patterns = &PATTERNS.patterns;
-    
+
     for line in text.lines() {
         let t = line.trim_start();
         if t.starts_with("@@") || t.starts_with("diff --git") {
@@ -233,12 +232,14 @@ pub fn redact(text: &str) -> Cow<'_, str> {
 
     let patterns = &PATTERNS.patterns;
     let mut result = text.to_string();
-    
+
     for (regex, name, _) in patterns {
-        result = regex.replace_all(&result, |caps: &regex::Captures| {
-            let m = caps.get(0).map(|x| x.as_str()).unwrap_or("");
-            format!("[REDACTED:{}:{}ch]", short_name(name), m.len())
-        }).to_string();
+        result = regex
+            .replace_all(&result, |caps: &regex::Captures| {
+                let m = caps.get(0).map(|x| x.as_str()).unwrap_or("");
+                format!("[REDACTED:{}:{}ch]", short_name(name), m.len())
+            })
+            .to_string();
     }
     Cow::Owned(result)
 }
@@ -308,19 +309,38 @@ fn short_name(name: &str) -> &'static str {
 mod tests {
     use super::*;
 
+    // ==========================================================================
+    // OpenAI detection tests
+    // ==========================================================================
+
     #[test]
-    fn detect_openai() {
+    fn detect_openai_proj_key() {
         let m = scan("OPENAI_API_KEY=sk-proj-abc123def456ghi789jkl012");
         assert!(!m.is_empty());
         assert_eq!(m[0].pattern_name, "OpenAI Key");
     }
 
-    // #[test]
-    // fn detect_anthropic() {
-    //     let m = scan("key=sk-ant-api03-abcdefghijklmnopqrstuvwxyz");
-    //     assert!(!m.is_empty());
-    //     assert_eq!(m[0].pattern_name, "Anthropic Key");
-    // }
+    // ==========================================================================
+    // Anthropic detection tests
+    // ==========================================================================
+
+    #[test]
+    fn detect_anthropic_new_format() {
+        let m = scan("key=sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789");
+        assert!(!m.is_empty(), "Should detect new Anthropic key format");
+        assert_eq!(m[0].pattern_name, "Anthropic Key");
+    }
+
+    #[test]
+    fn detect_anthropic_old_format() {
+        let m = scan("key=sk-ant-abcdefghijklmnopqrstuvwxyz");
+        assert!(!m.is_empty(), "Should detect old Anthropic key format");
+        assert_eq!(m[0].pattern_name, "Anthropic Key");
+    }
+
+    // ==========================================================================
+    // Other provider detection tests
+    // ==========================================================================
 
     #[test]
     fn detect_github() {
@@ -350,6 +370,10 @@ mod tests {
         assert_eq!(m[0].pattern_name, "DB Connection");
     }
 
+    // ==========================================================================
+    // Redaction tests
+    // ==========================================================================
+
     #[test]
     fn redacts_secrets() {
         let r = redact("key=sk-proj-abc123def456ghi789jkl012mno345");
@@ -358,10 +382,36 @@ mod tests {
     }
 
     #[test]
-    fn no_false_positive() {
+    fn redact_preserves_diff_structure() {
+        let diff = "diff --git a/config.rs b/config.rs\n+API_KEY=sk-proj-abc123def456ghi789jkl012mno345\n unchanged line";
+        let redacted = redact(diff);
+        assert!(redacted.starts_with("diff --git"));
+        assert!(redacted.contains("[REDACTED:OPENAI:"));
+        assert!(redacted.contains("unchanged line"));
+    }
+
+    // ==========================================================================
+    // False positive tests
+    // ==========================================================================
+
+    #[test]
+    fn no_false_positive_on_normal_code() {
         let m = scan("fn main() { let x = 42; }");
         assert!(m.is_empty());
     }
+
+    #[test]
+    fn skips_diff_headers() {
+        let diff = "diff --git a/sk-proj-secret.rs b/sk-proj-secret.rs\n@@ -1,3 +1,4 @@ sk-proj-test\n+real secret sk-proj-abc123def456ghi789jkl012";
+        let m = scan(diff);
+        // Should only detect the secret in the actual diff line, not headers
+        assert_eq!(m.len(), 1);
+        assert!(m[0].line_preview.starts_with("+real"));
+    }
+
+    // ==========================================================================
+    // SecretAction tests
+    // ==========================================================================
 
     #[test]
     fn action_from_str() {
@@ -372,14 +422,46 @@ mod tests {
     }
 
     #[test]
-    fn process_block() {
-        let r = process_secrets("key=sk-ant-api03-abcdefghijklmnopqrstuvwxyz", SecretAction::Block);
+    fn process_block_returns_error() {
+        let r = process_secrets("key=sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123", SecretAction::Block);
         assert!(r.is_err());
+        let scan_result = r.unwrap_err();
+        assert!(scan_result.total() > 0);
     }
 
     #[test]
-    fn process_clean() {
+    fn process_clean_returns_ok() {
         let r = process_secrets("let x = 42;", SecretAction::Redact);
         assert!(r.is_ok());
+    }
+
+    // ==========================================================================
+    // SecretScanResult tests
+    // ==========================================================================
+
+    #[test]
+    fn scan_result_counts_severity() {
+        let matches = vec![
+            SecretMatch {
+                pattern_name: "Test".into(),
+                severity: Severity::High,
+                line_number: 1,
+                line_preview: "test".into(),
+                match_start: 0,
+                match_end: 4,
+            },
+            SecretMatch {
+                pattern_name: "Test2".into(),
+                severity: Severity::Medium,
+                line_number: 2,
+                line_preview: "test2".into(),
+                match_start: 0,
+                match_end: 5,
+            },
+        ];
+        let result = SecretScanResult::from_matches(matches);
+        assert_eq!(result.high_count, 1);
+        assert_eq!(result.medium_count, 1);
+        assert_eq!(result.total(), 2);
     }
 }

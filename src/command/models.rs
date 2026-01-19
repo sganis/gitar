@@ -1,9 +1,6 @@
-// src/commands/models.rs
+// src/command/models.rs
 use anyhow::Result;
-#[cfg(target_os = "linux")]
-use std::os::unix::fs::PermissionsExt;
 use crate::client::LlmClient;
-
 
 pub async fn cmd_models(client: &LlmClient) -> Result<()> {
     println!("Fetching available models...\n");

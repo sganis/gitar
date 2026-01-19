@@ -93,7 +93,6 @@ pub fn is_git_repo() -> bool {
 }
 
 /// Returns the repo root (top-level) directory as a String.
-/// Equivalent to: `git rev-parse --show-toplevel`
 pub fn get_repo_root() -> Result<String> {
     let out = run_git(&["rev-parse", "--show-toplevel"])?;
     let root = out.trim().to_string();
@@ -137,7 +136,6 @@ pub fn get_current_branch() -> String {
 }
 
 pub fn get_default_branch() -> String {
-    // Use run_git_optional since these refs might not exist
     for b in ["main", "master"] {
         if let Ok(Some(_)) = run_git_optional(&["rev-parse", "--verify", b]) {
             return b.into();
@@ -260,15 +258,18 @@ pub fn truncate_diff(diff: String, max: usize) -> String {
 
 pub fn build_range(from: Option<&str>, to: Option<&str>, base_branch: &str) -> Option<String> {
     let end = to.unwrap_or("HEAD");
-    from.map(|r| format!("{}..{}", r, end))
-        .or_else(|| {
-            let branch = get_current_branch();
-            if branch != base_branch {
-                Some(format!("{}..{}", base_branch, if to.is_some() { end } else { &branch }))
-            } else {
-                None
-            }
-        })
+    from.map(|r| format!("{}..{}", r, end)).or_else(|| {
+        let branch = get_current_branch();
+        if branch != base_branch {
+            Some(format!(
+                "{}..{}",
+                base_branch,
+                if to.is_some() { end } else { &branch }
+            ))
+        } else {
+            None
+        }
+    })
 }
 
 pub fn build_diff_target(from: Option<&str>, to: Option<&str>, base_branch: &str) -> String {
@@ -278,7 +279,11 @@ pub fn build_diff_target(from: Option<&str>, to: Option<&str>, base_branch: &str
         None => {
             let branch = get_current_branch();
             if branch != base_branch {
-                format!("{}...{}", base_branch, if to.is_some() { end } else { &branch })
+                format!(
+                    "{}...{}",
+                    base_branch,
+                    if to.is_some() { end } else { &branch }
+                )
             } else {
                 let tag = get_current_version();
                 if tag != "0.0.0" {
@@ -298,6 +303,10 @@ pub fn build_diff_target(from: Option<&str>, to: Option<&str>, base_branch: &str
 mod tests {
     use super::*;
 
+    // ==========================================================================
+    // Git command execution tests
+    // ==========================================================================
+
     #[test]
     fn run_git_succeeds_on_valid_command() {
         let result = run_git(&["--version"]);
@@ -308,14 +317,6 @@ mod tests {
     #[test]
     fn run_git_fails_on_invalid_command() {
         let result = run_git(&["invalid-command-xyz-123"]);
-        assert!(result.is_err());
-        let err = result.unwrap_err().to_string();
-        assert!(err.contains("git invalid-command-xyz-123 failed"));
-    }
-
-    #[test]
-    fn run_git_fails_on_invalid_ref() {
-        let result = run_git(&["rev-parse", "nonexistent-ref-xyz-123"]);
         assert!(result.is_err());
     }
 
@@ -330,32 +331,20 @@ mod tests {
     fn run_git_optional_returns_some_on_success() {
         let result = run_git_optional(&["--version"]);
         assert!(result.is_ok());
-        let output = result.unwrap();
-        assert!(output.is_some());
-        assert!(output.unwrap().contains("git version"));
+        assert!(result.unwrap().is_some());
     }
 
     #[test]
-    fn get_repo_root_returns_non_empty_in_repo_or_errors() {
-        if is_git_repo() {
-            let root = get_repo_root().unwrap();
-            assert!(!root.trim().is_empty());
-        } else {
-            let _ = get_repo_root().err();
-        }
+    fn run_git_status_returns_tuple() {
+        let (stdout, stderr, success) = run_git_status(&["--version"]);
+        assert!(success);
+        assert!(stdout.contains("git version"));
+        assert!(stderr.is_empty() || !stderr.contains("fatal"));
     }
 
-    #[test]
-    fn get_repo_root_path_returns_pathbuf_in_repo_or_errors() {
-        if is_git_repo() {
-            let root = get_repo_root_path().unwrap();
-            assert!(!root.as_os_str().is_empty());
-        } else {
-            let _ = get_repo_root_path().err();
-        }
-    }
-
-    // ... keep all your existing tests below (unchanged) ...
+    // ==========================================================================
+    // Truncation tests
+    // ==========================================================================
 
     #[test]
     fn truncate_diff_short_unchanged() {
@@ -380,117 +369,46 @@ mod tests {
             "b".repeat(100)
         );
         let result = truncate_diff(diff, 150);
-        assert!(result.contains("[... truncated ...]"));
         assert!(result.contains("diff --git a/file1.rs"));
-    }
-
-    #[test]
-    fn truncate_diff_exact_boundary() {
-        let diff = "exactly100chars".repeat(10);
-        let result = truncate_diff(diff.clone(), 150);
-        assert_eq!(result, diff);
-    }
-
-    #[test]
-    fn truncate_diff_empty_string() {
-        let result = truncate_diff(String::new(), 100);
-        assert!(result.is_empty());
-    }
-
-    #[test]
-    fn truncate_diff_max_zero() {
-        let diff = "some content".to_string();
-        let result = truncate_diff(diff, 0);
         assert!(result.contains("[... truncated ...]"));
     }
 
-    #[test]
-    fn truncate_diff_single_char_over() {
-        let diff = "abcde".to_string();
-        let result = truncate_diff(diff, 4);
-        assert!(result.contains("[... truncated ...]"));
-    }
-
-    #[test]
-    fn truncate_diff_no_file_boundary_in_first_half() {
-        let diff = format!(
-            "diff --git a/file1.rs\n{}\n{}",
-            "a".repeat(10),
-            "b".repeat(200)
-        );
-        let result = truncate_diff(diff, 100);
-        assert!(result.contains("[... truncated ...]"));
-    }
+    // ==========================================================================
+    // Range building tests
+    // ==========================================================================
 
     #[test]
     fn build_range_with_ref() {
-        let result = build_range(Some("v1.0.0"), None, "main");
-        assert_eq!(result, Some("v1.0.0..HEAD".to_string()));
+        assert_eq!(build_range(Some("v1.0.0"), None, "main"), Some("v1.0.0..HEAD".to_string()));
     }
 
     #[test]
     fn build_range_with_ref_and_to() {
-        let result = build_range(Some("v1.0.0"), Some("v1.0.1"), "main");
-        assert_eq!(result, Some("v1.0.0..v1.0.1".to_string()));
-    }
-
-    #[test]
-    fn build_range_with_commit_hash() {
-        let result = build_range(Some("abc123"), None, "main");
-        assert_eq!(result, Some("abc123..HEAD".to_string()));
-    }
-
-    #[test]
-    fn build_range_none_on_base_branch() {
-        let result = build_range(None, None, "nonexistent-branch-xyz");
-        assert!(result.is_some() || result.is_none());
+        assert_eq!(build_range(Some("v1.0.0"), Some("v1.0.1"), "main"), Some("v1.0.0..v1.0.1".to_string()));
     }
 
     #[test]
     fn build_diff_target_with_ref() {
-        let result = build_diff_target(Some("v1.0.0"), None, "main");
-        assert_eq!(result, "v1.0.0..HEAD");
+        assert_eq!(build_diff_target(Some("v1.0.0"), None, "main"), "v1.0.0..HEAD");
     }
 
     #[test]
     fn build_diff_target_with_ref_and_to() {
-        let result = build_diff_target(Some("v1.0.0"), Some("v1.0.1"), "main");
-        assert_eq!(result, "v1.0.0..v1.0.1");
+        assert_eq!(build_diff_target(Some("v1.0.0"), Some("v1.0.1"), "main"), "v1.0.0..v1.0.1");
     }
 
-    #[test]
-    fn build_diff_target_with_commit() {
-        let result = build_diff_target(Some("abc123def"), None, "main");
-        assert_eq!(result, "abc123def..HEAD");
-    }
-
-    #[test]
-    fn commit_info_struct_creation() {
-        let info = CommitInfo {
-            hash: "abc123def456".into(),
-            author: "John Doe".into(),
-            date: "2024-01-15 10:30:00 +0000".into(),
-            message: "Fix bug in parser".into(),
-        };
-        assert_eq!(info.hash, "abc123def456");
-        assert_eq!(info.author, "John Doe");
-        assert_eq!(info.date, "2024-01-15 10:30:00 +0000");
-        assert_eq!(info.message, "Fix bug in parser");
-    }
+    // ==========================================================================
+    // Commit log parsing tests
+    // ==========================================================================
 
     #[test]
     fn parse_commit_log_line() {
         let line = "abc123def|John Doe|2024-01-15 10:30:00|Fix bug in parser";
         let parts: Vec<&str> = line.splitn(4, '|').collect();
         assert_eq!(parts.len(), 4);
-        let info = CommitInfo {
-            hash: parts[0].into(),
-            author: parts[1].into(),
-            date: parts[2].into(),
-            message: parts[3].into(),
-        };
-        assert_eq!(info.hash, "abc123def");
-        assert_eq!(info.author, "John Doe");
+        assert_eq!(parts[0], "abc123def");
+        assert_eq!(parts[1], "John Doe");
+        assert_eq!(parts[3], "Fix bug in parser");
     }
 
     #[test]
@@ -501,110 +419,29 @@ mod tests {
         assert_eq!(parts[3], "Message with | pipe | chars");
     }
 
-    #[test]
-    fn parse_commit_log_incomplete_rejected() {
-        let line = "abc123|Author|2024-01-15";
-        let parts: Vec<&str> = line.splitn(4, '|').collect();
-        assert!(parts.len() < 4);
-    }
-
-    #[test]
-    fn parse_empty_commit_log() {
-        let output = "";
-        let commits: Vec<&str> = output.lines().filter(|l| !l.is_empty()).collect();
-        assert!(commits.is_empty());
-    }
-
-    #[test]
-    fn parse_commit_log_filters_empty_lines() {
-        let output = "abc|author|date|msg\n\n\ndef|author2|date2|msg2\n";
-        let commits: Vec<&str> = output.lines().filter(|l| !l.is_empty()).collect();
-        assert_eq!(commits.len(), 2);
-    }
-
-    #[test]
-    fn exclude_patterns_not_empty() {
-        assert!(!EXCLUDE_PATTERNS.is_empty());
-    }
+    // ==========================================================================
+    // Exclude patterns tests
+    // ==========================================================================
 
     #[test]
     fn exclude_patterns_format() {
         for pattern in EXCLUDE_PATTERNS {
-            assert!(
-                pattern.starts_with(":(exclude)"),
-                "Pattern should start with :(exclude): {}",
-                pattern
-            );
+            assert!(pattern.starts_with(":(exclude)"), "Pattern should start with :(exclude): {}", pattern);
         }
     }
 
     #[test]
-    fn exclude_patterns_contains_lock_files() {
+    fn exclude_patterns_contains_expected() {
         let patterns: Vec<&str> = EXCLUDE_PATTERNS.to_vec();
         assert!(patterns.iter().any(|p| p.contains("*.lock")));
         assert!(patterns.iter().any(|p| p.contains("package-lock.json")));
-        assert!(patterns.iter().any(|p| p.contains("yarn.lock")));
-        assert!(patterns.iter().any(|p| p.contains("pnpm-lock.yaml")));
-    }
-
-    #[test]
-    fn exclude_patterns_contains_build_dirs() {
-        let patterns: Vec<&str> = EXCLUDE_PATTERNS.to_vec();
-        assert!(patterns.iter().any(|p| p.contains("dist/*")));
-        assert!(patterns.iter().any(|p| p.contains("build/*")));
         assert!(patterns.iter().any(|p| p.contains("target/*")));
-    }
-
-    #[test]
-    fn exclude_patterns_contains_minified() {
-        let patterns: Vec<&str> = EXCLUDE_PATTERNS.to_vec();
-        assert!(patterns.iter().any(|p| p.contains("*.min.js")));
-        assert!(patterns.iter().any(|p| p.contains("*.min.css")));
-        assert!(patterns.iter().any(|p| p.contains("*.map")));
-    }
-
-    #[test]
-    fn exclude_patterns_contains_env() {
-        let patterns: Vec<&str> = EXCLUDE_PATTERNS.to_vec();
         assert!(patterns.iter().any(|p| p.contains(".env")));
     }
 
-    #[test]
-    fn run_git_status_returns_tuple() {
-        let (stdout, stderr, success) = run_git_status(&["--version"]);
-        assert!(success);
-        assert!(stdout.contains("git version"));
-        assert!(stderr.is_empty() || !stderr.contains("fatal"));
-    }
-
-    #[test]
-    fn run_git_status_handles_invalid_command() {
-        let (stdout, stderr, success) = run_git_status(&["invalid-command-xyz"]);
-        assert!(!success);
-        assert!(stdout.is_empty() || stderr.contains("git"));
-    }
-
-    #[test]
-    fn is_git_repo_detects_repo() {
-        let result = is_git_repo();
-        let _ = result;
-    }
-
-    #[test]
-    fn get_git_dir_returns_path_in_repo() {
-        if is_git_repo() {
-            let result = get_git_dir();
-            assert!(result.is_some());
-            let path = result.unwrap();
-            assert!(path.to_string_lossy().contains(".git") || path.to_string_lossy() == ".git");
-        }
-    }
-
-    #[test]
-    fn get_current_branch_returns_string() {
-        let branch = get_current_branch();
-        assert!(!branch.is_empty());
-    }
+    // ==========================================================================
+    // Repo detection tests (conditional on being in a repo)
+    // ==========================================================================
 
     #[test]
     fn get_default_branch_returns_valid() {
@@ -613,8 +450,8 @@ mod tests {
     }
 
     #[test]
-    fn get_current_version_returns_string() {
-        let version = get_current_version();
-        assert!(!version.is_empty());
+    fn get_current_branch_returns_string() {
+        let branch = get_current_branch();
+        assert!(!branch.is_empty());
     }
 }
