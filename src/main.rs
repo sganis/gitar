@@ -1,20 +1,18 @@
 // src/main.rs
 mod cli;
 mod client;
-mod commands;
+mod command;
 mod config;
-mod diff;
 mod git;
-mod preset;
 mod prompt;
-mod providers;
+mod provider;
 mod types;
 
 use anyhow::{bail, Result};
 use clap::Parser;
 use cli::{Cli, Commands};
 use client::LlmClient;
-use commands::*;
+use command::*;
 use config::{Config, ResolvedConfig};
 use git::{get_default_branch, is_git_repo};
 
@@ -43,7 +41,7 @@ async fn main() -> Result<()> {
         target,
         staged,
         max_chars,
-        alg,
+        algo,
         stats,
         stats_only,
         compare,
@@ -53,7 +51,7 @@ async fn main() -> Result<()> {
             target.clone(),
             *staged,
             *max_chars,
-            *alg,
+            *algo,
             *stats,
             *stats_only,
             *compare,
@@ -90,7 +88,7 @@ async fn main() -> Result<()> {
             write_to,
             silent,
             stream,
-            alg,
+            algo,
         } => {
             let do_stream = config.stream || stream;
             cmd_commit(
@@ -102,18 +100,35 @@ async fn main() -> Result<()> {
                 write_to,
                 silent,
                 do_stream,
-                alg,
+                algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }
 
-        Commands::Staged { alg } => {
-            cmd_staged(&client, config.preset, config.stream, alg, config.max_diff_chars).await?
+        Commands::Staged { algo } => {
+            cmd_staged(
+                &client,
+                config.preset,
+                config.stream,
+                algo,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
         }
 
-        Commands::Unstaged { alg } => {
-            cmd_unstaged(&client, config.preset, config.stream, alg, config.max_diff_chars).await?
+        Commands::Unstaged { algo } => {
+            cmd_unstaged(
+                &client,
+                config.preset,
+                config.stream,
+                algo,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
         }
 
         Commands::History {
@@ -123,7 +138,7 @@ async fn main() -> Result<()> {
             until,
             limit,
             delay,
-            alg,
+            algo,
         } => {
             cmd_history(
                 &client,
@@ -135,8 +150,9 @@ async fn main() -> Result<()> {
                 limit,
                 delay,
                 config.stream,
-                alg,
+                algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }
@@ -145,7 +161,7 @@ async fn main() -> Result<()> {
             base,
             to,
             staged,
-            alg,
+            algo,
         } => {
             cmd_pr(
                 &client,
@@ -154,8 +170,9 @@ async fn main() -> Result<()> {
                 &config.base_branch,
                 staged,
                 config.stream,
-                alg,
+                algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }
@@ -166,7 +183,7 @@ async fn main() -> Result<()> {
             since,
             until,
             limit,
-            alg,
+            algo,
         } => {
             cmd_changelog(
                 &client,
@@ -176,8 +193,9 @@ async fn main() -> Result<()> {
                 until,
                 limit,
                 config.stream,
-                alg,
+                algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }
@@ -188,7 +206,7 @@ async fn main() -> Result<()> {
             since,
             until,
             staged,
-            alg,
+            algo,
         } => {
             cmd_explain(
                 &client,
@@ -199,8 +217,9 @@ async fn main() -> Result<()> {
                 &config.base_branch,
                 staged,
                 config.stream,
-                alg,
+                algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }
@@ -209,7 +228,7 @@ async fn main() -> Result<()> {
             base,
             to,
             current,
-            alg,
+            algo,
         } => {
             cmd_version(
                 &client,
@@ -218,8 +237,9 @@ async fn main() -> Result<()> {
                 &config.base_branch,
                 current,
                 config.stream,
-                alg,
+                algo,
                 config.max_diff_chars,
+                config.secret_action,
             )
             .await?
         }

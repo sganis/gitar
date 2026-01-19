@@ -1,12 +1,17 @@
-// src/commands/history.rs
+// src/command/history.rs
 use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::git::{get_commit_diff, get_commit_logs};
-use crate::preset::Preset;
-use crate::prompt::{history_system_prompt, HISTORY_USER_PROMPT};
+use crate::prompt::preset::Preset;
+use crate::prompt::secret::SecretAction;
+use crate::prompt::template::{history_system, HISTORY_USER};
 
-use super::apply_smart_diff;
+use super::{apply_smart_diff, SHORT_HASH_LEN};
+
+const MAX_AUTHOR_LEN: usize = 15;
+const MAX_MESSAGE_PREVIEW_LEN: usize = 40;
+const DATE_LEN: usize = 10;
 
 pub async fn cmd_history(
     client: &LlmClient,
@@ -20,6 +25,7 @@ pub async fn cmd_history(
     stream: bool,
     alg: u8,
     max_diff_chars: usize,
+    secret_action: SecretAction,
 ) -> Result<()> {
     let limit = match (&from, limit) {
         (Some(_), None) => None,
@@ -48,27 +54,28 @@ pub async fn cmd_history(
     println!("Processing {} commits...\n", commits.len());
 
     for (i, c) in commits.iter().enumerate() {
-        let h = &c.hash[..8.min(c.hash.len())];
-        let d = &c.date[..10.min(c.date.len())];
-        let a = if c.author.len() > 15 {
-            &c.author[..15]
+        let h = &c.hash[..SHORT_HASH_LEN.min(c.hash.len())];
+        let d = &c.date[..DATE_LEN.min(c.date.len())];
+        let a = if c.author.len() > MAX_AUTHOR_LEN {
+            &c.author[..MAX_AUTHOR_LEN]
         } else {
             &c.author
         };
-        let m = if c.message.len() > 40 {
-            &c.message[..40]
+        let m = if c.message.len() > MAX_MESSAGE_PREVIEW_LEN {
+            &c.message[..MAX_MESSAGE_PREVIEW_LEN]
         } else {
             &c.message
         };
 
         println!(
-            "[{}/{}] {} | {} | {:15} | {}",
+            "[{}/{}] {} | {} | {:width$} | {}",
             i + 1,
             commits.len(),
             h,
             d,
             a,
-            m
+            m,
+            width = MAX_AUTHOR_LEN
         );
 
         let raw_diff = match get_commit_diff(&c.hash, usize::MAX)? {
@@ -79,13 +86,13 @@ pub async fn cmd_history(
             }
         };
 
-        let diff = apply_smart_diff(&raw_diff, max_diff_chars, true, alg)?;
+        let diff = apply_smart_diff(&raw_diff, max_diff_chars, true, alg, secret_action)?;
 
-        let prompt = HISTORY_USER_PROMPT
+        let prompt = HISTORY_USER
             .replace("{original_message}", &c.message)
             .replace("{diff}", &diff);
 
-        let system = history_system_prompt(preset);
+        let system = history_system(preset);
         match client.chat(&system, &prompt, stream).await {
             Ok(r) => {
                 if stream {

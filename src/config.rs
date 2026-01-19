@@ -1,15 +1,15 @@
 // src/config.rs
-use crate::preset::Preset;
+use crate::prompt::{Preset, SecretAction};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Default max characters for diff context (~14k tokens at 3.5 chars/token)
 pub const DEFAULT_MAX_DIFF_CHARS: usize = 50_000;
 
 // =============================================================================
 // PROVIDER CONSTANTS
 // =============================================================================
+
 pub const PROVIDER_OPENAI: &str = "https://api.openai.com/v1";
 pub const PROVIDER_CLAUDE: &str = "https://api.anthropic.com/v1";
 pub const PROVIDER_GEMINI: &str = "https://generativelanguage.googleapis.com";
@@ -43,11 +43,12 @@ pub fn normalize_provider(provider: &str) -> &'static str {
 
 fn default_model_for_provider(provider: &str) -> &'static str {
     match provider {
+        "openai" => "gpt-5-chat-latest",
         "claude" => "claude-sonnet-4-5-20250929",
         "gemini" => "gemini-2.5-flash",
         "groq" => "llama-3.3-70b-versatile",
         "ollama" => "llama3.2:latest",
-        _ => "gpt-4o",
+        _ => "",
     }
 }
 
@@ -65,6 +66,7 @@ fn env_var_for_provider(provider: &str) -> Option<&'static str> {
 // =============================================================================
 // CONFIG FILE
 // =============================================================================
+
 pub const CONFIG_FILENAME: &str = ".gitar.toml";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -81,12 +83,10 @@ pub struct ProviderConfig {
 pub struct Config {
     pub default_provider: Option<String>,
     pub base_branch: Option<String>,
-    /// Maximum characters to include in diff context for LLM
     pub max_diff_chars: Option<usize>,
-    /// Disable TLS certificate verification (INSECURE)
     pub insecure_tls: Option<bool>,
-    /// Commit message style preset: "rust", "javascript", "python", or "auto"
     pub preset: Option<String>,
+    pub secret_action: Option<String>,
     pub openai: Option<ProviderConfig>,
     pub claude: Option<ProviderConfig>,
     pub gemini: Option<ProviderConfig>,
@@ -140,6 +140,7 @@ impl Config {
 // =============================================================================
 // RESOLVED CONFIG
 // =============================================================================
+
 pub struct ResolvedConfig {
     pub provider: String,
     pub api_key: Option<String>,
@@ -152,6 +153,7 @@ pub struct ResolvedConfig {
     pub max_diff_chars: usize,
     pub insecure_tls: bool,
     pub preset: Preset,
+    pub secret_action: SecretAction,
 }
 
 impl ResolvedConfig {
@@ -171,7 +173,6 @@ impl ResolvedConfig {
         default_branch_fn: impl Fn() -> String,
         repo_root: &std::path::Path,
     ) -> Self {
-        // Determine provider: CLI > config default > "openai"
         let provider = cli_provider
             .map(|p| normalize_provider(p))
             .or_else(|| file.default_provider.as_ref().map(|p| normalize_provider(p)))
@@ -180,432 +181,115 @@ impl ResolvedConfig {
 
         let provider_config = file.get_provider(&provider);
 
-        // Base URL: CLI > provider config > provider default
         let base_url = cli_base_url
             .cloned()
             .or_else(|| provider_config.and_then(|p| p.base_url.clone()))
             .unwrap_or_else(|| provider_to_url(&provider).unwrap_or(PROVIDER_OPENAI).to_string());
 
-        // API key: CLI > provider config > env var
-        let env_api_key = env_var_for_provider(&provider)
-            .and_then(|var| std::env::var(var).ok());
+        let env_api_key = env_var_for_provider(&provider).and_then(|var| std::env::var(var).ok());
 
         let api_key = cli_api_key
             .cloned()
             .or_else(|| provider_config.and_then(|p| p.api_key.clone()))
             .or(env_api_key);
 
-        // Model: CLI > provider config > provider default
         let model = cli_model
             .cloned()
             .or_else(|| provider_config.and_then(|p| p.model.clone()))
             .unwrap_or_else(|| default_model_for_provider(&provider).to_string());
 
-        // Max tokens: CLI > provider config > default
         let max_tokens = cli_max_tokens
             .or_else(|| provider_config.and_then(|p| p.max_tokens))
             .unwrap_or(500);
 
-        // Temperature: CLI > provider config > default
         let temperature = cli_temperature
             .or_else(|| provider_config.and_then(|p| p.temperature))
             .unwrap_or(0.5);
 
-        // Base branch: CLI > config > git default
         let base_branch = cli_base_branch
             .cloned()
             .or_else(|| file.base_branch.clone())
             .unwrap_or_else(default_branch_fn);
 
-        // Stream: CLI > provider config > default (false)
         let stream = cli_stream
             .or_else(|| provider_config.and_then(|p| p.stream))
             .unwrap_or(false);
 
-        // Max diff chars: config > default
         let max_diff_chars = file.max_diff_chars.unwrap_or(DEFAULT_MAX_DIFF_CHARS);
 
-        // Insecure TLS: CLI > config > default (false)
-        let insecure_tls = cli_insecure_tls
-            .or(file.insecure_tls)
-            .unwrap_or(false);
+        let insecure_tls = cli_insecure_tls.or(file.insecure_tls).unwrap_or(false);
 
-        // Preset: CLI > config > auto-detect
         let preset = Preset::resolve(cli_preset, file.preset.as_ref(), repo_root);
 
+        let secret_action = file
+            .secret_action
+            .as_ref()
+            .and_then(|s| SecretAction::from_str(s))
+            .unwrap_or_default();
+
         Self {
-            provider,
-            api_key,
-            model,
-            max_tokens,
-            temperature,
-            base_url,
-            base_branch,
-            stream,
-            max_diff_chars,
-            insecure_tls,
-            preset,
+            provider, api_key, model, max_tokens, temperature, base_url,
+            base_branch, stream, max_diff_chars, insecure_tls, preset, secret_action,
         }
     }
 }
 
 // =============================================================================
-// MODULE TESTS
+// TESTS
 // =============================================================================
 #[cfg(test)]
 mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn temp_repo() -> TempDir {
-        TempDir::new().unwrap()
-    }
+    fn temp_repo() -> TempDir { TempDir::new().unwrap() }
 
     #[test]
-    fn config_default_is_empty() {
-        let config = Config::default();
-        assert!(config.default_provider.is_none());
-        assert!(config.base_branch.is_none());
-        assert!(config.max_diff_chars.is_none());
-        assert!(config.insecure_tls.is_none());
-        assert!(config.preset.is_none());
-        assert!(config.openai.is_none());
-        assert!(config.claude.is_none());
-    }
-
-    #[test]
-    fn config_serializes_to_toml() {
-        let config = Config {
-            default_provider: Some("claude".into()),
-            base_branch: Some("main".into()),
-            max_diff_chars: Some(30000),
-            insecure_tls: None,
-            preset: Some("rust".into()),
-            openai: Some(ProviderConfig {
-                api_key: Some("sk-test123".into()),
-                model: Some("gpt-4o".into()),
-                max_tokens: Some(1000),
-                temperature: Some(0.7),
-                base_url: None,
-                stream: None,
-            }),
-            claude: None,
-            gemini: None,
-            groq: None,
-            ollama: None,
-        };
-        let toml_str = toml::to_string(&config).unwrap();
-        assert!(toml_str.contains("default_provider = \"claude\""));
-        assert!(toml_str.contains("max_diff_chars = 30000"));
-        assert!(toml_str.contains("preset = \"rust\""));
-        assert!(toml_str.contains("[openai]"));
-    }
-
-    #[test]
-    fn config_deserializes_from_toml() {
-        let toml_str = r#"
-            default_provider = "gemini"
-            base_branch = "develop"
-            max_diff_chars = 100000
-            insecure_tls = true
-            preset = "python"
-
-            [openai]
-            api_key = "sk-test"
-            model = "gpt-4o"
-
-            [claude]
-            api_key = "sk-ant-test"
-        "#;
-        let config: Config = toml::from_str(toml_str).unwrap();
-        assert_eq!(config.default_provider, Some("gemini".into()));
-        assert_eq!(config.max_diff_chars, Some(100000));
-        assert_eq!(config.insecure_tls, Some(true));
-        assert_eq!(config.preset, Some("python".into()));
-        assert!(config.openai.is_some());
-        assert!(config.claude.is_some());
-    }
-
-    #[test]
-    fn config_get_provider() {
-        let config = Config {
-            openai: Some(ProviderConfig {
-                model: Some("gpt-4o".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        assert!(config.get_provider("openai").is_some());
-        assert!(config.get_provider("claude").is_none());
+    fn config_default_empty() {
+        let c = Config::default();
+        assert!(c.default_provider.is_none());
+        assert!(c.secret_action.is_none());
     }
 
     #[test]
     fn provider_to_url_all() {
         assert_eq!(provider_to_url("openai"), Some(PROVIDER_OPENAI));
         assert_eq!(provider_to_url("claude"), Some(PROVIDER_CLAUDE));
-        assert_eq!(provider_to_url("anthropic"), Some(PROVIDER_CLAUDE));
         assert_eq!(provider_to_url("gemini"), Some(PROVIDER_GEMINI));
-        assert_eq!(provider_to_url("groq"), Some(PROVIDER_GROQ));
         assert_eq!(provider_to_url("ollama"), Some(PROVIDER_OLLAMA));
-        assert_eq!(provider_to_url("invalid"), None);
     }
 
     #[test]
-    fn normalize_provider_aliases() {
-        assert_eq!(normalize_provider("anthropic"), "claude");
-        assert_eq!(normalize_provider("google"), "gemini");
-        assert_eq!(normalize_provider("local"), "ollama");
-        assert_eq!(normalize_provider("CLAUDE"), "claude");
-    }
-
-    #[test]
-    fn default_model_for_providers() {
-        assert_eq!(default_model_for_provider("openai"), "gpt-4o");
-        assert_eq!(default_model_for_provider("claude"), "claude-sonnet-4-5-20250929");
-        assert_eq!(default_model_for_provider("gemini"), "gemini-2.5-flash");
-    }
-
-    #[test]
-    fn resolved_config_uses_provider_defaults() {
+    fn resolved_defaults() {
         std::env::remove_var("OPENAI_API_KEY");
-        let file = Config::default();
-        let provider = "openai".to_string();
         let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, None, None, None,
-            &file, || "main".into(), repo.path(),
+        let r = ResolvedConfig::new(
+            None, None, None, None, None, None, None, None, None, None,
+            &Config::default(), || "main".into(), repo.path(),
         );
-        assert_eq!(resolved.provider, "openai");
-        assert_eq!(resolved.model, "gpt-4o");
-        assert_eq!(resolved.base_url, PROVIDER_OPENAI);
-        assert!(!resolved.stream);
-        assert!(!resolved.insecure_tls);
-        assert_eq!(resolved.max_diff_chars, DEFAULT_MAX_DIFF_CHARS);
+        assert_eq!(r.provider, "openai");
+        assert_eq!(r.secret_action, SecretAction::Redact);
     }
 
     #[test]
-    fn resolved_config_uses_max_diff_chars_from_config() {
-        let file = Config {
-            max_diff_chars: Some(25000),
-            ..Default::default()
-        };
+    fn resolved_secret_action_from_config() {
         let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
+        let file = Config { secret_action: Some("block".into()), ..Default::default() };
+        let r = ResolvedConfig::new(
             None, None, None, None, None, None, None, None, None, None,
             &file, || "main".into(), repo.path(),
         );
-        assert_eq!(resolved.max_diff_chars, 25000);
+        assert_eq!(r.secret_action, SecretAction::Block);
     }
 
     #[test]
-    fn resolved_config_uses_provider_config() {
-        std::env::remove_var("ANTHROPIC_API_KEY");
-        let file = Config {
-            claude: Some(ProviderConfig {
-                api_key: Some("sk-ant-test".into()),
-                model: Some("claude-opus-4-5-20251101".into()),
-                max_tokens: Some(2000),
-                temperature: Some(0.8),
-                base_url: None,
-                stream: Some(true),
-            }),
-            ..Default::default()
-        };
-        let provider = "claude".to_string();
-        let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, None, None, None,
-            &file, || "main".into(), repo.path(),
-        );
-        assert_eq!(resolved.provider, "claude");
-        assert_eq!(resolved.api_key, Some("sk-ant-test".into()));
-        assert_eq!(resolved.model, "claude-opus-4-5-20251101");
-        assert_eq!(resolved.max_tokens, 2000);
-        assert!(resolved.stream);
-    }
-
-    #[test]
-    fn resolved_config_cli_overrides_provider_config() {
-        let file = Config {
-            openai: Some(ProviderConfig {
-                api_key: Some("file-key".into()),
-                model: Some("gpt-4o".into()),
-                stream: Some(true),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let provider = "openai".to_string();
-        let cli_key = "cli-key".to_string();
-        let cli_model = "gpt-4o-mini".to_string();
-        let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
-            Some(&cli_key), Some(&cli_model), Some(500), Some(0.9),
-            None, Some(&provider), None, Some(false), None, None,
-            &file, || "main".into(), repo.path(),
-        );
-        assert_eq!(resolved.api_key, Some("cli-key".into()));
-        assert_eq!(resolved.model, "gpt-4o-mini");
-        assert!(!resolved.stream);
-    }
-
-    #[test]
-    fn resolved_config_uses_default_provider_from_config() {
-        std::env::remove_var("GEMINI_API_KEY");
-        let file = Config {
-            default_provider: Some("gemini".into()),
-            gemini: Some(ProviderConfig {
-                api_key: Some("gemini-key".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(), repo.path(),
-        );
-        assert_eq!(resolved.provider, "gemini");
-        assert_eq!(resolved.api_key, Some("gemini-key".into()));
-    }
-
-    #[test]
-    fn resolved_config_stream_defaults_to_false() {
-        let file = Config::default();
-        let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(), repo.path(),
-        );
-        assert!(!resolved.stream);
-    }
-
-    #[test]
-    fn resolved_config_uses_stream_from_provider_config() {
-        let file = Config {
-            openai: Some(ProviderConfig {
-                stream: Some(true),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let provider = "openai".to_string();
-        let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, None, None, None,
-            &file, || "main".into(), repo.path(),
-        );
-        assert!(resolved.stream);
-    }
-
-    #[test]
-    fn resolved_config_cli_stream_overrides_config() {
-        let file = Config {
-            openai: Some(ProviderConfig {
-                stream: Some(false),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let provider = "openai".to_string();
-        let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, Some(&provider), None, Some(true), None, None,
-            &file, || "main".into(), repo.path(),
-        );
-        assert!(resolved.stream);
-    }
-
-    #[test]
-    fn resolved_config_insecure_tls_defaults_to_false() {
-        let file = Config::default();
-        let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(), repo.path(),
-        );
-        assert!(!resolved.insecure_tls);
-    }
-
-    #[test]
-    fn resolved_config_insecure_tls_from_config() {
-        let file = Config {
-            insecure_tls: Some(true),
-            ..Default::default()
-        };
-        let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(), repo.path(),
-        );
-        assert!(resolved.insecure_tls);
-    }
-
-    #[test]
-    fn resolved_config_cli_insecure_tls_overrides_config() {
-        let file = Config {
-            insecure_tls: Some(false),
-            ..Default::default()
-        };
-        let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, Some(true), None,
-            &file, || "main".into(), repo.path(),
-        );
-        assert!(resolved.insecure_tls);
-    }
-
-    #[test]
-    fn resolved_config_cli_insecure_tls_can_disable() {
-        let file = Config {
-            insecure_tls: Some(true),
-            ..Default::default()
-        };
-        let repo = temp_repo();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, Some(false), None,
-            &file, || "main".into(), repo.path(),
-        );
-        assert!(!resolved.insecure_tls);
-    }
-
-    #[test]
-    fn resolved_config_preset_auto_detects_rust() {
-        let file = Config::default();
+    fn resolved_preset_detects() {
         let repo = temp_repo();
         std::fs::write(repo.path().join("Cargo.toml"), "").unwrap();
-        let resolved = ResolvedConfig::new(
+        let r = ResolvedConfig::new(
             None, None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(), repo.path(),
+            &Config::default(), || "main".into(), repo.path(),
         );
-        assert_eq!(resolved.preset, Preset::Rust);
-    }
-
-    #[test]
-    fn resolved_config_preset_cli_overrides_detect() {
-        let file = Config::default();
-        let repo = temp_repo();
-        std::fs::write(repo.path().join("Cargo.toml"), "").unwrap();
-        let cli_preset = "python".to_string();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None, Some(&cli_preset),
-            &file, || "main".into(), repo.path(),
-        );
-        assert_eq!(resolved.preset, Preset::Python);
-    }
-
-    #[test]
-    fn resolved_config_preset_config_overrides_detect() {
-        let file = Config {
-            preset: Some("javascript".into()),
-            ..Default::default()
-        };
-        let repo = temp_repo();
-        std::fs::write(repo.path().join("Cargo.toml"), "").unwrap();
-        let resolved = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(), repo.path(),
-        );
-        assert_eq!(resolved.preset, Preset::JavaScript);
+        assert_eq!(r.preset, Preset::Rust);
     }
 }

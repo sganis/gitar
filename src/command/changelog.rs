@@ -1,11 +1,12 @@
-// src/commands/changelog.rs
+// src/command/changelog.rs
 use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::git::{get_commit_logs, get_diff};
-use crate::prompt::{CHANGELOG_SYSTEM_PROMPT, CHANGELOG_USER_PROMPT};
+use crate::prompt::secret::SecretAction;
+use crate::prompt::template::{CHANGELOG_SYSTEM, CHANGELOG_USER};
 
-use super::apply_smart_diff;
+use super::{apply_smart_diff, SHORT_HASH_LEN};
 
 pub async fn cmd_changelog(
     client: &LlmClient,
@@ -17,6 +18,7 @@ pub async fn cmd_changelog(
     stream: bool,
     alg: u8,
     max_diff_chars: usize,
+    secret_action: SecretAction,
 ) -> Result<()> {
     let limit = match (&from, limit) {
         (Some(_), None) => None,
@@ -50,7 +52,7 @@ pub async fn cmd_changelog(
     // Build commit list with messages
     let ct = commits
         .iter()
-        .map(|c| format!("- [{}] {}", &c.hash[..8.min(c.hash.len())], c.message))
+        .map(|c| format!("- [{}] {}", &c.hash[..SHORT_HASH_LEN.min(c.hash.len())], c.message))
         .collect::<Vec<_>>()
         .join("\n");
 
@@ -60,7 +62,7 @@ pub async fn cmd_changelog(
         if raw_diff.trim().is_empty() {
             String::new()
         } else {
-            apply_smart_diff(&raw_diff, max_diff_chars, false, alg)?
+            apply_smart_diff(&raw_diff, max_diff_chars, false, alg, secret_action)?
         }
     } else if let Some(first_commit) = commits.last() {
         // Use oldest commit's parent as base
@@ -73,19 +75,19 @@ pub async fn cmd_changelog(
         if raw_diff.trim().is_empty() {
             String::new()
         } else {
-            apply_smart_diff(&raw_diff, max_diff_chars, false, alg)?
+            apply_smart_diff(&raw_diff, max_diff_chars, false, alg, secret_action)?
         }
     } else {
         String::new()
     };
 
-    let prompt = CHANGELOG_USER_PROMPT
+    let prompt = CHANGELOG_USER
         .replace("{range}", &display)
         .replace("{count}", &commits.len().to_string())
         .replace("{commits}", &ct)
         .replace("{diff}", &diff);
 
-    let r = client.chat(CHANGELOG_SYSTEM_PROMPT, &prompt, stream).await?;
+    let r = client.chat(CHANGELOG_SYSTEM, &prompt, stream).await?;
     if stream {
         println!();
     } else {

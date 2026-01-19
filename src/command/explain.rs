@@ -1,9 +1,10 @@
-// src/commands/explain.rs
+// src/command/explain.rs
 use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::git::{build_diff_target, get_commit_logs, get_diff, get_diff_stats};
-use crate::prompt::{EXPLAIN_SYSTEM_PROMPT, EXPLAIN_USER_PROMPT};
+use crate::prompt::secret::SecretAction;
+use crate::prompt::template::{EXPLAIN_SYSTEM, EXPLAIN_USER};
 
 use super::apply_smart_diff;
 
@@ -18,6 +19,7 @@ pub async fn cmd_explain(
     stream: bool,
     alg: u8,
     max_diff_chars: usize,
+    secret_action: SecretAction,
 ) -> Result<()> {
     let display = match (&from, &to, &since, &until) {
         (Some(r), Some(t), _, _) => format!("{}..{}", r, t),
@@ -34,7 +36,7 @@ pub async fn cmd_explain(
     let (diff, stats) = if staged {
         println!("Explaining staged changes...\n");
         let raw_diff = get_diff(None, true, usize::MAX)?;
-        let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg)?;
+        let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg, secret_action)?;
         (diff, get_diff_stats(None, true)?)
     } else {
         let effective_from = match (&from, &since, &until) {
@@ -60,7 +62,7 @@ pub async fn cmd_explain(
         };
 
         let raw_diff = get_diff(diff_target_ref, false, usize::MAX)?;
-        let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg)?;
+        let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg, secret_action)?;
         (diff, get_diff_stats(diff_target_ref, false)?)
     };
 
@@ -69,12 +71,12 @@ pub async fn cmd_explain(
         return Ok(());
     }
 
-    let prompt = EXPLAIN_USER_PROMPT
+    let prompt = EXPLAIN_USER
         .replace("{range}", if staged { "staged" } else { &display })
         .replace("{stats}", &stats)
         .replace("{diff}", &diff);
 
-    let r = client.chat(EXPLAIN_SYSTEM_PROMPT, &prompt, stream).await?;
+    let r = client.chat(EXPLAIN_SYSTEM, &prompt, stream).await?;
     if stream {
         println!();
     } else {

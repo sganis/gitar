@@ -1,4 +1,4 @@
-// src/providers/retry.rs
+// src/provider/retry.rs
 use anyhow::{bail, Result};
 use reqwest::StatusCode;
 use serde::Deserialize;
@@ -46,11 +46,6 @@ fn extract_error_message(body: &str) -> Option<String> {
 
 /// Determines if a status code should trigger a retry
 pub fn is_retryable_status(status: StatusCode) -> bool {
-    // 429 Too Many Requests (rate limit)
-    // 500 Internal Server Error
-    // 502 Bad Gateway
-    // 503 Service Unavailable
-    // 504 Gateway Timeout
     status == StatusCode::TOO_MANY_REQUESTS
         || status == StatusCode::INTERNAL_SERVER_ERROR
         || status == StatusCode::BAD_GATEWAY
@@ -60,7 +55,6 @@ pub fn is_retryable_status(status: StatusCode) -> bool {
 
 /// Calculates delay with exponential backoff and jitter
 pub fn calculate_delay(attempt: u32, config: &RetryConfig) -> Duration {
-    // Exponential backoff: base_delay * 2^attempt
     let exp_delay = config.base_delay_ms.saturating_mul(1 << attempt);
     let capped_delay = exp_delay.min(config.max_delay_ms);
 
@@ -78,7 +72,6 @@ fn rand_simple() -> f64 {
         .duration_since(SystemTime::UNIX_EPOCH)
         .map(|d| d.subsec_nanos())
         .unwrap_or(12345);
-    // Simple LCG-style mixing
     let mixed = nanos.wrapping_mul(1103515245).wrapping_add(12345);
     (mixed as f64) / (u32::MAX as f64)
 }
@@ -95,12 +88,7 @@ pub fn format_retry_error(status: StatusCode, attempt: u32, max_retries: u32) ->
     };
 
     if attempt < max_retries {
-        format!(
-            "{} - retrying ({}/{})",
-            status_desc,
-            attempt + 1,
-            max_retries
-        )
+        format!("{} - retrying ({}/{})", status_desc, attempt + 1, max_retries)
     } else {
         format!("{} - all {} retries exhausted", status_desc, max_retries)
     }
@@ -127,7 +115,6 @@ pub fn check_response_for_retry(
     }
 
     // Non-retryable error or retries exhausted
-    // Try to extract a meaningful error message from the response
     let error_msg = extract_error_message(body).unwrap_or_else(|| {
         let truncated = if body.len() > 500 { &body[..500] } else { body };
         truncated.to_string()
@@ -149,32 +136,30 @@ pub enum RetryDecision {
 mod tests {
     use super::*;
 
-    #[test]
-    fn is_retryable_429() {
-        assert!(is_retryable_status(StatusCode::TOO_MANY_REQUESTS));
-    }
+    // ==========================================================================
+    // Retryable status tests
+    // ==========================================================================
 
     #[test]
-    fn is_retryable_5xx() {
+    fn is_retryable_status_codes() {
+        // Retryable
+        assert!(is_retryable_status(StatusCode::TOO_MANY_REQUESTS));
         assert!(is_retryable_status(StatusCode::INTERNAL_SERVER_ERROR));
         assert!(is_retryable_status(StatusCode::BAD_GATEWAY));
         assert!(is_retryable_status(StatusCode::SERVICE_UNAVAILABLE));
         assert!(is_retryable_status(StatusCode::GATEWAY_TIMEOUT));
-    }
 
-    #[test]
-    fn is_not_retryable_4xx() {
+        // Not retryable
         assert!(!is_retryable_status(StatusCode::BAD_REQUEST));
         assert!(!is_retryable_status(StatusCode::UNAUTHORIZED));
         assert!(!is_retryable_status(StatusCode::FORBIDDEN));
         assert!(!is_retryable_status(StatusCode::NOT_FOUND));
+        assert!(!is_retryable_status(StatusCode::OK));
     }
 
-    #[test]
-    fn is_not_retryable_success() {
-        assert!(!is_retryable_status(StatusCode::OK));
-        assert!(!is_retryable_status(StatusCode::CREATED));
-    }
+    // ==========================================================================
+    // Delay calculation tests
+    // ==========================================================================
 
     #[test]
     fn calculate_delay_increases_exponentially() {
@@ -201,6 +186,10 @@ mod tests {
         assert!(delay.as_millis() <= 7500);
     }
 
+    // ==========================================================================
+    // Config tests
+    // ==========================================================================
+
     #[test]
     fn default_config_values() {
         let config = RetryConfig::default();
@@ -208,6 +197,10 @@ mod tests {
         assert_eq!(config.base_delay_ms, 1000);
         assert_eq!(config.max_delay_ms, 30000);
     }
+
+    // ==========================================================================
+    // Error formatting tests
+    // ==========================================================================
 
     #[test]
     fn format_retry_error_during_retry() {
@@ -222,6 +215,10 @@ mod tests {
         assert!(msg.contains("exhausted"));
     }
 
+    // ==========================================================================
+    // Response check tests
+    // ==========================================================================
+
     #[test]
     fn check_response_success() {
         let config = RetryConfig::default();
@@ -232,12 +229,7 @@ mod tests {
     #[test]
     fn check_response_retryable() {
         let config = RetryConfig::default();
-        let result = check_response_for_retry(
-            StatusCode::TOO_MANY_REQUESTS,
-            "rate limited",
-            0,
-            &config,
-        );
+        let result = check_response_for_retry(StatusCode::TOO_MANY_REQUESTS, "rate limited", 0, &config);
         assert!(matches!(result.unwrap(), RetryDecision::Retry { .. }));
     }
 
@@ -251,49 +243,8 @@ mod tests {
     #[test]
     fn check_response_retries_exhausted() {
         let config = RetryConfig::default();
-        let result = check_response_for_retry(
-            StatusCode::TOO_MANY_REQUESTS,
-            "rate limited",
-            3, // max_retries reached
-            &config,
-        );
+        let result = check_response_for_retry(StatusCode::TOO_MANY_REQUESTS, "rate limited", 3, &config);
         assert!(result.is_err());
-    }
-
-    #[test]
-    fn rand_simple_in_range() {
-        for _ in 0..100 {
-            let r = rand_simple();
-            assert!(r >= 0.0 && r <= 1.0);
-        }
-    }
-
-    #[test]
-    fn extract_error_message_parses_json() {
-        let body = r#"{"error": {"message": "Invalid API key"}}"#;
-        let msg = extract_error_message(body);
-        assert_eq!(msg, Some("Invalid API key".to_string()));
-    }
-
-    #[test]
-    fn extract_error_message_handles_missing_message() {
-        let body = r#"{"error": {}}"#;
-        let msg = extract_error_message(body);
-        assert!(msg.is_none());
-    }
-
-    #[test]
-    fn extract_error_message_handles_invalid_json() {
-        let body = "not json";
-        let msg = extract_error_message(body);
-        assert!(msg.is_none());
-    }
-
-    #[test]
-    fn extract_error_message_handles_null_error() {
-        let body = r#"{"error": null}"#;
-        let msg = extract_error_message(body);
-        assert!(msg.is_none());
     }
 
     #[test]
@@ -303,5 +254,43 @@ mod tests {
         let result = check_response_for_retry(StatusCode::BAD_REQUEST, body, 0, &config);
         let err = result.unwrap_err().to_string();
         assert!(err.contains("Quota exceeded"));
+    }
+
+    #[test]
+    fn check_response_returns_error_on_exhaustion_with_message() {
+        let config = RetryConfig { max_retries: 0, ..Default::default() };
+        let body = r#"{"error": {"message": "Rate limit exceeded"}}"#;
+        let result = check_response_for_retry(StatusCode::TOO_MANY_REQUESTS, body, 0, &config);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("Rate limit exceeded"));
+    }
+
+    // ==========================================================================
+    // Error message extraction tests
+    // ==========================================================================
+
+    #[test]
+    fn extract_error_message_parses_json() {
+        let body = r#"{"error": {"message": "Invalid API key"}}"#;
+        assert_eq!(extract_error_message(body), Some("Invalid API key".to_string()));
+    }
+
+    #[test]
+    fn extract_error_message_handles_missing_fields() {
+        assert!(extract_error_message(r#"{"error": {}}"#).is_none());
+        assert!(extract_error_message(r#"{"error": null}"#).is_none());
+        assert!(extract_error_message("not json").is_none());
+    }
+
+    // ==========================================================================
+    // Random tests
+    // ==========================================================================
+
+    #[test]
+    fn rand_simple_in_range() {
+        for _ in 0..100 {
+            let r = rand_simple();
+            assert!((0.0..=1.0).contains(&r));
+        }
     }
 }

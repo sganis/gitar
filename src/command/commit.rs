@@ -1,12 +1,13 @@
-// src/commands/commit.rs
+// src/command/commit.rs
 use anyhow::{bail, Result};
 use std::fs;
 use std::io::{self, Write};
 
 use crate::client::LlmClient;
 use crate::git::{get_diff, run_git, run_git_status};
-use crate::preset::Preset;
-use crate::prompt::{commit_system_prompt, COMMIT_USER_PROMPT};
+use crate::prompt::preset::Preset;
+use crate::prompt::secret::SecretAction;
+use crate::prompt::template::{commit_system, COMMIT_USER};
 
 use super::{apply_smart_diff_with_context, AnalysisContext};
 
@@ -21,6 +22,7 @@ pub async fn cmd_commit(
     stream: bool,
     alg: u8,
     max_diff_chars: usize,
+    secret_action: SecretAction,
 ) -> Result<()> {
     let staged = run_git(&["diff", "--cached"]).unwrap_or_default();
     let unstaged = run_git(&["diff"]).unwrap_or_default();
@@ -47,14 +49,20 @@ pub async fn cmd_commit(
         .with_provider(client.provider())
         .with_model(client.model());
 
-    let diff =
-        apply_smart_diff_with_context(&raw_diff, max_diff_chars, silent, alg, Some(&context))?;
+    let diff = apply_smart_diff_with_context(
+        &raw_diff,
+        max_diff_chars,
+        silent,
+        alg,
+        Some(&context),
+        secret_action,
+    )?;
 
-    let system = commit_system_prompt(preset);
+    let system = commit_system(preset);
 
     // Hook mode: never stream (hooks expect file output only)
     if let Some(ref output_file) = write_to {
-        let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
+        let prompt = COMMIT_USER.replace("{diff}", &diff);
         let msg = client.chat(&system, &prompt, false).await?;
         fs::write(output_file, format!("{}\n", msg.trim()))?;
         return Ok(());
@@ -62,7 +70,7 @@ pub async fn cmd_commit(
 
     // Interactive mode
     let commit_message = loop {
-        let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
+        let prompt = COMMIT_USER.replace("{diff}", &diff);
 
         let do_stream = stream && !silent;
         let msg = client.chat(&system, &prompt, do_stream).await?;
@@ -97,11 +105,7 @@ pub async fn cmd_commit(
                 io::stdout().flush()?;
                 let mut ed = String::new();
                 io::stdin().read_line(&mut ed)?;
-                break if ed.trim().is_empty() {
-                    msg
-                } else {
-                    ed.trim().into()
-                };
+                break if ed.trim().is_empty() { msg } else { ed.trim().into() };
             }
             _ => {
                 println!("Canceled.");
@@ -110,6 +114,7 @@ pub async fn cmd_commit(
         }
     };
 
+    // Stage all changes if requested
     if all {
         if !silent {
             println!("Staging all...");
@@ -127,29 +132,26 @@ pub async fn cmd_commit(
         commit_message
     };
 
-    let (out, err, ok) = if all {
-        run_git_status(&["commit", "-am", &full_msg])
-    } else {
-        run_git_status(&["commit", "-m", &full_msg])
-    };
+    // Use -m (not -am) since we already staged with add -A if needed
+    let (out, err, ok) = run_git_status(&["commit", "-m", &full_msg]);
     if !silent {
         println!("{}{}", out, err);
     }
 
     if !ok {
-        if !silent {
-            println!("Commit failed.");
-        }
-        return Ok(());
+        bail!("Commit failed. Check git status and try again.");
     }
 
     if push {
         if !silent {
             println!("Pushing...");
         }
-        let (o, e, _) = run_git_status(&["push"]);
+        let (o, e, push_ok) = run_git_status(&["push"]);
         if !silent {
             println!("{}{}", o, e);
+        }
+        if !push_ok {
+            bail!("Push failed.");
         }
     }
 
@@ -162,6 +164,7 @@ pub async fn cmd_staged(
     stream: bool,
     alg: u8,
     max_diff_chars: usize,
+    secret_action: SecretAction,
 ) -> Result<()> {
     let raw_diff = get_diff(None, true, usize::MAX)?;
     if raw_diff.trim().is_empty() {
@@ -172,11 +175,17 @@ pub async fn cmd_staged(
         .with_provider(client.provider())
         .with_model(client.model());
 
-    let diff =
-        apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context))?;
+    let diff = apply_smart_diff_with_context(
+        &raw_diff,
+        max_diff_chars,
+        false,
+        alg,
+        Some(&context),
+        secret_action,
+    )?;
 
-    let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
-    let system = commit_system_prompt(preset);
+    let prompt = COMMIT_USER.replace("{diff}", &diff);
+    let system = commit_system(preset);
     let msg = client.chat(&system, &prompt, stream).await?;
     if stream {
         println!();
@@ -192,6 +201,7 @@ pub async fn cmd_unstaged(
     stream: bool,
     alg: u8,
     max_diff_chars: usize,
+    secret_action: SecretAction,
 ) -> Result<()> {
     let raw_diff = get_diff(None, false, usize::MAX)?;
     if raw_diff.trim().is_empty() {
@@ -202,10 +212,17 @@ pub async fn cmd_unstaged(
         .with_provider(client.provider())
         .with_model(client.model());
 
-    let diff =
-        apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context))?;
-    let prompt = COMMIT_USER_PROMPT.replace("{diff}", &diff);
-    let system = commit_system_prompt(preset);
+    let diff = apply_smart_diff_with_context(
+        &raw_diff,
+        max_diff_chars,
+        false,
+        alg,
+        Some(&context),
+        secret_action,
+    )?;
+
+    let prompt = COMMIT_USER.replace("{diff}", &diff);
+    let system = commit_system(preset);
     let msg = client.chat(&system, &prompt, stream).await?;
     if stream {
         println!();

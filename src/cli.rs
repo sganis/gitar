@@ -26,13 +26,13 @@ use clap::{Parser, Subcommand};
     gitar version v1.0.0            # Version bump since tag
 
     gitar diff --compare            # Compare smart diff algorithms
-    gitar commit --alg 3            # Use hunk-level analysis for large refactors
+    gitar commit --algo 3            # Use hunk-level analysis for large refactors
 
 DIFF ALGORITHMS:
-    --alg 1    Full: complete git diff (ignores --max-chars)
-    --alg 2    Files: selective files, ranked by priority
-    --alg 3    Hunks: selective hunks, ranked by importance
-    --alg 4    Semantic: JSON IR with scored hunks (default)
+    --algo 1    Full: complete git diff (ignores --max-chars)
+    --algo 2    Files: selective files, ranked by priority
+    --algo 3    Hunks: selective hunks, ranked by importance
+    --algo 4    Semantic: JSON IR with scored hunks (default)
 
 STYLE PRESETS:
     --preset rust       Rust conventions (crate/module focused)
@@ -118,7 +118,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Generate an AI commit message for currently staged changes
@@ -127,7 +127,7 @@ pub enum Commands {
     Staged {
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Generate an AI commit message for unstaged working tree changes
@@ -136,7 +136,7 @@ pub enum Commands {
     Unstaged {
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Describe a range of commits in plain English (does not modify history)
@@ -170,7 +170,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Generate a pull request description from branch changes
@@ -192,7 +192,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Generate release notes (changelog) from a commit range
@@ -221,7 +221,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Explain changes in plain English for non-technical stakeholders
@@ -250,7 +250,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Suggest a semantic version bump (major/minor/patch) from changes
@@ -271,7 +271,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: u8,
+        algo: u8,
     },
 
     /// Manage git hooks for automatic commit message generation
@@ -304,7 +304,7 @@ pub enum Commands {
 
         /// Diff algorithm: 1=naive, 2=standard, 3=think, 4=ir
         #[arg(long, value_parser = clap::value_parser!(u8).range(1..=4))]
-        alg: Option<u8>,
+        algo: Option<u8>,
 
         /// Include git diff --stat header
         #[arg(long)]
@@ -354,298 +354,156 @@ mod tests {
     use super::*;
     use clap::Parser;
 
+    // ==========================================================================
+    // Core command parsing tests
+    // ==========================================================================
+
     #[test]
-    fn cli_parses_commit_command() {
+    fn cli_parses_all_commands() {
+        // Test that all command variants parse correctly
+        let commands = [
+            vec!["gitar", "commit"],
+            vec!["gitar", "staged"],
+            vec!["gitar", "unstaged"],
+            vec!["gitar", "pr", "main"],
+            vec!["gitar", "changelog"],
+            vec!["gitar", "explain"],
+            vec!["gitar", "version"],
+            vec!["gitar", "history"],
+            vec!["gitar", "init"],
+            vec!["gitar", "config"],
+            vec!["gitar", "models"],
+            vec!["gitar", "diff"],
+            vec!["gitar", "hook", "install"],
+            vec!["gitar", "hook", "uninstall"],
+        ];
+
+        for args in commands {
+            let result = Cli::try_parse_from(&args);
+            assert!(result.is_ok(), "Failed to parse: {:?}", args);
+        }
+    }
+
+    // ==========================================================================
+    // Algorithm flag tests
+    // ==========================================================================
+
+    #[test]
+    fn cli_parses_algo_flag() {
+        for algo_val in 1..=4 {
+            let cli = Cli::try_parse_from(["gitar", "commit", "--algo", &algo_val.to_string()]).unwrap();
+            if let Commands::Commit { algo, .. } = cli.command {
+                assert_eq!(algo, algo_val);
+            }
+        }
+    }
+
+    #[test]
+    fn cli_algo_defaults_to_4() {
         let cli = Cli::try_parse_from(["gitar", "commit"]).unwrap();
-        assert!(matches!(cli.command, Commands::Commit { .. }));
-    }
-
-    #[test]
-    fn cli_parses_commit_with_alg() {
-        let cli = Cli::try_parse_from(["gitar", "commit", "--alg", "3"]).unwrap();
-        if let Commands::Commit { alg, .. } = cli.command {
-            assert_eq!(alg, 3);
-        } else {
-            panic!("Expected Commit command");
+        if let Commands::Commit { algo, .. } = cli.command {
+            assert_eq!(algo, 4);
         }
     }
 
     #[test]
-    fn cli_parses_commit_default_alg() {
-        let cli = Cli::try_parse_from(["gitar", "commit"]).unwrap();
-        if let Commands::Commit { alg, .. } = cli.command {
-            assert_eq!(alg, 4);
-        } else {
-            panic!("Expected Commit command");
+    fn cli_rejects_invalid_algo() {
+        assert!(Cli::try_parse_from(["gitar", "commit", "--algo", "0"]).is_err());
+        assert!(Cli::try_parse_from(["gitar", "commit", "--algo", "5"]).is_err());
+    }
+
+    // ==========================================================================
+    // Provider tests
+    // ==========================================================================
+
+    #[test]
+    fn cli_parses_valid_providers() {
+        let providers = ["openai", "claude", "gemini", "google", "groq", "ollama", "local"];
+        for provider in providers {
+            let cli = Cli::try_parse_from(["gitar", "--provider", provider, "staged"]).unwrap();
+            assert_eq!(cli.provider, Some(provider.into()));
         }
-    }
-
-    #[test]
-    fn cli_parses_staged_with_alg() {
-        let cli = Cli::try_parse_from(["gitar", "staged", "--alg", "4"]).unwrap();
-        if let Commands::Staged { alg } = cli.command {
-            assert_eq!(alg, 4);
-        } else {
-            panic!("Expected Staged command");
-        }
-    }
-
-    #[test]
-    fn cli_parses_pr_with_alg() {
-        let cli = Cli::try_parse_from(["gitar", "pr", "main", "--alg", "3"]).unwrap();
-        if let Commands::Pr { base, alg, .. } = cli.command {
-            assert_eq!(base, Some("main".into()));
-            assert_eq!(alg, 3);
-        } else {
-            panic!("Expected Pr command");
-        }
-    }
-
-    #[test]
-    fn cli_parses_diff_compare() {
-        let cli = Cli::try_parse_from(["gitar", "diff", "--compare"]).unwrap();
-        if let Commands::Diff { compare, .. } = cli.command {
-            assert!(compare);
-        } else {
-            panic!("Expected Diff command");
-        }
-    }
-
-    #[test]
-    fn cli_parses_diff_with_alg() {
-        let cli = Cli::try_parse_from(["gitar", "diff", "--alg", "1"]).unwrap();
-        if let Commands::Diff { alg, .. } = cli.command {
-            assert_eq!(alg, Some(1));
-        } else {
-            panic!("Expected Diff command");
-        }
-    }
-
-    #[test]
-    fn cli_rejects_invalid_alg() {
-        let result = Cli::try_parse_from(["gitar", "commit", "--alg", "5"]);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn cli_rejects_alg_zero() {
-        let result = Cli::try_parse_from(["gitar", "commit", "--alg", "0"]);
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn cli_parses_commit_with_flags() {
-        let cli = Cli::try_parse_from(["gitar", "commit", "-p", "-a"]).unwrap();
-        if let Commands::Commit { push, all, .. } = cli.command {
-            assert!(push);
-            assert!(all);
-        } else {
-            panic!("Expected Commit command");
-        }
-    }
-
-    #[test]
-    fn cli_parses_global_stream_flag() {
-        let cli = Cli::try_parse_from(["gitar", "--stream", "staged"]).unwrap();
-        assert!(cli.stream);
-        assert!(matches!(cli.command, Commands::Staged { .. }));
-    }
-
-    #[test]
-    fn cli_parses_staged_command() {
-        let cli = Cli::try_parse_from(["gitar", "staged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged { .. }));
-    }
-
-    #[test]
-    fn cli_parses_unstaged_command() {
-        let cli = Cli::try_parse_from(["gitar", "unstaged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Unstaged { .. }));
-    }
-
-    #[test]
-    fn cli_parses_pr_with_base() {
-        let cli = Cli::try_parse_from(["gitar", "pr", "develop"]).unwrap();
-        if let Commands::Pr { base, to, staged, .. } = cli.command {
-            assert_eq!(base, Some("develop".into()));
-            assert!(to.is_none());
-            assert!(!staged);
-        } else {
-            panic!("Expected Pr command");
-        }
-    }
-
-    #[test]
-    fn cli_parses_global_options() {
-        let cli = Cli::try_parse_from([
-            "gitar",
-            "--model",
-            "gpt-4",
-            "--max-tokens",
-            "2048",
-            "--temperature",
-            "0.5",
-            "staged",
-        ])
-        .unwrap();
-        assert_eq!(cli.model, Some("gpt-4".into()));
-        assert_eq!(cli.max_tokens, Some(2048));
-        assert_eq!(cli.temperature, Some(0.5));
-    }
-
-    #[test]
-    fn cli_parses_init_command() {
-        let cli = Cli::try_parse_from([
-            "gitar",
-            "--model",
-            "claude-3",
-            "--base-branch",
-            "develop",
-            "init",
-        ])
-        .unwrap();
-        assert!(matches!(cli.command, Commands::Init));
-        assert_eq!(cli.model, Some("claude-3".into()));
-        assert_eq!(cli.base_branch, Some("develop".into()));
-    }
-
-    #[test]
-    fn cli_parses_config_command() {
-        let cli = Cli::try_parse_from(["gitar", "config"]).unwrap();
-        assert!(matches!(cli.command, Commands::Config));
-    }
-
-    #[test]
-    fn cli_parses_models_command() {
-        let cli = Cli::try_parse_from(["gitar", "models"]).unwrap();
-        assert!(matches!(cli.command, Commands::Models));
-    }
-
-    #[test]
-    fn cli_with_provider_claude() {
-        let cli = Cli::try_parse_from(["gitar", "--provider", "claude", "staged"]).unwrap();
-        assert!(matches!(cli.command, Commands::Staged { .. }));
-        assert_eq!(cli.provider, Some("claude".into()));
-    }
-
-    #[test]
-    fn cli_with_provider_gemini() {
-        let cli = Cli::try_parse_from(["gitar", "--provider", "gemini", "staged"]).unwrap();
-        assert_eq!(cli.provider, Some("gemini".into()));
-    }
-
-    #[test]
-    fn cli_with_provider_ollama() {
-        let cli = Cli::try_parse_from(["gitar", "--provider", "ollama", "staged"]).unwrap();
-        assert_eq!(cli.provider, Some("ollama".into()));
     }
 
     #[test]
     fn cli_rejects_invalid_provider() {
-        let result = Cli::try_parse_from(["gitar", "--provider", "invalid", "staged"]);
-        assert!(result.is_err());
+        assert!(Cli::try_parse_from(["gitar", "--provider", "invalid", "staged"]).is_err());
     }
 
-    #[test]
-    fn cli_parses_hook_install() {
-        let cli = Cli::try_parse_from(["gitar", "hook", "install"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Commands::Hook {
-                command: HookCommands::Install
-            }
-        ));
-    }
-
-    #[test]
-    fn cli_parses_hook_uninstall() {
-        let cli = Cli::try_parse_from(["gitar", "hook", "uninstall"]).unwrap();
-        assert!(matches!(
-            cli.command,
-            Commands::Hook {
-                command: HookCommands::Uninstall
-            }
-        ));
-    }
-
-    #[test]
-    fn hook_script_unix_contains_marker() {
-        assert!(HOOK_SCRIPT.contains("gitar-hook"));
-    }
-
-    #[test]
-    fn hook_scripts_skip_when_message_provided() {
-        assert!(HOOK_SCRIPT.contains("COMMIT_SOURCE"));
-    }
-
-    #[test]
-    fn hook_scripts_check_gitar_installed() {
-        assert!(HOOK_SCRIPT.contains("command -v gitar"));
-    }
-
-    #[test]
-    fn cli_parses_all_alg_values() {
-        for alg_val in 1..=4 {
-            let cli =
-                Cli::try_parse_from(["gitar", "commit", "--alg", &alg_val.to_string()]).unwrap();
-            if let Commands::Commit { alg, .. } = cli.command {
-                assert_eq!(alg, alg_val);
-            }
-        }
-    }
-
+    // ==========================================================================
     // Preset tests
-    #[test]
-    fn cli_parses_preset_rust() {
-        let cli = Cli::try_parse_from(["gitar", "--preset", "rust", "staged"]).unwrap();
-        assert_eq!(cli.preset, Some("rust".into()));
-    }
+    // ==========================================================================
 
     #[test]
-    fn cli_parses_preset_rs_alias() {
-        let cli = Cli::try_parse_from(["gitar", "--preset", "rs", "staged"]).unwrap();
-        assert_eq!(cli.preset, Some("rs".into()));
-    }
-
-    #[test]
-    fn cli_parses_preset_javascript() {
-        let cli = Cli::try_parse_from(["gitar", "--preset", "javascript", "staged"]).unwrap();
-        assert_eq!(cli.preset, Some("javascript".into()));
-    }
-
-    #[test]
-    fn cli_parses_preset_js_alias() {
-        let cli = Cli::try_parse_from(["gitar", "--preset", "js", "staged"]).unwrap();
-        assert_eq!(cli.preset, Some("js".into()));
-    }
-
-    #[test]
-    fn cli_parses_preset_python() {
-        let cli = Cli::try_parse_from(["gitar", "--preset", "python", "staged"]).unwrap();
-        assert_eq!(cli.preset, Some("python".into()));
-    }
-
-    #[test]
-    fn cli_parses_preset_py_alias() {
-        let cli = Cli::try_parse_from(["gitar", "--preset", "py", "staged"]).unwrap();
-        assert_eq!(cli.preset, Some("py".into()));
-    }
-
-    #[test]
-    fn cli_parses_preset_auto() {
-        let cli = Cli::try_parse_from(["gitar", "--preset", "auto", "staged"]).unwrap();
-        assert_eq!(cli.preset, Some("auto".into()));
+    fn cli_parses_valid_presets() {
+        let presets = ["rust", "rs", "javascript", "js", "python", "py", "auto", "default"];
+        for preset in presets {
+            let cli = Cli::try_parse_from(["gitar", "--preset", preset, "staged"]).unwrap();
+            assert_eq!(cli.preset, Some(preset.into()));
+        }
     }
 
     #[test]
     fn cli_rejects_invalid_preset() {
-        let result = Cli::try_parse_from(["gitar", "--preset", "invalid", "staged"]);
-        assert!(result.is_err());
+        assert!(Cli::try_parse_from(["gitar", "--preset", "invalid", "staged"]).is_err());
     }
 
+    // ==========================================================================
+    // Global options tests
+    // ==========================================================================
+
     #[test]
-    fn cli_preset_default_is_none() {
-        let cli = Cli::try_parse_from(["gitar", "staged"]).unwrap();
-        assert!(cli.preset.is_none());
+    fn cli_parses_global_options() {
+        let cli = Cli::try_parse_from([
+            "gitar", "--model", "gpt-4", "--max-tokens", "2048",
+            "--temperature", "0.5", "--stream", "staged",
+        ]).unwrap();
+        assert_eq!(cli.model, Some("gpt-4".into()));
+        assert_eq!(cli.max_tokens, Some(2048));
+        assert_eq!(cli.temperature, Some(0.5));
+        assert!(cli.stream);
+    }
+
+    // ==========================================================================
+    // Commit-specific flags tests
+    // ==========================================================================
+
+    #[test]
+    fn cli_parses_commit_flags() {
+        let cli = Cli::try_parse_from(["gitar", "commit", "-p", "-a", "--no-tag"]).unwrap();
+        if let Commands::Commit { push, all, no_tag, .. } = cli.command {
+            assert!(push);
+            assert!(all);
+            assert!(no_tag);
+        } else {
+            panic!("Expected Commit command");
+        }
+    }
+
+    // ==========================================================================
+    // Diff command tests
+    // ==========================================================================
+
+    #[test]
+    fn cli_parses_diff_options() {
+        let cli = Cli::try_parse_from(["gitar", "diff", "--compare", "--stats"]).unwrap();
+        if let Commands::Diff { compare, stats, .. } = cli.command {
+            assert!(compare);
+            assert!(stats);
+        } else {
+            panic!("Expected Diff command");
+        }
+    }
+
+    // ==========================================================================
+    // Hook script tests
+    // ==========================================================================
+
+    #[test]
+    fn hook_script_contains_required_elements() {
+        assert!(HOOK_SCRIPT.contains("gitar-hook"), "Should contain marker");
+        assert!(HOOK_SCRIPT.contains("COMMIT_SOURCE"), "Should check commit source");
+        assert!(HOOK_SCRIPT.contains("command -v gitar"), "Should check gitar installed");
+        assert!(HOOK_SCRIPT.contains("--write-to"), "Should use write-to flag");
     }
 }

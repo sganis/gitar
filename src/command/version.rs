@@ -1,9 +1,10 @@
-// src/commands/version.rs
+// src/command/version.rs
 use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::git::{build_diff_target, get_current_version, get_diff};
-use crate::prompt::{VERSION_SYSTEM_PROMPT, VERSION_USER_PROMPT};
+use crate::prompt::secret::SecretAction;
+use crate::prompt::template::{VERSION_SYSTEM, VERSION_USER};
 
 use super::apply_smart_diff;
 
@@ -16,6 +17,7 @@ pub async fn cmd_version(
     stream: bool,
     alg: u8,
     max_diff_chars: usize,
+    secret_action: SecretAction,
 ) -> Result<()> {
     let current = current.unwrap_or_else(get_current_version);
     println!("Version analysis (current: {})...\n", current);
@@ -34,13 +36,13 @@ pub async fn cmd_version(
         return Ok(());
     }
 
-    let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg)?;
+    let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg, secret_action)?;
 
-    let prompt = VERSION_USER_PROMPT
+    let prompt = VERSION_USER
         .replace("{version}", &current)
         .replace("{diff}", &diff);
 
-    let r = client.chat(VERSION_SYSTEM_PROMPT, &prompt, stream).await?;
+    let r = client.chat(VERSION_SYSTEM, &prompt, stream).await?;
     if stream {
         println!();
     } else {
