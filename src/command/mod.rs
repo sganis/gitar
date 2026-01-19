@@ -8,6 +8,7 @@ mod history;
 mod hook;
 mod models;
 mod pr;
+mod split;
 mod version;
 
 pub use changelog::cmd_changelog;
@@ -19,6 +20,7 @@ pub use history::cmd_history;
 pub use hook::cmd_hook;
 pub use models::cmd_models;
 pub use pr::cmd_pr;
+pub use split::cmd_split;
 pub use version::cmd_version;
 
 use anyhow::{bail, Result};

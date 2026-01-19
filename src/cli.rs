@@ -318,6 +318,17 @@ pub enum Commands {
         #[arg(long)]
         compare: bool,
     },
+
+    /// Split a large working tree diff into multiple logical commits
+    ///
+    /// Analyzes unstaged changes and guides you through creating a series of
+    /// small, focused commits. Groups changes by type (docs, tests, config)
+    /// and semantic intent. Requires interactive confirmation before each commit.
+    Split {
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
+        algo: u8,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -374,6 +385,7 @@ mod tests {
             vec!["gitar", "config"],
             vec!["gitar", "models"],
             vec!["gitar", "diff"],
+            vec!["gitar", "split"],
             vec!["gitar", "hook", "install"],
             vec!["gitar", "hook", "uninstall"],
         ];

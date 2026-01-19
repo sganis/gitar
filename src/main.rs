@@ -244,6 +244,10 @@ async fn main() -> Result<()> {
             .await?
         }
 
+        Commands::Split { algo } => {
+            cmd_split(&client, config.preset, algo).await?
+        }
+
         Commands::Models => cmd_models(&client).await?,
 
         // Already handled above
