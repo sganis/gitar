@@ -2,131 +2,155 @@
 set -euo pipefail
 
 # -----------------------------------------------------------------------------
-# gitar installer
-# - installs into: $HOME/.gitar/bin/gitar
-# - optionally updates shell rc to add $HOME/.gitar/bin to PATH
-# - curl --proto '=https' --tlsv1.2 -sSf https://GITHUB_RAW/install.sh | sh
+# gitar installer (Linux/macOS)
+# Usage:
+#   curl -fsSL https://<YOUR_URL>/install.sh | bash
+#   curl -fsSL https://<YOUR_URL>/install.sh | bash -s -- latest
+#   curl -fsSL https://<YOUR_URL>/install.sh | bash -s -- v1.2.3
+#
+# Behavior (Claude-code style):
+# - Detects platform (linux/macos + x64/arm64)
+# - Resolves version (default: latest)
+# - Downloads release artifact from GitHub Releases
+# - Verifies sha256 if a .sha256 sidecar exists (optional but recommended)
+# - Installs to: $HOME/.gitar/bin/gitar (or $GITAR_INSTALL_DIR)
+# - Adds PATH export to shell rc (can be disabled)
 # -----------------------------------------------------------------------------
 
+TARGET="${1:-}" # optional: latest|stable|vX.Y.Z
+if [[ -n "$TARGET" ]] && [[ ! "$TARGET" =~ ^(stable|latest|v[0-9]+\.[0-9]+\.[0-9]+(-[^[:space:]]+)?)$ ]]; then
+  echo "Usage: $0 [stable|latest|vX.Y.Z]" >&2
+  exit 1
+fi
+
+GITAR_REPO="${GITAR_REPO:-sganis/gitar}"
 GITAR_INSTALL_DIR="${GITAR_INSTALL_DIR:-$HOME/.gitar}"
 GITAR_BIN_DIR="$GITAR_INSTALL_DIR/bin"
 GITAR_BIN_PATH="$GITAR_BIN_DIR/gitar"
 
-# Set these to your GitHub org/repo
-GITAR_REPO="${GITAR_REPO:-sganis/gitar}"
+# Set to 0 to avoid modifying rc files
+GITAR_MODIFY_RC="${GITAR_MODIFY_RC:-1}"
 
-# If you want to pin a version, set GITAR_VERSION=v1.2.3
-# Otherwise it installs the latest release.
-GITAR_VERSION="${GITAR_VERSION:-latest}"
-
+# ----------------------------
+# Helpers
+# ----------------------------
 say() { printf '%s\n' "$*"; }
 err() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
+DOWNLOADER=""
+if command -v curl >/dev/null 2>&1; then
+  DOWNLOADER="curl"
+elif command -v wget >/dev/null 2>&1; then
+  DOWNLOADER="wget"
+else
+  err "Either curl or wget is required but neither is installed"
+fi
+
 need_cmd() { command -v "$1" >/dev/null 2>&1 || err "missing required command: $1"; }
 
+download_file() {
+  local url="$1"
+  local output="${2:-}"
+  if [[ "$DOWNLOADER" == "curl" ]]; then
+    if [[ -n "$output" ]]; then
+      curl -fsSL -o "$output" "$url"
+    else
+      curl -fsSL "$url"
+    fi
+  else
+    if [[ -n "$output" ]]; then
+      wget -q -O "$output" "$url"
+    else
+      wget -q -O - "$url"
+    fi
+  fi
+}
+
 detect_os() {
-  local os
-  os="$(uname -s | tr '[:upper:]' '[:lower:]')"
-  case "$os" in
-    linux) echo "linux" ;;
-    darwin) echo "macos" ;;
-    mingw*|msys*|cygwin*) echo "windows" ;;
-    *) err "unsupported OS: $(uname -s)" ;;
+  case "$(uname -s)" in
+    Darwin) echo "macos" ;;
+    Linux)  echo "linux" ;;
+    *) err "Unsupported OS: $(uname -s) (Windows not supported by this installer)" ;;
   esac
 }
 
 detect_arch() {
-  local arch
-  arch="$(uname -m)"
-  case "$arch" in
+  case "$(uname -m)" in
     x86_64|amd64) echo "x86_64" ;;
-    aarch64|arm64) echo "aarch64" ;;
-    *) err "unsupported architecture: $arch" ;;
+    arm64|aarch64) echo "aarch64" ;;
+    *) err "Unsupported architecture: $(uname -m)" ;;
   esac
 }
 
-download_url() {
-  local os="$1" arch="$2" version="$3"
-
-  # Artifact naming convention assumed:
-  # gitar-<version>-<os>-<arch>.tar.gz  (macos/linux)
-  # gitar-<version>-windows-<arch>.zip  (windows)
-  #
-  # Examples:
-  #  gitar-v1.0.0-linux-x86_64.tar.gz
-  #  gitar-v1.0.0-macos-aarch64.tar.gz
-  #  gitar-v1.0.0-windows-x86_64.zip
-
-  local base="https://github.com/$GITAR_REPO/releases"
-  if [[ "$version" == "latest" ]]; then
-    base="$base/latest/download"
-  else
-    base="$base/download/$version"
+# Best-effort JSON parse without jq:
+# Extracts the first "tag_name":"vX.Y.Z" from GitHub API response.
+extract_tag_name() {
+  local json="$1"
+  # Normalize to one line to simplify.
+  json="$(echo "$json" | tr -d '\n\r\t')"
+  if [[ "$json" =~ \"tag_name\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
+    echo "${BASH_REMATCH[1]}"
+    return 0
   fi
+  return 1
+}
 
-  if [[ "$os" == "windows" ]]; then
-    echo "$base/gitar-${version}-windows-${arch}.zip"
+resolve_version() {
+  local target="${1:-}"
+  if [[ -z "$target" || "$target" == "latest" || "$target" == "stable" ]]; then
+    # Use GitHub Releases API to get latest tag
+    local api="https://api.github.com/repos/$GITAR_REPO/releases/latest"
+    local json
+    json="$(download_file "$api")" || err "Failed to query GitHub API for latest release"
+    local tag
+    tag="$(extract_tag_name "$json")" || err "Could not parse latest release tag from GitHub API"
+    echo "$tag"
   else
-    echo "$base/gitar-${version}-${os}-${arch}.tar.gz"
+    # already validated like v1.2.3
+    echo "$target"
   fi
 }
 
-install_binary_from_tar() {
-  local url="$1"
-  local tmpdir
-  tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
-
-  say "Downloading: $url"
-  curl -fsSL "$url" -o "$tmpdir/gitar.tgz"
-
-  mkdir -p "$GITAR_BIN_DIR"
-  tar -xzf "$tmpdir/gitar.tgz" -C "$tmpdir"
-
-  # Expect tar contains a single binary named "gitar"
-  [[ -f "$tmpdir/gitar" ]] || err "archive did not contain a 'gitar' binary"
-
-  install -m 0755 "$tmpdir/gitar" "$GITAR_BIN_PATH"
-  say "Installed: $GITAR_BIN_PATH"
+artifact_url() {
+  local version="$1" os="$2" arch="$3"
+  # Your current convention:
+  # gitar-<version>-<os>-<arch>.tar.gz
+  # Example: gitar-v1.0.0-linux-x86_64.tar.gz
+  echo "https://github.com/$GITAR_REPO/releases/download/$version/gitar-${version}-${os}-${arch}.tar.gz"
 }
 
-install_binary_from_zip() {
-  local url="$1"
-  local tmpdir
-  tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
+artifact_sha_url() {
+  local version="$1" os="$2" arch="$3"
+  # Optional but recommended to upload alongside the tarball:
+  # gitar-<version>-<os>-<arch>.tar.gz.sha256
+  echo "https://github.com/$GITAR_REPO/releases/download/$version/gitar-${version}-${os}-${arch}.tar.gz.sha256"
+}
 
-  say "Downloading: $url"
-  curl -fsSL "$url" -o "$tmpdir/gitar.zip"
-
-  mkdir -p "$GITAR_BIN_DIR"
-  unzip -q "$tmpdir/gitar.zip" -d "$tmpdir"
-
-  # Expect zip contains gitar.exe
-  [[ -f "$tmpdir/gitar.exe" ]] || err "archive did not contain 'gitar.exe'"
-
-  install -m 0755 "$tmpdir/gitar.exe" "$GITAR_BIN_DIR/gitar.exe"
-  say "Installed: $GITAR_BIN_DIR/gitar.exe"
+sha256_file_hash() {
+  local file="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$file" | awk '{print $1}'
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$file" | awk '{print $1}'
+  else
+    err "Missing sha256 tool: install sha256sum or shasum"
+  fi
 }
 
 maybe_add_path() {
-  # Add PATH line to common rc files if PATH doesn't already include it.
   local line='export PATH="$HOME/.gitar/bin:$PATH"'
 
-  # If user already has it in PATH, skip.
   case ":$PATH:" in
     *":$HOME/.gitar/bin:"*) return 0 ;;
   esac
 
-  # If running non-interactively, don't modify rc by default.
-  if [[ "${GITAR_MODIFY_RC:-1}" != "1" ]]; then
+  if [[ "$GITAR_MODIFY_RC" != "1" ]]; then
     say "Note: not modifying shell rc (set GITAR_MODIFY_RC=1 to enable)."
     say "Add this to your shell rc:"
     say "  $line"
     return 0
   fi
 
-  # Choose a likely rc file.
   local shell_name rc
   shell_name="$(basename "${SHELL:-sh}")"
   if [[ "$shell_name" == "zsh" ]]; then
@@ -143,43 +167,88 @@ maybe_add_path() {
     say "Adding PATH to: $rc"
     printf '\n# gitar\n%s\n' "$line" >> "$rc"
   fi
-
-  say "PATH updated for future shells. For this shell, run:"
-  say "  export PATH=\"$HOME/.gitar/bin:\$PATH\""
 }
 
+# ----------------------------
+# Main
+# ----------------------------
 main() {
-  need_cmd curl
-  local os arch url
+  need_cmd tar
+  need_cmd mktemp
+
+  local os arch version url sha_url
   os="$(detect_os)"
   arch="$(detect_arch)"
+  version="$(resolve_version "$TARGET")"
 
-  if [[ "$os" == "windows" ]]; then
-    need_cmd unzip
-  else
-    need_cmd tar
+  url="$(artifact_url "$version" "$os" "$arch")"
+  sha_url="$(artifact_sha_url "$version" "$os" "$arch")"
+
+  say "Installing gitar ($version) for $os/$arch"
+  say "Repo: $GITAR_REPO"
+  say "Install dir: $GITAR_INSTALL_DIR"
+  say ""
+
+  local tmpdir tgz shafile expected actual
+  tmpdir="$(mktemp -d)"
+  trap 'rm -rf "$tmpdir"' EXIT
+
+  tgz="$tmpdir/gitar.tgz"
+  shafile="$tmpdir/gitar.tgz.sha256"
+
+  say "Downloading: $url"
+  if ! download_file "$url" "$tgz"; then
+    err "Download failed (asset not found for $os/$arch?). URL: $url"
   fi
 
-  url="$(download_url "$os" "$arch" "$GITAR_VERSION")"
-  say "Installing gitar ($GITAR_VERSION) for $os/$arch into $GITAR_INSTALL_DIR"
-
-  if [[ "$os" == "windows" ]]; then
-    install_binary_from_zip "$url"
+  # Optional checksum verification (if .sha256 exists)
+  expected=""
+  if download_file "$sha_url" "$shafile" 2>/dev/null; then
+    # accept formats:
+    #  <hash>
+    #  <hash>  filename
+    expected="$(awk '{print $1}' < "$shafile" | tr -d '\r\n' | head -n1)"
+    if [[ "$expected" =~ ^[a-fA-F0-9]{64}$ ]]; then
+      actual="$(sha256_file_hash "$tgz")"
+      if [[ "${actual,,}" != "${expected,,}" ]]; then
+        err "Checksum verification failed"
+      fi
+      say "Checksum OK"
+    else
+      say "Warning: checksum file found but format not recognized; skipping verification"
+    fi
   else
-    install_binary_from_tar "$url"
+    say "Note: no checksum file found; skipping verification."
+    say "      (Recommended: upload *.tar.gz.sha256 with SHA-256 of the tarball.)"
   fi
+
+  mkdir -p "$GITAR_BIN_DIR"
+  tar -xzf "$tgz" -C "$tmpdir"
+
+  [[ -f "$tmpdir/gitar" ]] || err "Archive did not contain a 'gitar' binary at root"
+  install -m 0755 "$tmpdir/gitar" "$GITAR_BIN_PATH"
+  say "Installed: $GITAR_BIN_PATH"
 
   maybe_add_path
 
-  # Smoke test
-  if command -v gitar >/dev/null 2>&1; then
-    say "gitar is on PATH: $(command -v gitar)"
+  # Smoke test (without requiring current shell PATH modification)
+  say ""
+  if "$GITAR_BIN_PATH" --version >/dev/null 2>&1; then
+    say "✅ gitar runs: $("$GITAR_BIN_PATH" --version 2>/dev/null || true)"
   else
-    say "gitar is not yet on PATH in this shell."
-    say "Run: export PATH=\"$HOME/.gitar/bin:\$PATH\""
+    say "✅ gitar installed"
   fi
 
-  say "Done. Try: gitar --version"
+  if command -v gitar >/dev/null 2>&1; then
+    say "✅ gitar is on PATH: $(command -v gitar)"
+  else
+    say "ℹ️  gitar is not yet on PATH in this shell."
+    say "   Run: export PATH=\"$HOME/.gitar/bin:\$PATH\""
+  fi
+
+  say ""
+  say "✅ Installation complete!"
+  say ""
 }
 
 main "$@"

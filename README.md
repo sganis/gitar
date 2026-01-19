@@ -33,11 +33,17 @@ The name combines **Git** + **Ai** + **Rust** (and happens to sound like *guitar
 
 ## Installation
 
-### Download pre-built binary (recommended)
+### Quick Install (recommended)
+
+Install the latest version of `gitar` with a single command:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/sganis/gitar/main/install.sh | bash
+```
+
+### Manual Install (download pre-built binary)
 
 Download the latest release for your platform from the [Releases page](https://github.com/sganis/gitar/releases).
-
-If you have the GitHub CLI installed, you can download the latest matching asset without hardcoding a version:
 
 #### Linux (x64)
 ```bash
@@ -46,7 +52,7 @@ tar -xzf gitar-linux-x64-*.tar.gz
 chmod +x gitar
 sudo mv gitar /usr/local/bin/
 gitar --version
-````
+```
 
 #### macOS (Apple Silicon)
 
