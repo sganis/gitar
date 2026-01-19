@@ -125,6 +125,120 @@ gitar diff --compare            # Compare smart diff algorithms side-by-side
 
 ---
 
+## Style Presets
+
+Gitar can tailor commit message style to your project's language conventions:
+
+```bash
+gitar commit --preset rust      # Rust: crate/module focused
+gitar commit --preset js        # JavaScript: component/hook focused  
+gitar commit --preset python    # Python: module/endpoint focused
+gitar commit --preset auto      # Auto-detect from project files (default)
+```
+
+### Auto-detection
+
+When `--preset auto` (or not specified), Gitar detects your project type:
+
+| File Present | Detected Preset |
+|--------------|-----------------|
+| `Cargo.toml` | rust |
+| `package.json` | javascript |
+| `pyproject.toml`, `setup.py`, `requirements.txt` | python |
+
+You can also set a default preset in `~/.gitar.toml`:
+
+```toml
+preset = "rust"
+```
+
+---
+
+## Secret Detection & Protection
+
+Gitar automatically scans diffs for sensitive data **before sending to any LLM**:
+
+- API keys (OpenAI, Anthropic, GitHub, AWS, Stripe, etc.)
+- Private keys and certificates
+- Database connection strings
+- Passwords and tokens
+- JWTs and bearer tokens
+
+### Actions
+
+Configure how Gitar handles detected secrets in `~/.gitar.toml`:
+
+```toml
+# Options: "redact" (default), "warn", "block"
+secret_action = "redact"
+```
+
+| Action | Behavior |
+|--------|----------|
+| `redact` | Replace secrets with `[REDACTED:TYPE:Nch]` before sending |
+| `warn` | Show warning but send original content |
+| `block` | Abort the command entirely |
+
+### Example output
+
+When secrets are detected:
+
+```
+⚠️  Found 2 potential secret(s):
+   ● 1 HIGH
+   ● 1 MEDIUM
+
+   1. [OpenAI Key:L3] +API_KEY=sk-p...5pqr[REDACTED]
+   2. [Password:L7] +DB_PASS=secr...[REDACTED]
+
+✓ Secrets redacted before sending to LLM
+```
+
+---
+
+## Smart Diff Algorithms (Context Optimization)
+
+Large diffs can blow up context windows and cost tokens. Gitar can **shape** the diff before sending it to your LLM, using one of four algorithms.
+
+Most commands accept:
+
+```bash
+--algo <1..4>
+```
+
+### Algorithms
+
+* **1 — Full Diff**
+  Sends the raw `git diff` (best fidelity, worst token usage).
+
+* **2 — Selective Files**
+  Splits the diff by file, filters out obvious noise (lockfiles / vendored / generated paths), ranks files by importance, and packs whole-file patches until the size limit is hit.
+
+* **3 — Selective Hunks**
+  Extracts hunks across files, scores them (structural changes, meaningful additions/removals, etc.), then packs the highest scoring hunks first. Includes a per-file cap so one file can't dominate.
+
+* **4 — Semantic JSON** *(default)*
+  Produces a compact JSON "intermediate representation" with a file summary (path, status, adds/dels, priority) and a top-ranked hunks with short previews. It adaptively shrinks previews / hunk count until it fits the size budget.
+
+### Examples
+
+Use a different algorithm when you know you're doing a big refactor:
+
+```bash
+gitar commit --algo 3
+gitar pr --algo 4
+gitar changelog v1.0.0 --algo 2
+gitar explain --staged --algo 4
+```
+
+Debug what will be sent to the model:
+
+```bash
+gitar diff --algo 2 --max-chars 15000 --stats
+gitar diff --compare
+```
+
+---
 
 ## Using gitar Behind Firewalls (SSH Tunnel / Proxy)
 
@@ -153,7 +267,6 @@ export ALL_PROXY="socks5h://localhost:8000"
 ```
 
 Gitar will now route **all LLM API traffic** through the SSH tunnel.
-
 
 ---
 
@@ -185,7 +298,7 @@ git add .
 git commit
 ```
 
-That’s it. The message is generated automatically.
+That's it. The message is generated automatically.
 
 ### What exactly happens?
 
@@ -204,51 +317,49 @@ You can still edit it before saving.
 
 ### Uninstall
 
-Run **gitar uninstall** or simply delete **.git/hooks/prepare-commit-msg** 
-
+Run **gitar hook uninstall** or simply delete **.git/hooks/prepare-commit-msg**
 
 ---
 
-## Smart Diff Algorithms (Context Optimization)
+## Configuration
 
-Large diffs can blow up context windows and cost tokens. Gitar can **shape** the diff before sending it to your LLM, using one of four algorithms.
+Gitar stores configuration in `~/.gitar.toml`. Here's a complete example:
 
-Most commands accept:
+```toml
+# Global settings
+default_provider = "openai"
+base_branch = "main"
+max_diff_chars = 50000
+preset = "auto"
+secret_action = "redact"
 
-```bash
---algo <1..4>
+# Provider-specific settings
+[openai]
+model = "gpt-4o"
+max_tokens = 500
+temperature = 0.5
+stream = true
+
+[claude]
+model = "claude-sonnet-4-5-20250929"
+max_tokens = 500
+temperature = 0.5
+
+[gemini]
+model = "gemini-2.5-flash"
+
+[groq]
+model = "llama-3.3-70b-versatile"
+
+[ollama]
+model = "llama3.2:latest"
+base_url = "http://localhost:11434/v1"
 ```
 
-### Algorithms
-
-* **1 — Full Diff**
-  Sends the raw `git diff` (best fidelity, worst token usage).
-
-* **2 — Selective Files**
-  Splits the diff by file, filters out obvious noise (lockfiles / vendored / generated paths), ranks files by importance, and packs whole-file patches until the size limit is hit.
-
-* **3 — Selective Hunks**
-  Extracts hunks across files, scores them (structural changes, meaningful additions/removals, etc.), then packs the highest scoring hunks first. Includes a per-file cap so one file can’t dominate.
-
-* **4 — Semantic JSON** *(default)*
-  Produces a compact JSON “intermediate representation” with a file summary (path, status, adds/dels, priority) and a top-ranked hunks with short previews. It adaptively shrinks previews / hunk count until it fits the size budget.
-
-### Examples
-
-Use a different algorithm when you know you’re doing a big refactor:
+View your current configuration:
 
 ```bash
-gitar commit --algo 3
-gitar pr --algo 4
-gitar changelog v1.0.0 --algo 2
-gitar explain --staged --algo 4
-```
-
-Debug what will be sent to the model:
-
-```bash
-gitar diff --algo 2 --max-chars 15000 --stats
-gitar diff --compare
+gitar config
 ```
 
 ---
@@ -257,9 +368,16 @@ gitar diff --compare
 
 Gitar sends **only what it needs** for the command you run (for example: a diff, a commit range log, or staged changes).
 
-Tips:
+**Built-in protections:**
+
+* **Secret scanning** — Detects and optionally redacts API keys, passwords, and tokens before sending
+* **Diff shaping** — Smart algorithms minimize what's sent while preserving context
+* **No telemetry** — Gitar doesn't phone home or collect any data
+
+**Tips:**
 
 * Use **Ollama** for **100% local** inference (no network calls).
+* Set `secret_action = "block"` in sensitive repositories.
 * If you must run through restricted networks, use a proxy.
 * If you work in sensitive repos, prefer smaller scopes (staged changes, specific ranges).
 
@@ -268,5 +386,3 @@ Tips:
 ## License
 
 MIT
-
-
