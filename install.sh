@@ -4,17 +4,9 @@ set -euo pipefail
 # -----------------------------------------------------------------------------
 # gitar installer (Linux/macOS)
 # Usage:
-#   curl -fsSL https://<YOUR_URL>/install.sh | bash
-#   curl -fsSL https://<YOUR_URL>/install.sh | bash -s -- latest
-#   curl -fsSL https://<YOUR_URL>/install.sh | bash -s -- v1.2.3
-#
-# Behavior (Claude-code style):
-# - Detects platform (linux/macos + x64/arm64)
-# - Resolves version (default: latest)
-# - Downloads release artifact from GitHub Releases
-# - Verifies sha256 if a .sha256 sidecar exists (optional but recommended)
-# - Installs to: $HOME/.gitar/bin/gitar (or $GITAR_INSTALL_DIR)
-# - Adds PATH export to shell rc (can be disabled)
+#   curl -fsSL https://raw.githubusercontent.com/sganis/gitar/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/sganis/gitar/main/install.sh | bash -s -- latest
+#   curl -fsSL https://raw.githubusercontent.com/sganis/gitar/main/install.sh | bash -s -- v1.2.3
 # -----------------------------------------------------------------------------
 
 TARGET="${1:-}" # optional: latest|stable|vX.Y.Z
@@ -31,9 +23,6 @@ GITAR_BIN_PATH="$GITAR_BIN_DIR/gitar"
 # Set to 0 to avoid modifying rc files
 GITAR_MODIFY_RC="${GITAR_MODIFY_RC:-1}"
 
-# ----------------------------
-# Helpers
-# ----------------------------
 say() { printf '%s\n' "$*"; }
 err() { printf 'error: %s\n' "$*" >&2; exit 1; }
 
@@ -82,11 +71,9 @@ detect_arch() {
   esac
 }
 
-# Best-effort JSON parse without jq:
-# Extracts the first "tag_name":"vX.Y.Z" from GitHub API response.
+# Extract first "tag_name":"vX.Y.Z" from GitHub API JSON without jq
 extract_tag_name() {
   local json="$1"
-  # Normalize to one line to simplify.
   json="$(echo "$json" | tr -d '\n\r\t')"
   if [[ "$json" =~ \"tag_name\"[[:space:]]*:[[:space:]]*\"([^\"]+)\" ]]; then
     echo "${BASH_REMATCH[1]}"
@@ -98,7 +85,6 @@ extract_tag_name() {
 resolve_version() {
   local target="${1:-}"
   if [[ -z "$target" || "$target" == "latest" || "$target" == "stable" ]]; then
-    # Use GitHub Releases API to get latest tag
     local api="https://api.github.com/repos/$GITAR_REPO/releases/latest"
     local json
     json="$(download_file "$api")" || err "Failed to query GitHub API for latest release"
@@ -106,23 +92,17 @@ resolve_version() {
     tag="$(extract_tag_name "$json")" || err "Could not parse latest release tag from GitHub API"
     echo "$tag"
   else
-    # already validated like v1.2.3
     echo "$target"
   fi
 }
 
 artifact_url() {
   local version="$1" os="$2" arch="$3"
-  # Your current convention:
-  # gitar-<version>-<os>-<arch>.tar.gz
-  # Example: gitar-v1.0.0-linux-x86_64.tar.gz
   echo "https://github.com/$GITAR_REPO/releases/download/$version/gitar-${version}-${os}-${arch}.tar.gz"
 }
 
 artifact_sha_url() {
   local version="$1" os="$2" arch="$3"
-  # Optional but recommended to upload alongside the tarball:
-  # gitar-<version>-<os>-<arch>.tar.gz.sha256
   echo "https://github.com/$GITAR_REPO/releases/download/$version/gitar-${version}-${os}-${arch}.tar.gz.sha256"
 }
 
@@ -169,12 +149,10 @@ maybe_add_path() {
   fi
 }
 
-# ----------------------------
-# Main
-# ----------------------------
 main() {
   need_cmd tar
   need_cmd mktemp
+  need_cmd install
 
   local os arch version url sha_url
   os="$(detect_os)"
@@ -189,9 +167,10 @@ main() {
   say "Install dir: $GITAR_INSTALL_DIR"
   say ""
 
+  # IMPORTANT: trap must not reference a local variable at EXIT time (set -u).
   local tmpdir tgz shafile expected actual
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' EXIT
+  trap "rm -rf '$tmpdir'" EXIT
 
   tgz="$tmpdir/gitar.tgz"
   shafile="$tmpdir/gitar.tgz.sha256"
@@ -201,12 +180,8 @@ main() {
     err "Download failed (asset not found for $os/$arch?). URL: $url"
   fi
 
-  # Optional checksum verification (if .sha256 exists)
   expected=""
   if download_file "$sha_url" "$shafile" 2>/dev/null; then
-    # accept formats:
-    #  <hash>
-    #  <hash>  filename
     expected="$(awk '{print $1}' < "$shafile" | tr -d '\r\n' | head -n1)"
     if [[ "$expected" =~ ^[a-fA-F0-9]{64}$ ]]; then
       actual="$(sha256_file_hash "$tgz")"
@@ -231,7 +206,6 @@ main() {
 
   maybe_add_path
 
-  # Smoke test (without requiring current shell PATH modification)
   say ""
   if "$GITAR_BIN_PATH" --version >/dev/null 2>&1; then
     say "✅ gitar runs: $("$GITAR_BIN_PATH" --version 2>/dev/null || true)"
