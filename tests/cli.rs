@@ -17,7 +17,7 @@ fn with_isolated_home(cmd: &mut Command, home: &std::path::Path) {
 fn help_works() {
     let tmp = tempfile::tempdir().unwrap();
 
-    let mut cmd = Command::cargo_bin("gitar").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
     with_isolated_home(&mut cmd, tmp.path());
 
     cmd.arg("--help")
@@ -30,7 +30,7 @@ fn help_works() {
 fn version_works() {
     let tmp = tempfile::tempdir().unwrap();
 
-    let mut cmd = Command::cargo_bin("gitar").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
     with_isolated_home(&mut cmd, tmp.path());
 
     cmd.arg("--version").assert().success();
@@ -40,7 +40,7 @@ fn version_works() {
 fn diff_fails_outside_git_repo() {
     let tmp = tempfile::tempdir().unwrap();
 
-    let mut cmd = Command::cargo_bin("gitar").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
     with_isolated_home(&mut cmd, tmp.path());
     cmd.current_dir(tmp.path());
 
@@ -56,13 +56,13 @@ fn init_and_config_commands_work_outside_repo() {
     let tmp = tempfile::tempdir().unwrap();
 
     // init
-    let mut init_cmd = Command::cargo_bin("gitar").unwrap();
+    let mut init_cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
     with_isolated_home(&mut init_cmd, tmp.path());
     init_cmd.current_dir(tmp.path());
     init_cmd.arg("init").assert().success();
 
     // config (should not require a repo)
-    let mut cfg_cmd = Command::cargo_bin("gitar").unwrap();
+    let mut cfg_cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
     with_isolated_home(&mut cfg_cmd, tmp.path());
     cfg_cmd.current_dir(tmp.path());
     cfg_cmd.arg("config").assert().success();

@@ -53,7 +53,7 @@ fn diff_shows_changes_in_repo() {
     // Modify file (unstaged diff)
     fs::write(repo.path().join("a.txt"), "hello world\n").unwrap();
 
-    let mut cmd = Command::cargo_bin("gitar").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(repo.path());
 
@@ -72,7 +72,7 @@ fn diff_stats_only_has_no_patch() {
     commit_file(repo.path(), "a.txt", "hello\n", "initial");
     fs::write(repo.path().join("a.txt"), "hello world\n").unwrap();
 
-    let mut cmd = Command::cargo_bin("gitar").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(repo.path());
 
@@ -97,7 +97,7 @@ fn diff_max_chars_truncates() {
     let big = "x".repeat(5000);
     fs::write(repo.path().join("a.txt"), big).unwrap();
 
-    let mut cmd = Command::cargo_bin("gitar").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(repo.path());
 
@@ -116,7 +116,7 @@ fn diff_compare_prints_all_algorithms() {
     commit_file(repo.path(), "a.txt", "hello\n", "initial");
     fs::write(repo.path().join("a.txt"), "hello world\n").unwrap();
 
-    let mut cmd = Command::cargo_bin("gitar").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(repo.path());
 
@@ -141,7 +141,7 @@ fn diff_algo_flag_changes_output_format() {
     fs::write(repo.path().join("a.txt"), "hello world\n").unwrap();
 
     // Algo 4 (Semantic) should produce JSON-ish output (starts with '{') because your alg_semantic builds JSON.
-    let mut cmd = Command::cargo_bin("gitar").unwrap();
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(repo.path());
 
