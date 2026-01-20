@@ -56,15 +56,15 @@ jobs:
             artifact_ext: tar.gz
             binary_name: gitar
 
-          # # -------------------------
-          # # macOS Intel
-          # # -------------------------
-          # - os: macos-latest
-          #   target: x86_64-apple-darwin
-          #   pkg_os: macos
-          #   pkg_arch: x86_64
-          #   artifact_ext: tar.gz
-          #   binary_name: gitar
+          # -------------------------
+          # macOS Intel
+          # -------------------------
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            pkg_os: macos
+            pkg_arch: x86_64
+            artifact_ext: tar.gz
+            binary_name: gitar
 
           # -------------------------
           # Windows x86_64
