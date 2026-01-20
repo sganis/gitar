@@ -191,10 +191,7 @@ async fn send_chat_request_stream(
         let status = response.status();
 
         if !status.is_success() {
-            let body = response
-                .text()
-                .await
-                .context("Failed to read error body")?;
+            let body = response.text().await.context("Failed to read error body")?;
 
             match check_response_for_retry(status, &body, attempt, &config)? {
                 RetryDecision::Success => unreachable!(),
@@ -226,11 +223,7 @@ async fn send_chat_request_stream(
                 }
 
                 if let Ok(delta) = serde_json::from_str::<OpenAiStreamChunk>(data) {
-                    if let Some(t) = delta
-                        .choices
-                        .first()
-                        .and_then(|c| c.delta.content.as_ref())
-                    {
+                    if let Some(t) = delta.choices.first().and_then(|c| c.delta.content.as_ref()) {
                         print!("{}", t);
                         io::stdout().flush()?;
                         full_text.push_str(t);
@@ -378,7 +371,11 @@ mod tests {
     fn reasoning_models_can_insert_and_check() {
         // Don't assert on real model names or rely on global state across parallel tests.
         // Just prove the behavior: insert -> contains, using a unique test value.
-        let model = format!("__test_reasoning_model_{}_{}__", env!("CARGO_PKG_NAME"), std::process::id());
+        let model = format!(
+            "__test_reasoning_model_{}_{}__",
+            env!("CARGO_PKG_NAME"),
+            std::process::id()
+        );
 
         let mut set = REASONING_MODELS.lock().unwrap();
         set.insert(model.clone());

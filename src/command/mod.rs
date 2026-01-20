@@ -23,10 +23,10 @@ pub use pr::cmd_pr;
 pub use split::cmd_split;
 pub use version::cmd_version;
 
-use anyhow::{bail, Result};
 use crate::prompt::algo::{DiffAlg, DiffStats};
 use crate::prompt::diff::get_llm_diff_preview;
 use crate::prompt::secret::{process_secrets, SecretAction};
+use anyhow::{bail, Result};
 
 /// Short hash length for display
 pub const SHORT_HASH_LEN: usize = 8;
@@ -159,7 +159,8 @@ mod tests {
     fn apply_smart_diff_blocks_secrets() {
         // Use algo=1 (Full) to test secret scanning without diff transformation
         // Key must be long enough: sk-proj- (8) + 20+ chars
-        let diff = "diff --git a/config.rs b/config.rs\n+API_KEY=sk-proj-abcdefghij1234567890abcdef";
+        let diff =
+            "diff --git a/config.rs b/config.rs\n+API_KEY=sk-proj-abcdefghij1234567890abcdef";
         let result = apply_smart_diff(diff, 10000, true, 1, SecretAction::Block);
         assert!(result.is_err(), "Should block diff containing secrets");
         assert!(result.unwrap_err().to_string().contains("Blocked"));
@@ -168,27 +169,41 @@ mod tests {
     #[test]
     fn apply_smart_diff_redacts_secrets() {
         // Use algo=1 (Full) to test secret scanning without diff transformation
-        let diff = "diff --git a/config.rs b/config.rs\n+API_KEY=sk-proj-abcdefghij1234567890abcdef";
+        let diff =
+            "diff --git a/config.rs b/config.rs\n+API_KEY=sk-proj-abcdefghij1234567890abcdef";
         let result = apply_smart_diff(diff, 10000, true, 1, SecretAction::Redact);
         assert!(result.is_ok(), "Should succeed with redaction");
         let output = result.unwrap();
-        assert!(output.contains("[REDACTED"), "Should contain redaction marker");
-        assert!(!output.contains("sk-proj-abcdefghij"), "Should not contain original secret");
+        assert!(
+            output.contains("[REDACTED"),
+            "Should contain redaction marker"
+        );
+        assert!(
+            !output.contains("sk-proj-abcdefghij"),
+            "Should not contain original secret"
+        );
     }
 
     #[test]
     fn apply_smart_diff_clean_diff_passes() {
         let diff = "diff --git a/main.rs b/main.rs\n+fn main() { println!(\"hello\"); }";
         let result = apply_smart_diff(diff, 10000, true, 1, SecretAction::Block);
-        assert!(result.is_ok(), "Clean diff should pass even with Block action");
+        assert!(
+            result.is_ok(),
+            "Clean diff should pass even with Block action"
+        );
     }
 
     #[test]
     fn apply_smart_diff_warn_allows_secrets() {
-        let diff = "diff --git a/config.rs b/config.rs\n+API_KEY=sk-proj-abcdefghij1234567890abcdef";
+        let diff =
+            "diff --git a/config.rs b/config.rs\n+API_KEY=sk-proj-abcdefghij1234567890abcdef";
         let result = apply_smart_diff(diff, 10000, true, 1, SecretAction::Warn);
         assert!(result.is_ok(), "Warn should allow secrets through");
         let output = result.unwrap();
-        assert!(output.contains("sk-proj-"), "Warn should preserve original secret");
+        assert!(
+            output.contains("sk-proj-"),
+            "Warn should preserve original secret"
+        );
     }
 }

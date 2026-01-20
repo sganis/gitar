@@ -1,6 +1,6 @@
 // src/command/models.rs
-use anyhow::Result;
 use crate::client::LlmClient;
+use anyhow::Result;
 
 pub async fn cmd_models(client: &LlmClient) -> Result<()> {
     println!("Fetching available models...\n");

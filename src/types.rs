@@ -144,8 +144,14 @@ mod tests {
         let req = ChatCompletionRequest {
             model: "gpt-4o".to_string(),
             messages: vec![
-                ChatMessage { role: "system".to_string(), content: "You are helpful.".to_string() },
-                ChatMessage { role: "user".to_string(), content: "Hi".to_string() },
+                ChatMessage {
+                    role: "system".to_string(),
+                    content: "You are helpful.".to_string(),
+                },
+                ChatMessage {
+                    role: "user".to_string(),
+                    content: "Hi".to_string(),
+                },
             ],
             max_tokens: Some(1024),
             max_completion_tokens: None,
@@ -162,7 +168,10 @@ mod tests {
         let json = r#"{"choices": [{"message": {"content": "Hello! How can I help?"}}]}"#;
         let resp: ChatCompletionResponse = serde_json::from_str(json).unwrap();
         assert_eq!(resp.choices.len(), 1);
-        assert_eq!(resp.choices[0].message.content, Some("Hello! How can I help?".to_string()));
+        assert_eq!(
+            resp.choices[0].message.content,
+            Some("Hello! How can I help?".to_string())
+        );
     }
 
     #[test]
@@ -177,7 +186,10 @@ mod tests {
     fn claude_request_serializes_correctly() {
         let req = ClaudeRequest {
             model: "claude-sonnet-4-5-20250929".to_string(),
-            messages: vec![ChatMessage { role: "user".to_string(), content: "Hello".to_string() }],
+            messages: vec![ChatMessage {
+                role: "user".to_string(),
+                content: "Hello".to_string(),
+            }],
             system: "You are helpful.".to_string(),
             max_tokens: 1024,
             temperature: Some(0.7),
@@ -201,10 +213,14 @@ mod tests {
     fn gemini_request_serializes_with_generation_config() {
         let req = GeminiGenerateContentRequest {
             system_instruction: Some(GeminiContent {
-                parts: vec![GeminiPart { text: "You are helpful.".to_string() }],
+                parts: vec![GeminiPart {
+                    text: "You are helpful.".to_string(),
+                }],
             }),
             contents: vec![GeminiContent {
-                parts: vec![GeminiPart { text: "Hello".to_string() }],
+                parts: vec![GeminiPart {
+                    text: "Hello".to_string(),
+                }],
             }],
             generation_config: Some(GeminiGenerationConfig {
                 max_output_tokens: 500,
@@ -222,7 +238,9 @@ mod tests {
         let req = GeminiGenerateContentRequest {
             system_instruction: None,
             contents: vec![GeminiContent {
-                parts: vec![GeminiPart { text: "Hello".to_string() }],
+                parts: vec![GeminiPart {
+                    text: "Hello".to_string(),
+                }],
             }],
             generation_config: None,
         };
@@ -235,7 +253,9 @@ mod tests {
     fn gemini_response_deserializes() {
         let json = r#"{"candidates": [{"content": {"parts": [{"text": "Hello!"}]}}]}"#;
         let resp: GeminiGenerateContentResponse = serde_json::from_str(json).unwrap();
-        let text = resp.candidates.unwrap()[0].content.as_ref().unwrap().parts[0].text.clone();
+        let text = resp.candidates.unwrap()[0].content.as_ref().unwrap().parts[0]
+            .text
+            .clone();
         assert_eq!(text, "Hello!");
     }
 

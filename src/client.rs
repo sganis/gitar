@@ -43,8 +43,12 @@ impl LlmClient {
         })
     }
 
-    pub fn model(&self) -> &str { &self.model }
-    pub fn provider(&self) -> &str { &self.provider }
+    pub fn model(&self) -> &str {
+        &self.model
+    }
+    pub fn provider(&self) -> &str {
+        &self.provider
+    }
 
     fn is_claude(&self) -> bool {
         self.provider == "claude" || self.base_url.contains("anthropic.com")
@@ -56,15 +60,45 @@ impl LlmClient {
 
     pub async fn chat(&self, system: &str, user: &str, stream: bool) -> Result<String> {
         if self.is_claude() {
-            return claude::chat(&self.http, &self.base_url, self.api_key.as_deref(),
-                &self.model, self.max_tokens, self.temperature, system, user, stream).await;
+            return claude::chat(
+                &self.http,
+                &self.base_url,
+                self.api_key.as_deref(),
+                &self.model,
+                self.max_tokens,
+                self.temperature,
+                system,
+                user,
+                stream,
+            )
+            .await;
         }
         if self.is_gemini() {
-            return gemini::chat(&self.http, &self.base_url, self.api_key.as_deref(),
-                &self.model, self.max_tokens, self.temperature, system, user, stream).await;
+            return gemini::chat(
+                &self.http,
+                &self.base_url,
+                self.api_key.as_deref(),
+                &self.model,
+                self.max_tokens,
+                self.temperature,
+                system,
+                user,
+                stream,
+            )
+            .await;
         }
-        openai::chat(&self.http, &self.base_url, self.api_key.as_deref(),
-            &self.model, self.max_tokens, self.temperature, system, user, stream).await
+        openai::chat(
+            &self.http,
+            &self.base_url,
+            self.api_key.as_deref(),
+            &self.model,
+            self.max_tokens,
+            self.temperature,
+            system,
+            user,
+            stream,
+        )
+        .await
     }
 
     pub async fn list_models(&self) -> Result<Vec<String>> {
@@ -86,14 +120,25 @@ mod tests {
 
     fn make_config(provider: &str, url: &str) -> ResolvedConfig {
         ResolvedConfig {
-            provider: provider.into(), api_key: None, model: "test".into(),
-            max_tokens: 500, temperature: 0.5, base_url: url.into(),
-            base_branch: "main".into(), stream: false, max_diff_chars: 10_000,
-            insecure_tls: false, preset: Preset::Default, secret_action: SecretAction::Redact,
+            provider: provider.into(),
+            api_key: None,
+            model: "test".into(),
+            max_tokens: 500,
+            temperature: 0.5,
+            base_url: url.into(),
+            base_branch: "main".into(),
+            stream: false,
+            max_diff_chars: 10_000,
+            insecure_tls: false,
+            preset: Preset::Default,
+            secret_action: SecretAction::Redact,
         }
     }
 
-    struct EnvGuard { key: &'static str, prev: Option<String> }
+    struct EnvGuard {
+        key: &'static str,
+        prev: Option<String>,
+    }
     impl EnvGuard {
         fn remove(key: &'static str) -> Self {
             let prev = std::env::var(key).ok();

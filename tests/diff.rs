@@ -80,7 +80,10 @@ fn diff_stats_only_has_no_patch() {
         .assert()
         .success()
         // should show stat header (because --stats)
-        .stdout(predicate::str::contains("diff --stat").or(predicate::str::contains("=== diff --stat ===")))
+        .stdout(
+            predicate::str::contains("diff --stat")
+                .or(predicate::str::contains("=== diff --stat ===")),
+        )
         // should not show patch
         .stdout(predicate::str::contains("diff --git").not());
 }

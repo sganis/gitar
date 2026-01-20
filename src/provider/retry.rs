@@ -88,7 +88,12 @@ pub fn format_retry_error(status: StatusCode, attempt: u32, max_retries: u32) ->
     };
 
     if attempt < max_retries {
-        format!("{} - retrying ({}/{})", status_desc, attempt + 1, max_retries)
+        format!(
+            "{} - retrying ({}/{})",
+            status_desc,
+            attempt + 1,
+            max_retries
+        )
     } else {
         format!("{} - all {} retries exhausted", status_desc, max_retries)
     }
@@ -229,7 +234,8 @@ mod tests {
     #[test]
     fn check_response_retryable() {
         let config = RetryConfig::default();
-        let result = check_response_for_retry(StatusCode::TOO_MANY_REQUESTS, "rate limited", 0, &config);
+        let result =
+            check_response_for_retry(StatusCode::TOO_MANY_REQUESTS, "rate limited", 0, &config);
         assert!(matches!(result.unwrap(), RetryDecision::Retry { .. }));
     }
 
@@ -243,7 +249,8 @@ mod tests {
     #[test]
     fn check_response_retries_exhausted() {
         let config = RetryConfig::default();
-        let result = check_response_for_retry(StatusCode::TOO_MANY_REQUESTS, "rate limited", 3, &config);
+        let result =
+            check_response_for_retry(StatusCode::TOO_MANY_REQUESTS, "rate limited", 3, &config);
         assert!(result.is_err());
     }
 
@@ -258,7 +265,10 @@ mod tests {
 
     #[test]
     fn check_response_returns_error_on_exhaustion_with_message() {
-        let config = RetryConfig { max_retries: 0, ..Default::default() };
+        let config = RetryConfig {
+            max_retries: 0,
+            ..Default::default()
+        };
         let body = r#"{"error": {"message": "Rate limit exceeded"}}"#;
         let result = check_response_for_retry(StatusCode::TOO_MANY_REQUESTS, body, 0, &config);
         let err = result.unwrap_err().to_string();
@@ -272,7 +282,10 @@ mod tests {
     #[test]
     fn extract_error_message_parses_json() {
         let body = r#"{"error": {"message": "Invalid API key"}}"#;
-        assert_eq!(extract_error_message(body), Some("Invalid API key".to_string()));
+        assert_eq!(
+            extract_error_message(body),
+            Some("Invalid API key".to_string())
+        );
     }
 
     #[test]

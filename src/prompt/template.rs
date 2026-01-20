@@ -235,9 +235,19 @@ mod tests {
 
     #[test]
     fn templates_mention_ascii() {
-        let templates = [COMMIT_SYSTEM, HISTORY_SYSTEM, PR_SYSTEM, CHANGELOG_SYSTEM, EXPLAIN_SYSTEM, VERSION_SYSTEM];
+        let templates = [
+            COMMIT_SYSTEM,
+            HISTORY_SYSTEM,
+            PR_SYSTEM,
+            CHANGELOG_SYSTEM,
+            EXPLAIN_SYSTEM,
+            VERSION_SYSTEM,
+        ];
         for t in templates {
-            assert!(t.contains("ASCII") || t.contains("emoji"), "Template should mention ASCII restriction");
+            assert!(
+                t.contains("ASCII") || t.contains("emoji"),
+                "Template should mention ASCII restriction"
+            );
         }
     }
 

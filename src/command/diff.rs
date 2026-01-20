@@ -1,9 +1,9 @@
 // src/commands/diff.rs
 use anyhow::Result;
 
-use crate::prompt::diff::{get_llm_diff_preview};
-use crate::prompt::algo::{DiffAlg};
 use crate::git::{get_diff, get_diff_stats};
+use crate::prompt::algo::DiffAlg;
+use crate::prompt::diff::get_llm_diff_preview;
 
 pub fn cmd_diff(
     target: Option<String>,
@@ -59,8 +59,13 @@ pub fn cmd_diff(
     // If --algo is specified, use that algorithm and show stats
     if let Some(alg_num) = alg {
         let algorithm = DiffAlg::from_num(alg_num);
-        let (output, stats) =
-            get_llm_diff_preview(&raw_diff, diff_stats.as_deref(), max_chars, algorithm, false);
+        let (output, stats) = get_llm_diff_preview(
+            &raw_diff,
+            diff_stats.as_deref(),
+            max_chars,
+            algorithm,
+            false,
+        );
 
         println!("{}\n", stats.display());
 
