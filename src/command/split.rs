@@ -1,5 +1,6 @@
-// src/command/split.rs
 use anyhow::Result;
+use std::collections::{HashMap, HashSet};
+use std::fs;
 use std::io::{self, Write};
 
 use crate::client::LlmClient;
@@ -34,6 +35,7 @@ enum FileCategory {
     Documentation,
     Tests,
     Config,
+    Data, // Optional/untracked fixtures/datasets
     Formatting,
     Rename,
     Code,
@@ -46,6 +48,7 @@ struct CommitGroup {
     message: String,
     files: Vec<String>,
     needs_hunk_staging: Vec<String>,
+    is_optional: bool, // optional untracked data/fixtures group
 }
 
 #[derive(Debug)]
@@ -91,11 +94,14 @@ pub async fn cmd_split(client: &LlmClient, preset: Preset, algo: u8) -> Result<(
     // Step 4: Print the plan
     print_plan(&plan)?;
 
+    // Step 4.5: Optional untracked data groups prompt (once)
+    let skip_groups = prompt_optional_groups(&plan)?;
+
     // Step 5: Execute interactively
     println!("\n\x1b[1m─────────────────────────────────────────────────────────────\x1b[0m");
     println!("\x1b[1mReady to execute plan\x1b[0m\n");
 
-    execute_plan(&plan).await?;
+    execute_plan(&plan, &skip_groups).await?;
 
     println!("\n\x1b[32m✓ Split complete!\x1b[0m");
     Ok(())
@@ -106,34 +112,31 @@ pub async fn cmd_split(client: &LlmClient, preset: Preset, algo: u8) -> Result<(
 // =============================================================================
 
 fn scan_diff() -> Result<Vec<FileChange>> {
-    // Get unstaged changes with numstat
+    // Get unstaged changes with numstat (tracked files only)
     let numstat = git::run_git(&["diff", "--numstat"])?;
-
-    if numstat.trim().is_empty() {
-        return Ok(vec![]);
-    }
-
     let mut changes = Vec::new();
 
-    for line in numstat.lines() {
-        let parts: Vec<&str> = line.split_whitespace().collect();
-        if parts.len() < 3 {
-            continue;
+    if !numstat.trim().is_empty() {
+        for line in numstat.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 3 {
+                continue;
+            }
+
+            let additions = parts[0].parse().unwrap_or(0);
+            let deletions = parts[1].parse().unwrap_or(0);
+            let path = parts[2..].join(" ");
+
+            let category = categorize_file(&path);
+
+            changes.push(FileChange {
+                path: path.clone(),
+                status: ChangeStatus::Modified,
+                additions,
+                deletions,
+                category,
+            });
         }
-
-        let additions = parts[0].parse().unwrap_or(0);
-        let deletions = parts[1].parse().unwrap_or(0);
-        let path = parts[2..].join(" ");
-
-        let category = categorize_file(&path);
-
-        changes.push(FileChange {
-            path: path.clone(),
-            status: ChangeStatus::Modified,
-            additions,
-            deletions,
-            category,
-        });
     }
 
     // Also check for renames and new files
@@ -158,11 +161,8 @@ fn scan_diff() -> Result<Vec<FileChange>> {
                 }
             }
             "R " | "RM" => {
-                // Handle renames
                 if let Some(idx) = changes.iter().position(|c| c.path == path) {
-                    changes[idx].status = ChangeStatus::Renamed {
-                        from: path.clone(),
-                    };
+                    changes[idx].status = ChangeStatus::Renamed { from: path.clone() };
                 }
             }
             " D" | "D " => {
@@ -179,6 +179,20 @@ fn scan_diff() -> Result<Vec<FileChange>> {
 
 fn categorize_file(path: &str) -> FileCategory {
     let lower = path.to_lowercase();
+
+    // Optional data/fixtures/datasets
+    if lower.ends_with(".csv")
+        || lower.ends_with(".parquet")
+        || lower.ends_with(".tsv")
+        || lower.ends_with(".log")
+        || lower.ends_with(".tmp")
+        || lower.contains("/fixtures/")
+        || lower.contains("/samples/")
+        || lower.contains("/sample/")
+        || lower.contains("/data/")
+    {
+        return FileCategory::Data;
+    }
 
     // Documentation
     if lower.ends_with(".md")
@@ -214,7 +228,7 @@ fn categorize_file(path: &str) -> FileCategory {
         || lower.ends_with(".lock")
         || lower.ends_with(".config.js")
         || lower.ends_with(".config.ts")
-        || lower.ends_with("Dockerfile")
+        || lower.ends_with("dockerfile")
         || lower.contains(".github/")
         || lower.contains(".vscode/")
         || lower == "makefile"
@@ -231,6 +245,16 @@ fn categorize_file(path: &str) -> FileCategory {
 
 fn group_changes(changes: &[FileChange]) -> Vec<Vec<FileChange>> {
     let mut groups: Vec<Vec<FileChange>> = Vec::new();
+
+    // Group 0: Optional untracked data/fixtures
+    let optional_data: Vec<FileChange> = changes
+        .iter()
+        .filter(|c| c.status == ChangeStatus::Added && c.category == FileCategory::Data)
+        .cloned()
+        .collect();
+    if !optional_data.is_empty() {
+        groups.push(optional_data);
+    }
 
     // Group 1: Documentation
     let docs: Vec<FileChange> = changes
@@ -277,15 +301,14 @@ fn group_changes(changes: &[FileChange]) -> Vec<Vec<FileChange>> {
         .iter()
         .filter(|c| {
             c.category == FileCategory::Code
+                && !(c.status == ChangeStatus::Added && c.category == FileCategory::Data)
                 && !matches!(c.status, ChangeStatus::Renamed { .. })
         })
         .cloned()
         .collect();
 
     if !code_changes.is_empty() {
-        // Group by top-level directory
-        let mut dir_groups: std::collections::HashMap<String, Vec<FileChange>> =
-            std::collections::HashMap::new();
+        let mut dir_groups: HashMap<String, Vec<FileChange>> = HashMap::new();
 
         for change in code_changes {
             let dir = if let Some(idx) = change.path.find('/') {
@@ -320,9 +343,18 @@ async fn generate_plan(
 
     for (idx, group) in groups.into_iter().enumerate() {
         let files: Vec<String> = group.iter().map(|c| c.path.clone()).collect();
+        let untracked: Vec<String> = group
+            .iter()
+            .filter(|c| c.status == ChangeStatus::Added)
+            .map(|c| c.path.clone())
+            .collect();
 
-        // Get diff for this group of files
-        let diff_output = get_diff_for_files(&files)?;
+        let is_optional = group
+            .iter()
+            .all(|c| c.status == ChangeStatus::Added && c.category == FileCategory::Data);
+
+        // Get diff for this group of files (including untracked)
+        let diff_output = get_diff_for_files(&files, &untracked)?;
 
         // Use LLM to generate commit message
         let system_prompt = build_system_prompt(preset, &files);
@@ -339,7 +371,6 @@ async fn generate_plan(
             }
         };
 
-        // Determine if any files need hunk-level staging
         let needs_hunk_staging = detect_mixed_changes(&files)?;
 
         let title = if message.len() > 60 {
@@ -353,6 +384,7 @@ async fn generate_plan(
             message,
             files,
             needs_hunk_staging,
+            is_optional,
         });
     }
 
@@ -370,28 +402,92 @@ fn build_system_prompt(preset: Preset, _files: &[String]) -> String {
     };
 
     format!(
-        "You are a commit message generator. Generate a single-line commit message in imperative mood. {}. Be specific and concise.",
+        "You are a commit message generator. Generate a single-line commit message in imperative mood. {}. Be specific and concise. Never ask questions.",
         preset_hint
     )
 }
 
-fn get_diff_for_files(files: &[String]) -> Result<String> {
-    let mut args = vec!["diff"];
-    args.extend(files.iter().map(|s| s.as_str()));
+// =============================================================================
+// DIFF GENERATION (TRACKED + UNTRACKED)
+// =============================================================================
 
-    let diff = git::run_git(&args)?;
+fn get_diff_for_files(files: &[String], untracked: &[String]) -> Result<String> {
+    let untracked_set: HashSet<&str> = untracked.iter().map(|s| s.as_str()).collect();
+    let tracked_files: Vec<&str> = files
+        .iter()
+        .map(|s| s.as_str())
+        .filter(|p| !untracked_set.contains(p))
+        .collect();
 
-    // Truncate if too long
-    if diff.len() > 8000 {
-        Ok(format!("{}...[truncated]", &diff[..8000]))
+    let mut combined = String::new();
+
+    // Tracked modifications/deletions
+    if !tracked_files.is_empty() {
+        let mut args: Vec<&str> = vec!["diff", "--"];
+        args.extend(tracked_files);
+        let diff = git::run_git(&args)?;
+        if !diff.trim().is_empty() {
+            combined.push_str(&diff);
+            if !combined.ends_with('\n') {
+                combined.push('\n');
+            }
+        }
+    }
+
+    // Untracked files: synthesize diff
+    for path in untracked {
+        let snippet = format_untracked_as_diff(path)?;
+        if !snippet.trim().is_empty() {
+            combined.push_str(&snippet);
+            if !combined.ends_with('\n') {
+                combined.push('\n');
+            }
+        }
+    }
+
+    if combined.len() > 8000 {
+        Ok(format!("{}...[truncated]", &combined[..8000]))
     } else {
-        Ok(diff)
+        Ok(combined)
     }
 }
 
+fn format_untracked_as_diff(path: &str) -> Result<String> {
+    let bytes = fs::read(path).unwrap_or_default();
+    if bytes.is_empty() {
+        return Ok(format!(
+            "diff --git a/{p} b/{p}\nnew file mode 100644\n--- /dev/null\n+++ b/{p}\n",
+            p = path
+        ));
+    }
+
+    let text = match String::from_utf8(bytes) {
+        Ok(t) => t,
+        Err(_) => {
+            return Ok(format!(
+                "diff --git a/{p} b/{p}\nnew file mode 100644\nBinary files /dev/null and b/{p} differ\n",
+                p = path
+            ))
+        }
+    };
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "diff --git a/{p} b/{p}\nnew file mode 100644\n--- /dev/null\n+++ b/{p}\n",
+        p = path
+    ));
+    out.push_str("@@ -0,0 +1 @@\n");
+
+    for line in text.lines() {
+        out.push('+');
+        out.push_str(line);
+        out.push('\n');
+    }
+
+    Ok(out)
+}
+
 fn detect_mixed_changes(_files: &[String]) -> Result<Vec<String>> {
-    // For simplicity, we'll just return empty for now
-    // In a full implementation, this would detect files with both staged and unstaged changes
     Ok(vec![])
 }
 
@@ -407,6 +503,11 @@ fn print_plan(plan: &CommitPlan) -> Result<()> {
     for (idx, group) in plan.groups.iter().enumerate() {
         println!("\x1b[1;36mCommit {}/{}\x1b[0m", idx + 1, plan.groups.len());
         println!("\x1b[1mMessage:\x1b[0m {}", group.message);
+        if group.is_optional {
+            println!(
+                "\x1b[33mNote:\x1b[0m Optional untracked data/fixtures group (can be skipped)"
+            );
+        }
         println!("\x1b[1mFiles:\x1b[0m");
         for file in &group.files {
             println!("  • {}", file);
@@ -415,7 +516,10 @@ fn print_plan(plan: &CommitPlan) -> Result<()> {
         println!("\x1b[1mCommands:\x1b[0m");
         for file in &group.files {
             if group.needs_hunk_staging.contains(file) {
-                println!("  \x1b[33mgit add -p {}\x1b[0m  \x1b[2m(interactive)\x1b[0m", file);
+                println!(
+                    "  \x1b[33mgit add -p {}\x1b[0m  \x1b[2m(interactive)\x1b[0m",
+                    file
+                );
             } else {
                 println!("  git add {}", file);
             }
@@ -428,12 +532,75 @@ fn print_plan(plan: &CommitPlan) -> Result<()> {
 }
 
 // =============================================================================
+// OPTIONAL GROUPS PROMPT (ONCE)
+// =============================================================================
+
+fn prompt_optional_groups(plan: &CommitPlan) -> Result<HashSet<usize>> {
+    let optional_idxs: Vec<usize> = plan
+        .groups
+        .iter()
+        .enumerate()
+        .filter(|(_, g)| g.is_optional)
+        .map(|(i, _)| i)
+        .collect();
+
+    if optional_idxs.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    println!("\n\x1b[33mOptional untracked data/fixtures detected:\x1b[0m");
+    for &i in &optional_idxs {
+        let g = &plan.groups[i];
+        println!("  {}: {}", i + 1, g.title);
+        for f in &g.files {
+            println!("     • {}", f);
+        }
+    }
+
+    println!("\nInclude optional files? \x1b[1m[y]\x1b[0mes / \x1b[1m[N]\x1b[0mo  (default: no)");
+
+    print!("Choice: ");
+    io::stdout().flush()?;
+    let mut input = String::new();
+    io::stdin().read_line(&mut input)?;
+    let choice = input.trim().to_lowercase();
+
+    // Default: skip all optional groups
+    if choice.is_empty() || choice == "n" || choice == "no" {
+        return Ok(optional_idxs.into_iter().collect());
+    }
+
+    // Yes = include all optional groups
+    if choice == "y" || choice == "yes" {
+        return Ok(HashSet::new());
+    }
+
+    // Any other input = safe default: skip
+    Ok(optional_idxs.into_iter().collect())
+
+}
+
+// =============================================================================
 // STEP 5: EXECUTE PLAN
 // =============================================================================
 
-async fn execute_plan(plan: &CommitPlan) -> Result<()> {
+async fn execute_plan(plan: &CommitPlan, skip_groups: &HashSet<usize>) -> Result<()> {
     for (idx, group) in plan.groups.iter().enumerate() {
-        println!("\n\x1b[1;36m▶ Commit {}/{}\x1b[0m", idx + 1, plan.groups.len());
+        if skip_groups.contains(&idx) {
+            println!(
+                "\n\x1b[33m⊘ Skipping optional group {}/{}: {}\x1b[0m",
+                idx + 1,
+                plan.groups.len(),
+                group.title
+            );
+            continue;
+        }
+
+        println!(
+            "\n\x1b[1;36m▶ Commit {}/{}\x1b[0m",
+            idx + 1,
+            plan.groups.len()
+        );
         println!("\x1b[1m{}\x1b[0m\n", group.message);
 
         // Stage files
@@ -461,7 +628,7 @@ async fn execute_plan(plan: &CommitPlan) -> Result<()> {
 
         // Prompt user
         loop {
-            print!("\n\x1b[1m[Y] commit / [e] edit message / [s] skip / [q] quit\x1b[0m: ");
+            print!("\n\x1b[1m[Y] commit / [e] edit message / [s] skip / [v] view diff / [q] quit\x1b[0m: ");
             io::stdout().flush()?;
 
             let mut input = String::new();
