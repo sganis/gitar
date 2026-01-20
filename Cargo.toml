@@ -2,6 +2,12 @@
 name = "gitar"
 version = "1.0.7"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/sganis/gitar"
+homepage = "https://github.com/sganis/gitar"
+description = "AI-powered Git assistant for commit messages, PRs, changelogs, and more"
+keywords = ["git", "ai", "cli", "commit-message", "developer-tools"]
+categories = ["command-line-utilities", "development-tools"]
 
 [dependencies]
 anyhow = "1"
