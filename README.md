@@ -40,19 +40,19 @@ Install the latest version of `gitar` with a single command:
 Linux/Mac:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/sganis/gitar/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/sganis/gitar/main/install/install.sh | bash
 ```
 
 Windows PowerShell
 
 ```bash
-irm https://claude.ai/install.ps1 | iex
+irm https://raw.githubusercontent.com/sganis/gitar/main/istall/install.ps1 | iex
 ```
 
 Windows CMD
 
 ```bash
-curl -fsSL https://claude.ai/install.cmd -o install.cmd && install.cmd && del install.cmd
+curl -fsSL https://raw.githubusercontent.com/sganis/gitar/main/install/install.cmd -o install.cmd && install.cmd && del install.cmd
 ```
 
 
