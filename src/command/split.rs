@@ -58,46 +58,46 @@ struct CommitPlan {
 // =============================================================================
 
 pub async fn cmd_split(client: &LlmClient, preset: Preset, algo: u8) -> Result<()> {
-    println!("\n🎸 \x1b[1mGitar Split\x1b[0m - Interactive commit splitting\n");
+    println!("\nGitar Split - Interactive commit splitting\n");
 
     // Step 1: Scan the diff
-    println!("📊 Scanning working tree changes...");
+    println!("Scanning working tree changes...");
     let changes = scan_diff()?;
 
     if changes.is_empty() {
-        println!("\x1b[33m⚠️  No unstaged changes found.\x1b[0m");
-        println!("   Use \x1b[36mgit add\x1b[0m to unstage files if needed.");
+        println!("\x1b[33mWarning: No unstaged changes found.\x1b[0m");
+        println!("Use `git add` to unstage files if needed.");
         return Ok(());
     }
 
-    println!("   Found {} changed file(s)\n", changes.len());
+    println!("Found {} changed file(s)\n", changes.len());
 
     // Step 2: Group changes
-    println!("🔍 Grouping changes by category...");
+    println!("Grouping changes by category...");
     let initial_groups = group_changes(&changes);
-    println!("   Created {} initial group(s)\n", initial_groups.len());
+    println!("Created {} initial group(s)\n", initial_groups.len());
 
     // Step 3: Use LLM to refine grouping and generate messages
-    println!("🤖 Using AI to refine groups and generate commit messages...");
+    println!("Using AI to refine groups and generate commit messages...");
     let plan = generate_plan(client, preset, algo, &changes, initial_groups).await?;
 
     if plan.groups.is_empty() {
-        println!("\x1b[33m⚠️  No commit groups generated.\x1b[0m");
+        println!("\x1b[33mWarning: No commit groups generated.\x1b[0m");
         return Ok(());
     }
 
-    println!("   Generated {} commit(s)\n", plan.groups.len());
+    println!("Generated {} commit(s)\n", plan.groups.len());
 
     // Step 4: Print the plan
     print_plan(&plan)?;
 
     // Step 5: Execute interactively
-    println!("\n\x1b[1m─────────────────────────────────────────────────────────────\x1b[0m");
-    println!("\x1b[1mReady to execute plan\x1b[0m\n");
+    println!("\n-------------------------------------------------------------");
+    println!("Ready to execute plan\n");
 
     execute_plan(&plan).await?;
 
-    println!("\n\x1b[32m✓ Split complete!\x1b[0m");
+    println!("\n\x1b[32mSplit complete.\x1b[0m");
     Ok(())
 }
 
@@ -106,7 +106,6 @@ pub async fn cmd_split(client: &LlmClient, preset: Preset, algo: u8) -> Result<(
 // =============================================================================
 
 fn scan_diff() -> Result<Vec<FileChange>> {
-    // Get unstaged changes with numstat
     let numstat = git::run_git(&["diff", "--numstat"])?;
 
     if numstat.trim().is_empty() {
@@ -136,7 +135,6 @@ fn scan_diff() -> Result<Vec<FileChange>> {
         });
     }
 
-    // Also check for renames and new files
     let status = git::run_git(&["status", "--porcelain"])?;
     for line in status.lines() {
         if line.len() < 4 {
@@ -158,11 +156,8 @@ fn scan_diff() -> Result<Vec<FileChange>> {
                 }
             }
             "R " | "RM" => {
-                // Handle renames
                 if let Some(idx) = changes.iter().position(|c| c.path == path) {
-                    changes[idx].status = ChangeStatus::Renamed {
-                        from: path.clone(),
-                    };
+                    changes[idx].status = ChangeStatus::Renamed { from: path.clone() };
                 }
             }
             " D" | "D " => {
@@ -180,7 +175,6 @@ fn scan_diff() -> Result<Vec<FileChange>> {
 fn categorize_file(path: &str) -> FileCategory {
     let lower = path.to_lowercase();
 
-    // Documentation
     if lower.ends_with(".md")
         || lower.ends_with(".txt")
         || lower.ends_with(".rst")
@@ -192,7 +186,6 @@ fn categorize_file(path: &str) -> FileCategory {
         return FileCategory::Documentation;
     }
 
-    // Tests
     if lower.contains("test")
         || lower.contains("spec")
         || lower.contains("__tests__")
@@ -206,7 +199,6 @@ fn categorize_file(path: &str) -> FileCategory {
         return FileCategory::Tests;
     }
 
-    // Config/tooling
     if lower.ends_with(".toml")
         || lower.ends_with(".yaml")
         || lower.ends_with(".yml")
@@ -214,7 +206,7 @@ fn categorize_file(path: &str) -> FileCategory {
         || lower.ends_with(".lock")
         || lower.ends_with(".config.js")
         || lower.ends_with(".config.ts")
-        || lower.ends_with("Dockerfile")
+        || lower.ends_with("dockerfile")
         || lower.contains(".github/")
         || lower.contains(".vscode/")
         || lower == "makefile"
@@ -232,60 +224,25 @@ fn categorize_file(path: &str) -> FileCategory {
 fn group_changes(changes: &[FileChange]) -> Vec<Vec<FileChange>> {
     let mut groups: Vec<Vec<FileChange>> = Vec::new();
 
-    // Group 1: Documentation
-    let docs: Vec<FileChange> = changes
-        .iter()
-        .filter(|c| c.category == FileCategory::Documentation)
-        .cloned()
-        .collect();
-    if !docs.is_empty() {
-        groups.push(docs);
-    }
+    let docs: Vec<FileChange> = changes.iter().filter(|c| c.category == FileCategory::Documentation).cloned().collect();
+    if !docs.is_empty() { groups.push(docs); }
 
-    // Group 2: Tests
-    let tests: Vec<FileChange> = changes
-        .iter()
-        .filter(|c| c.category == FileCategory::Tests)
-        .cloned()
-        .collect();
-    if !tests.is_empty() {
-        groups.push(tests);
-    }
+    let tests: Vec<FileChange> = changes.iter().filter(|c| c.category == FileCategory::Tests).cloned().collect();
+    if !tests.is_empty() { groups.push(tests); }
 
-    // Group 3: Config
-    let config: Vec<FileChange> = changes
-        .iter()
-        .filter(|c| c.category == FileCategory::Config)
-        .cloned()
-        .collect();
-    if !config.is_empty() {
-        groups.push(config);
-    }
+    let config: Vec<FileChange> = changes.iter().filter(|c| c.category == FileCategory::Config).cloned().collect();
+    if !config.is_empty() { groups.push(config); }
 
-    // Group 4: Renames
-    let renames: Vec<FileChange> = changes
-        .iter()
-        .filter(|c| matches!(c.status, ChangeStatus::Renamed { .. }))
-        .cloned()
-        .collect();
-    if !renames.is_empty() {
-        groups.push(renames);
-    }
+    let renames: Vec<FileChange> = changes.iter().filter(|c| matches!(c.status, ChangeStatus::Renamed { .. })).cloned().collect();
+    if !renames.is_empty() { groups.push(renames); }
 
-    // Group 5+: Code changes by directory
-    let code_changes: Vec<FileChange> = changes
-        .iter()
-        .filter(|c| {
-            c.category == FileCategory::Code
-                && !matches!(c.status, ChangeStatus::Renamed { .. })
-        })
+    let code_changes: Vec<FileChange> = changes.iter()
+        .filter(|c| c.category == FileCategory::Code && !matches!(c.status, ChangeStatus::Renamed { .. }))
         .cloned()
         .collect();
 
     if !code_changes.is_empty() {
-        // Group by top-level directory
-        let mut dir_groups: std::collections::HashMap<String, Vec<FileChange>> =
-            std::collections::HashMap::new();
+        let mut dir_groups: std::collections::HashMap<String, Vec<FileChange>> = std::collections::HashMap::new();
 
         for change in code_changes {
             let dir = if let Some(idx) = change.path.find('/') {
@@ -293,7 +250,6 @@ fn group_changes(changes: &[FileChange]) -> Vec<Vec<FileChange>> {
             } else {
                 "root".to_string()
             };
-
             dir_groups.entry(dir).or_default().push(change);
         }
 
@@ -321,10 +277,8 @@ async fn generate_plan(
     for (idx, group) in groups.into_iter().enumerate() {
         let files: Vec<String> = group.iter().map(|c| c.path.clone()).collect();
 
-        // Get diff for this group of files
         let diff_output = get_diff_for_files(&files)?;
 
-        // Use LLM to generate commit message
         let system_prompt = build_system_prompt(preset, &files);
         let user_prompt = format!(
             "Generate a concise commit message (one line, imperative mood) for these changes:\n\n{}",
@@ -334,12 +288,11 @@ async fn generate_plan(
         let message = match client.chat(&system_prompt, &user_prompt, false).await {
             Ok(msg) => msg.trim().to_string(),
             Err(e) => {
-                eprintln!("\x1b[33m⚠️  LLM error for group {}: {}\x1b[0m", idx + 1, e);
+                eprintln!("Warning: LLM error for group {}: {}", idx + 1, e);
                 format!("Update {} files", files.len())
             }
         };
 
-        // Determine if any files need hunk-level staging
         let needs_hunk_staging = detect_mixed_changes(&files)?;
 
         let title = if message.len() > 60 {
@@ -356,21 +309,19 @@ async fn generate_plan(
         });
     }
 
-    Ok(CommitPlan {
-        groups: commit_groups,
-    })
+    Ok(CommitPlan { groups: commit_groups })
 }
 
 fn build_system_prompt(preset: Preset, _files: &[String]) -> String {
     let preset_hint = match preset {
-        Preset::Rust => "Focus on Rust conventions (crate/module structure)",
-        Preset::JavaScript => "Focus on JavaScript conventions (components/hooks)",
-        Preset::Python => "Focus on Python conventions (modules/packages)",
+        Preset::Rust => "Focus on Rust conventions",
+        Preset::JavaScript => "Focus on JavaScript conventions",
+        Preset::Python => "Focus on Python conventions",
         Preset::Default => "Focus on clear, concise descriptions",
     };
 
     format!(
-        "You are a commit message generator. Generate a single-line commit message in imperative mood. {}. Be specific and concise.",
+        "You are a commit message generator. Generate a single-line commit message in imperative mood. {}.",
         preset_hint
     )
 }
@@ -381,7 +332,6 @@ fn get_diff_for_files(files: &[String]) -> Result<String> {
 
     let diff = git::run_git(&args)?;
 
-    // Truncate if too long
     if diff.len() > 8000 {
         Ok(format!("{}...[truncated]", &diff[..8000]))
     } else {
@@ -390,8 +340,6 @@ fn get_diff_for_files(files: &[String]) -> Result<String> {
 }
 
 fn detect_mixed_changes(_files: &[String]) -> Result<Vec<String>> {
-    // For simplicity, we'll just return empty for now
-    // In a full implementation, this would detect files with both staged and unstaged changes
     Ok(vec![])
 }
 
@@ -400,25 +348,21 @@ fn detect_mixed_changes(_files: &[String]) -> Result<Vec<String>> {
 // =============================================================================
 
 fn print_plan(plan: &CommitPlan) -> Result<()> {
-    println!("\x1b[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m");
-    println!("\x1b[1mCommit Plan ({} commits)\x1b[0m", plan.groups.len());
-    println!("\x1b[1m━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m\n");
+    println!("===========================================================");
+    println!("Commit Plan ({} commits)", plan.groups.len());
+    println!("===========================================================\n");
 
     for (idx, group) in plan.groups.iter().enumerate() {
-        println!("\x1b[1;36mCommit {}/{}\x1b[0m", idx + 1, plan.groups.len());
-        println!("\x1b[1mMessage:\x1b[0m {}", group.message);
-        println!("\x1b[1mFiles:\x1b[0m");
+        println!("Commit {}/{}", idx + 1, plan.groups.len());
+        println!("Message: {}", group.message);
+        println!("Files:");
         for file in &group.files {
-            println!("  • {}", file);
+            println!("  - {}", file);
         }
 
-        println!("\x1b[1mCommands:\x1b[0m");
+        println!("Commands:");
         for file in &group.files {
-            if group.needs_hunk_staging.contains(file) {
-                println!("  \x1b[33mgit add -p {}\x1b[0m  \x1b[2m(interactive)\x1b[0m", file);
-            } else {
-                println!("  git add {}", file);
-            }
+            println!("  git add {}", file);
         }
         println!("  git commit -m \"{}\"", group.message);
         println!();
@@ -433,35 +377,21 @@ fn print_plan(plan: &CommitPlan) -> Result<()> {
 
 async fn execute_plan(plan: &CommitPlan) -> Result<()> {
     for (idx, group) in plan.groups.iter().enumerate() {
-        println!("\n\x1b[1;36m▶ Commit {}/{}\x1b[0m", idx + 1, plan.groups.len());
-        println!("\x1b[1m{}\x1b[0m\n", group.message);
+        println!("\nCommit {}/{}", idx + 1, plan.groups.len());
+        println!("{}\n", group.message);
 
-        // Stage files
-        println!("📦 Staging files...");
+        println!("Staging files...");
         for file in &group.files {
-            if group.needs_hunk_staging.contains(file) {
-                println!("   Launching interactive staging for: {}", file);
-                let status = std::process::Command::new("git")
-                    .args(&["add", "-p", file])
-                    .status()?;
-
-                if !status.success() {
-                    println!("\x1b[33m   ⚠️  Interactive staging cancelled or failed\x1b[0m");
-                }
-            } else {
-                git::run_git(&["add", file])?;
-                println!("   ✓ {}", file);
-            }
+            git::run_git(&["add", file])?;
+            println!("  Staged {}", file);
         }
 
-        // Show diff summary
-        println!("\n📝 Staged changes:");
+        println!("\nStaged changes:");
         let stat = git::run_git(&["diff", "--cached", "--stat"])?;
         println!("{}", stat);
 
-        // Prompt user
         loop {
-            print!("\n\x1b[1m[Y] commit / [e] edit message / [s] skip / [q] quit\x1b[0m: ");
+            print!("\n[Y] commit / [e] edit message / [s] skip / [q] quit: ");
             io::stdout().flush()?;
 
             let mut input = String::new();
@@ -470,13 +400,11 @@ async fn execute_plan(plan: &CommitPlan) -> Result<()> {
 
             match choice.as_str() {
                 "y" | "yes" | "" => {
-                    // Commit
                     git::run_git(&["commit", "-m", &group.message])?;
-                    println!("\x1b[32m✓ Committed\x1b[0m");
+                    println!("Committed");
                     break;
                 }
                 "e" | "edit" => {
-                    // Edit message
                     print!("Enter new message: ");
                     io::stdout().flush()?;
                     let mut new_message = String::new();
@@ -485,35 +413,28 @@ async fn execute_plan(plan: &CommitPlan) -> Result<()> {
 
                     if !new_message.is_empty() {
                         git::run_git(&["commit", "-m", new_message])?;
-                        println!("\x1b[32m✓ Committed with edited message\x1b[0m");
+                        println!("Committed with edited message");
                         break;
                     } else {
-                        println!("\x1b[33m   Message cannot be empty\x1b[0m");
+                        println!("Message cannot be empty");
                     }
                 }
                 "s" | "skip" => {
-                    // Unstage and skip
                     for file in &group.files {
                         git::run_git(&["reset", "HEAD", file])?;
                     }
-                    println!("\x1b[33m⊘ Skipped (files unstaged)\x1b[0m");
+                    println!("Skipped (files unstaged)");
                     break;
                 }
                 "q" | "quit" => {
-                    // Unstage and quit
                     for file in &group.files {
                         git::run_git(&["reset", "HEAD", file])?;
                     }
-                    println!("\n\x1b[33m⊘ Quit (remaining files unstaged)\x1b[0m");
+                    println!("Quit (remaining files unstaged)");
                     return Ok(());
                 }
-                "v" | "view" => {
-                    // View full diff
-                    let diff = git::run_git(&["diff", "--cached"])?;
-                    println!("\n{}", diff);
-                }
                 _ => {
-                    println!("\x1b[31m   Invalid choice. Please enter Y, e, s, v, or q.\x1b[0m");
+                    println!("Invalid choice. Please enter Y, e, s, or q.");
                 }
             }
         }
