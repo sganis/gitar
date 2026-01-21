@@ -52,7 +52,13 @@ pub async fn cmd_changelog(
     // Build commit list with messages
     let ct = commits
         .iter()
-        .map(|c| format!("- [{}] {}", &c.hash[..SHORT_HASH_LEN.min(c.hash.len())], c.message))
+        .map(|c| {
+            format!(
+                "- [{}] {}",
+                &c.hash[..SHORT_HASH_LEN.min(c.hash.len())],
+                c.message
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n");
 

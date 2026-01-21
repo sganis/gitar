@@ -201,7 +201,15 @@ pub fn get_commit_diff(hash: &str, max_chars: usize) -> Result<Option<String>> {
         args.extend(EXCLUDE_PATTERNS);
         run_git(&args)?
     } else {
-        let mut args = vec!["diff-tree", "--patch", "--unified=3", "--root", hash, "--", "."];
+        let mut args = vec![
+            "diff-tree",
+            "--patch",
+            "--unified=3",
+            "--root",
+            hash,
+            "--",
+            ".",
+        ];
         args.extend(EXCLUDE_PATTERNS);
         run_git(&args)?
     };
@@ -379,22 +387,34 @@ mod tests {
 
     #[test]
     fn build_range_with_ref() {
-        assert_eq!(build_range(Some("v1.0.0"), None, "main"), Some("v1.0.0..HEAD".to_string()));
+        assert_eq!(
+            build_range(Some("v1.0.0"), None, "main"),
+            Some("v1.0.0..HEAD".to_string())
+        );
     }
 
     #[test]
     fn build_range_with_ref_and_to() {
-        assert_eq!(build_range(Some("v1.0.0"), Some("v1.0.1"), "main"), Some("v1.0.0..v1.0.1".to_string()));
+        assert_eq!(
+            build_range(Some("v1.0.0"), Some("v1.0.1"), "main"),
+            Some("v1.0.0..v1.0.1".to_string())
+        );
     }
 
     #[test]
     fn build_diff_target_with_ref() {
-        assert_eq!(build_diff_target(Some("v1.0.0"), None, "main"), "v1.0.0..HEAD");
+        assert_eq!(
+            build_diff_target(Some("v1.0.0"), None, "main"),
+            "v1.0.0..HEAD"
+        );
     }
 
     #[test]
     fn build_diff_target_with_ref_and_to() {
-        assert_eq!(build_diff_target(Some("v1.0.0"), Some("v1.0.1"), "main"), "v1.0.0..v1.0.1");
+        assert_eq!(
+            build_diff_target(Some("v1.0.0"), Some("v1.0.1"), "main"),
+            "v1.0.0..v1.0.1"
+        );
     }
 
     // ==========================================================================
@@ -426,7 +446,11 @@ mod tests {
     #[test]
     fn exclude_patterns_format() {
         for pattern in EXCLUDE_PATTERNS {
-            assert!(pattern.starts_with(":(exclude)"), "Pattern should start with :(exclude): {}", pattern);
+            assert!(
+                pattern.starts_with(":(exclude)"),
+                "Pattern should start with :(exclude): {}",
+                pattern
+            );
         }
     }
 

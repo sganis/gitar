@@ -53,7 +53,11 @@ pub async fn cmd_pr(
         (
             diff,
             get_diff_stats(diff_target_ref, false)?,
-            if ct.is_empty() { "(no commits)".into() } else { ct },
+            if ct.is_empty() {
+                "(no commits)".into()
+            } else {
+                ct
+            },
         )
     };
 

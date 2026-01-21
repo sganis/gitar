@@ -19,21 +19,47 @@ use std::collections::HashMap;
 const CHARS_PER_TOKEN: f32 = 3.5;
 
 const PRIORITY_SCORES: &[(&str, i32)] = &[
-    ("main.rs", 100), ("lib.rs", 100), ("mod.rs", 80),
-    (".rs", 70), (".py", 70), (".go", 65), (".ts", 65), (".js", 60),
-    ("Cargo.toml", 50), ("pyproject.toml", 50), ("package.json", 45),
-    ("README.md", 40), (".md", 30), (".toml", 30), (".yaml", 25), (".yml", 25),
-    (".json", 15), (".css", 10), (".svg", 5),
+    ("main.rs", 100),
+    ("lib.rs", 100),
+    ("mod.rs", 80),
+    (".rs", 70),
+    (".py", 70),
+    (".go", 65),
+    (".ts", 65),
+    (".js", 60),
+    ("Cargo.toml", 50),
+    ("pyproject.toml", 50),
+    ("package.json", 45),
+    ("README.md", 40),
+    (".md", 30),
+    (".toml", 30),
+    (".yaml", 25),
+    (".yml", 25),
+    (".json", 15),
+    (".css", 10),
+    (".svg", 5),
 ];
 
 const EXCLUDE_FILES: &[&str] = &[
-    "Cargo.lock", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
-    "poetry.lock", "Pipfile.lock", ".gitignore", ".DS_Store",
+    "Cargo.lock",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "Pipfile.lock",
+    ".gitignore",
+    ".DS_Store",
 ];
 
 const EXCLUDE_PATTERNS: &[&str] = &[
-    "vendor/", "node_modules/", "target/", "dist/", "__pycache__/",
-    ".min.js", ".min.css", "generated",
+    "vendor/",
+    "node_modules/",
+    "target/",
+    "dist/",
+    "__pycache__/",
+    ".min.js",
+    ".min.css",
+    "generated",
 ];
 
 // =============================================================================
@@ -150,7 +176,12 @@ pub struct ShapedDiff {
 // MAIN ENTRY POINT
 // =============================================================================
 
-pub fn shape_diff(raw_diff: &str, diff_stat: Option<&str>, max_chars: usize, alg: DiffAlg) -> ShapedDiff {
+pub fn shape_diff(
+    raw_diff: &str,
+    diff_stat: Option<&str>,
+    max_chars: usize,
+    alg: DiffAlg,
+) -> ShapedDiff {
     match alg {
         DiffAlg::Full => alg_full(raw_diff, diff_stat, max_chars),
         DiffAlg::Files => alg_files(raw_diff, diff_stat, max_chars),
@@ -162,7 +193,12 @@ pub fn shape_diff(raw_diff: &str, diff_stat: Option<&str>, max_chars: usize, alg
 pub fn compare_algorithms(raw_diff: &str, max_chars: usize) -> String {
     let mut out = String::from("=== Algorithm Comparison ===\n\n");
 
-    for alg in [DiffAlg::Full, DiffAlg::Files, DiffAlg::Hunks, DiffAlg::Semantic] {
+    for alg in [
+        DiffAlg::Full,
+        DiffAlg::Files,
+        DiffAlg::Hunks,
+        DiffAlg::Semantic,
+    ] {
         let result = shape_diff(raw_diff, None, max_chars, alg);
         out.push_str(&format!(
             "--- {} ---\nFiles: {}/{} | Chars: {} | Tokens: ~{} | Truncated: {}\n\n",
@@ -212,7 +248,10 @@ fn alg_full(raw_diff: &str, diff_stat: Option<&str>, max_chars: usize) -> Shaped
     }
 
     stats.finalize(&output);
-    ShapedDiff { content: output, stats }
+    ShapedDiff {
+        content: output,
+        stats,
+    }
 }
 
 // =============================================================================
@@ -273,7 +312,10 @@ fn alg_files(raw_diff: &str, diff_stat: Option<&str>, max_chars: usize) -> Shape
     stats.included_files = included.len();
     stats.file_list = included;
     stats.finalize(&output);
-    ShapedDiff { content: output, stats }
+    ShapedDiff {
+        content: output,
+        stats,
+    }
 }
 
 // =============================================================================
@@ -336,7 +378,10 @@ fn alg_hunks(raw_diff: &str, diff_stat: Option<&str>, max_chars: usize) -> Shape
     stats.included_files = included_files.len();
     stats.file_list = included_files.keys().cloned().collect();
     stats.finalize(&output);
-    ShapedDiff { content: output, stats }
+    ShapedDiff {
+        content: output,
+        stats,
+    }
 }
 
 // =============================================================================
@@ -381,7 +426,10 @@ fn alg_semantic(raw_diff: &str, diff_stat: Option<&str>, max_chars: usize) -> Sh
 
     stats.included_files = files.len();
     stats.finalize(&json);
-    ShapedDiff { content: json, stats }
+    ShapedDiff {
+        content: json,
+        stats,
+    }
 }
 
 // =============================================================================
@@ -500,8 +548,20 @@ fn score_hunk(hunk: &str, file_priority: i32) -> f32 {
     let mut score = file_priority as f32;
 
     const STRUCTURAL: &[&str] = &[
-        "fn ", "pub ", "impl ", "struct ", "enum ", "trait ", "mod ",
-        "def ", "class ", "async ", "function ", "const ", "export ", "import ",
+        "fn ",
+        "pub ",
+        "impl ",
+        "struct ",
+        "enum ",
+        "trait ",
+        "mod ",
+        "def ",
+        "class ",
+        "async ",
+        "function ",
+        "const ",
+        "export ",
+        "import ",
     ];
 
     for kw in STRUCTURAL {
@@ -652,7 +712,9 @@ fn build_ir_json(
     total: usize,
     chars: usize,
 ) -> String {
-    let (adds, dels) = files.iter().fold((0, 0), |(a, d), f| (a + f.adds, d + f.dels));
+    let (adds, dels) = files
+        .iter()
+        .fold((0, 0), |(a, d), f| (a + f.adds, d + f.dels));
 
     let mut s = String::with_capacity(chars / 2);
     s.push('{');

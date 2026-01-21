@@ -105,7 +105,11 @@ pub async fn cmd_commit(
                 io::stdout().flush()?;
                 let mut ed = String::new();
                 io::stdin().read_line(&mut ed)?;
-                break if ed.trim().is_empty() { msg } else { ed.trim().into() };
+                break if ed.trim().is_empty() {
+                    msg
+                } else {
+                    ed.trim().into()
+                };
             }
             _ => {
                 println!("Canceled.");

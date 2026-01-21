@@ -175,7 +175,11 @@ impl ResolvedConfig {
     ) -> Self {
         let provider = cli_provider
             .map(|p| normalize_provider(p))
-            .or_else(|| file.default_provider.as_ref().map(|p| normalize_provider(p)))
+            .or_else(|| {
+                file.default_provider
+                    .as_ref()
+                    .map(|p| normalize_provider(p))
+            })
             .unwrap_or("openai")
             .to_string();
 
@@ -184,7 +188,11 @@ impl ResolvedConfig {
         let base_url = cli_base_url
             .cloned()
             .or_else(|| provider_config.and_then(|p| p.base_url.clone()))
-            .unwrap_or_else(|| provider_to_url(&provider).unwrap_or(PROVIDER_OPENAI).to_string());
+            .unwrap_or_else(|| {
+                provider_to_url(&provider)
+                    .unwrap_or(PROVIDER_OPENAI)
+                    .to_string()
+            });
 
         let env_api_key = env_var_for_provider(&provider).and_then(|var| std::env::var(var).ok());
 
@@ -228,8 +236,18 @@ impl ResolvedConfig {
             .unwrap_or_default();
 
         Self {
-            provider, api_key, model, max_tokens, temperature, base_url,
-            base_branch, stream, max_diff_chars, insecure_tls, preset, secret_action,
+            provider,
+            api_key,
+            model,
+            max_tokens,
+            temperature,
+            base_url,
+            base_branch,
+            stream,
+            max_diff_chars,
+            insecure_tls,
+            preset,
+            secret_action,
         }
     }
 }
@@ -242,7 +260,9 @@ mod tests {
     use super::*;
     use tempfile::TempDir;
 
-    fn temp_repo() -> TempDir { TempDir::new().unwrap() }
+    fn temp_repo() -> TempDir {
+        TempDir::new().unwrap()
+    }
 
     #[test]
     fn config_default_empty() {
@@ -264,8 +284,19 @@ mod tests {
         std::env::remove_var("OPENAI_API_KEY");
         let repo = temp_repo();
         let r = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None, None,
-            &Config::default(), || "main".into(), repo.path(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &Config::default(),
+            || "main".into(),
+            repo.path(),
         );
         assert_eq!(r.provider, "openai");
         assert_eq!(r.secret_action, SecretAction::Redact);
@@ -274,10 +305,24 @@ mod tests {
     #[test]
     fn resolved_secret_action_from_config() {
         let repo = temp_repo();
-        let file = Config { secret_action: Some("block".into()), ..Default::default() };
+        let file = Config {
+            secret_action: Some("block".into()),
+            ..Default::default()
+        };
         let r = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None, None,
-            &file, || "main".into(), repo.path(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &file,
+            || "main".into(),
+            repo.path(),
         );
         assert_eq!(r.secret_action, SecretAction::Block);
     }
@@ -287,8 +332,19 @@ mod tests {
         let repo = temp_repo();
         std::fs::write(repo.path().join("Cargo.toml"), "").unwrap();
         let r = ResolvedConfig::new(
-            None, None, None, None, None, None, None, None, None, None,
-            &Config::default(), || "main".into(), repo.path(),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            &Config::default(),
+            || "main".into(),
+            repo.path(),
         );
         assert_eq!(r.preset, Preset::Rust);
     }

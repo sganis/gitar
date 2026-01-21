@@ -54,5 +54,3 @@ pub fn cmd_hook(command: HookCommands) -> Result<()> {
     }
     Ok(())
 }
-
-

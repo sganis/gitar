@@ -55,7 +55,12 @@ impl SecretMatch {
         }
         let end = self.match_end.min(line.len());
         let secret = &line[self.match_start..end];
-        format!("{}{}{}", &line[..self.match_start], mask(secret), &line[end..])
+        format!(
+            "{}{}{}",
+            &line[..self.match_start],
+            mask(secret),
+            &line[end..]
+        )
     }
 }
 
@@ -69,27 +74,51 @@ pub struct SecretScanResult {
 
 impl SecretScanResult {
     pub fn from_matches(matches: Vec<SecretMatch>) -> Self {
-        let high_count = matches.iter().filter(|m| m.severity == Severity::High).count();
-        let medium_count = matches.iter().filter(|m| m.severity == Severity::Medium).count();
-        let low_count = matches.iter().filter(|m| m.severity == Severity::Low).count();
-        Self { matches, high_count, medium_count, low_count }
+        let high_count = matches
+            .iter()
+            .filter(|m| m.severity == Severity::High)
+            .count();
+        let medium_count = matches
+            .iter()
+            .filter(|m| m.severity == Severity::Medium)
+            .count();
+        let low_count = matches
+            .iter()
+            .filter(|m| m.severity == Severity::Low)
+            .count();
+        Self {
+            matches,
+            high_count,
+            medium_count,
+            low_count,
+        }
     }
 
-    pub fn is_empty(&self) -> bool { self.matches.is_empty() }
-    pub fn total(&self) -> usize { self.matches.len() }
+    pub fn is_empty(&self) -> bool {
+        self.matches.is_empty()
+    }
+    pub fn total(&self) -> usize {
+        self.matches.len()
+    }
 
     pub fn format_warning(&self) -> String {
         if self.is_empty() {
             return String::new();
         }
 
-        let mut msg = format!("\n\x1b[33m⚠️  Found {} potential secret(s):\x1b[0m\n", self.total());
+        let mut msg = format!(
+            "\n\x1b[33m⚠️  Found {} potential secret(s):\x1b[0m\n",
+            self.total()
+        );
 
         if self.high_count > 0 {
             msg.push_str(&format!("   \x1b[31m● {} HIGH\x1b[0m\n", self.high_count));
         }
         if self.medium_count > 0 {
-            msg.push_str(&format!("   \x1b[33m● {} MEDIUM\x1b[0m\n", self.medium_count));
+            msg.push_str(&format!(
+                "   \x1b[33m● {} MEDIUM\x1b[0m\n",
+                self.medium_count
+            ));
         }
         if self.low_count > 0 {
             msg.push_str(&format!("   \x1b[90m● {} LOW\x1b[0m\n", self.low_count));
@@ -104,7 +133,10 @@ impl SecretScanResult {
             };
             msg.push_str(&format!(
                 "   {}. [{}{}:L{}\x1b[0m] {}\n",
-                i + 1, color, m.pattern_name, m.line_number,
+                i + 1,
+                color,
+                m.pattern_name,
+                m.line_number,
                 m.masked_preview().chars().take(70).collect::<String>()
             ));
         }
@@ -204,7 +236,11 @@ pub fn scan(text: &str) -> Vec<SecretMatch> {
         }
     }
 
-    matches.sort_by(|a, b| b.severity.cmp(&a.severity).then(a.line_number.cmp(&b.line_number)));
+    matches.sort_by(|a, b| {
+        b.severity
+            .cmp(&a.severity)
+            .then(a.line_number.cmp(&b.line_number))
+    });
     matches
 }
 
@@ -277,7 +313,11 @@ fn mask(s: &str) -> String {
         return "[REDACTED]".to_string();
     }
     let show = 4.min(len / 4);
-    format!("{}...{}[REDACTED]", &s[..show], &s[len.saturating_sub(show)..])
+    format!(
+        "{}...{}[REDACTED]",
+        &s[..show],
+        &s[len.saturating_sub(show)..]
+    )
 }
 
 fn short_name(name: &str) -> &'static str {
@@ -423,7 +463,10 @@ mod tests {
 
     #[test]
     fn process_block_returns_error() {
-        let r = process_secrets("key=sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123", SecretAction::Block);
+        let r = process_secrets(
+            "key=sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123",
+            SecretAction::Block,
+        );
         assert!(r.is_err());
         let scan_result = r.unwrap_err();
         assert!(scan_result.total() > 0);

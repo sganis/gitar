@@ -403,7 +403,8 @@ mod tests {
     #[test]
     fn cli_parses_algo_flag() {
         for algo_val in 1..=4 {
-            let cli = Cli::try_parse_from(["gitar", "commit", "--algo", &algo_val.to_string()]).unwrap();
+            let cli =
+                Cli::try_parse_from(["gitar", "commit", "--algo", &algo_val.to_string()]).unwrap();
             if let Commands::Commit { algo, .. } = cli.command {
                 assert_eq!(algo, algo_val);
             }
@@ -430,7 +431,9 @@ mod tests {
 
     #[test]
     fn cli_parses_valid_providers() {
-        let providers = ["openai", "claude", "gemini", "google", "groq", "ollama", "local"];
+        let providers = [
+            "openai", "claude", "gemini", "google", "groq", "ollama", "local",
+        ];
         for provider in providers {
             let cli = Cli::try_parse_from(["gitar", "--provider", provider, "staged"]).unwrap();
             assert_eq!(cli.provider, Some(provider.into()));
@@ -448,7 +451,16 @@ mod tests {
 
     #[test]
     fn cli_parses_valid_presets() {
-        let presets = ["rust", "rs", "javascript", "js", "python", "py", "auto", "default"];
+        let presets = [
+            "rust",
+            "rs",
+            "javascript",
+            "js",
+            "python",
+            "py",
+            "auto",
+            "default",
+        ];
         for preset in presets {
             let cli = Cli::try_parse_from(["gitar", "--preset", preset, "staged"]).unwrap();
             assert_eq!(cli.preset, Some(preset.into()));
@@ -467,9 +479,17 @@ mod tests {
     #[test]
     fn cli_parses_global_options() {
         let cli = Cli::try_parse_from([
-            "gitar", "--model", "gpt-4", "--max-tokens", "2048",
-            "--temperature", "0.5", "--stream", "staged",
-        ]).unwrap();
+            "gitar",
+            "--model",
+            "gpt-4",
+            "--max-tokens",
+            "2048",
+            "--temperature",
+            "0.5",
+            "--stream",
+            "staged",
+        ])
+        .unwrap();
         assert_eq!(cli.model, Some("gpt-4".into()));
         assert_eq!(cli.max_tokens, Some(2048));
         assert_eq!(cli.temperature, Some(0.5));
@@ -483,7 +503,10 @@ mod tests {
     #[test]
     fn cli_parses_commit_flags() {
         let cli = Cli::try_parse_from(["gitar", "commit", "-p", "-a", "--no-tag"]).unwrap();
-        if let Commands::Commit { push, all, no_tag, .. } = cli.command {
+        if let Commands::Commit {
+            push, all, no_tag, ..
+        } = cli.command
+        {
             assert!(push);
             assert!(all);
             assert!(no_tag);
@@ -514,8 +537,17 @@ mod tests {
     #[test]
     fn hook_script_contains_required_elements() {
         assert!(HOOK_SCRIPT.contains("gitar-hook"), "Should contain marker");
-        assert!(HOOK_SCRIPT.contains("COMMIT_SOURCE"), "Should check commit source");
-        assert!(HOOK_SCRIPT.contains("command -v gitar"), "Should check gitar installed");
-        assert!(HOOK_SCRIPT.contains("--write-to"), "Should use write-to flag");
+        assert!(
+            HOOK_SCRIPT.contains("COMMIT_SOURCE"),
+            "Should check commit source"
+        );
+        assert!(
+            HOOK_SCRIPT.contains("command -v gitar"),
+            "Should check gitar installed"
+        );
+        assert!(
+            HOOK_SCRIPT.contains("--write-to"),
+            "Should use write-to flag"
+        );
     }
 }

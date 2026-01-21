@@ -7,11 +7,11 @@
 // Keep it available for future integration, but suppress dead_code in this module.
 #![allow(dead_code)]
 
-use anyhow::{bail, Result};
-use std::borrow::Cow;
 use super::algo::{shape_diff, DiffAlg, DiffStats, ShapedDiff};
 use super::secret::{process_secrets, SecretAction, SecretScanResult};
 use crate::git;
+use anyhow::{bail, Result};
+use std::borrow::Cow;
 
 // =============================================================================
 // TYPES
@@ -127,7 +127,11 @@ pub fn process_commit(hash: &str, opts: &DiffOptions) -> Result<Option<Processed
 }
 
 /// Process a raw diff string directly
-pub fn process_raw_diff(raw: &str, stat: Option<&str>, opts: &DiffOptions) -> Result<ProcessedDiff> {
+pub fn process_raw_diff(
+    raw: &str,
+    stat: Option<&str>,
+    opts: &DiffOptions,
+) -> Result<ProcessedDiff> {
     let ShapedDiff { content, stats } = shape_diff(raw, stat, opts.max_chars, opts.algorithm);
     apply_secrets(content, stats, opts.secret_action)
 }

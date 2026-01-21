@@ -52,11 +52,15 @@ pub async fn chat(
             None
         } else {
             Some(GeminiContent {
-                parts: vec![GeminiPart { text: system.to_string() }],
+                parts: vec![GeminiPart {
+                    text: system.to_string(),
+                }],
             })
         },
         contents: vec![GeminiContent {
-            parts: vec![GeminiPart { text: user.to_string() }],
+            parts: vec![GeminiPart {
+                text: user.to_string(),
+            }],
         }],
         generation_config: Some(GeminiGenerationConfig {
             max_output_tokens: max_tokens,
@@ -144,7 +148,10 @@ pub async fn chat(
         }
 
         // Non-streaming
-        let body = response.text().await.context("Failed to read response body")?;
+        let body = response
+            .text()
+            .await
+            .context("Failed to read response body")?;
 
         match check_response_for_retry(status, &body, attempt, &config)? {
             RetryDecision::Success => {}
@@ -190,7 +197,10 @@ pub async fn list_models(
         let response = req_builder.send().await.context("Failed to send request")?;
 
         let status = response.status();
-        let body = response.text().await.context("Failed to read response body")?;
+        let body = response
+            .text()
+            .await
+            .context("Failed to read response body")?;
 
         match check_response_for_retry(status, &body, attempt, &config)? {
             RetryDecision::Success => {}
@@ -206,7 +216,12 @@ pub async fn list_models(
         return Ok(resp
             .models
             .into_iter()
-            .map(|m| m.name.strip_prefix("models/").unwrap_or(&m.name).to_string())
+            .map(|m| {
+                m.name
+                    .strip_prefix("models/")
+                    .unwrap_or(&m.name)
+                    .to_string()
+            })
             .collect());
     }
 
@@ -252,7 +267,9 @@ fn drain_gemini_stream_values(buf: &mut String) -> Result<Vec<Value>> {
         }
 
         loop {
-            let Some(first) = buf.chars().next() else { break };
+            let Some(first) = buf.chars().next() else {
+                break;
+            };
             match first {
                 '[' | ',' | ']' => {
                     buf.drain(..first.len_utf8());
@@ -286,7 +303,11 @@ fn drain_gemini_stream_values(buf: &mut String) -> Result<Vec<Value>> {
                     break;
                 }
                 let preview = buf.chars().take(200).collect::<String>();
-                bail!("Gemini stream JSON parse error: {}. Buffer starts with: {}", e, preview);
+                bail!(
+                    "Gemini stream JSON parse error: {}. Buffer starts with: {}",
+                    e,
+                    preview
+                );
             }
             None => break,
         }
@@ -320,12 +341,18 @@ mod tests {
 
     #[test]
     fn normalize_model_path_adds_prefix() {
-        assert_eq!(normalize_model_path("gemini-2.5-flash"), "models/gemini-2.5-flash");
+        assert_eq!(
+            normalize_model_path("gemini-2.5-flash"),
+            "models/gemini-2.5-flash"
+        );
     }
 
     #[test]
     fn normalize_model_path_preserves_existing_prefix() {
-        assert_eq!(normalize_model_path("models/gemini-2.5-flash"), "models/gemini-2.5-flash");
+        assert_eq!(
+            normalize_model_path("models/gemini-2.5-flash"),
+            "models/gemini-2.5-flash"
+        );
     }
 
     #[test]

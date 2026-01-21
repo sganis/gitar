@@ -23,17 +23,31 @@ impl Preset {
     }
 
     pub fn detect(root: &Path) -> Self {
-        if root.join("Cargo.toml").exists() { Self::Rust }
-        else if root.join("package.json").exists() { Self::JavaScript }
-        else if root.join("pyproject.toml").exists()
+        if root.join("Cargo.toml").exists() {
+            Self::Rust
+        } else if root.join("package.json").exists() {
+            Self::JavaScript
+        } else if root.join("pyproject.toml").exists()
             || root.join("setup.py").exists()
-            || root.join("requirements.txt").exists() { Self::Python }
-        else { Self::Default }
+            || root.join("requirements.txt").exists()
+        {
+            Self::Python
+        } else {
+            Self::Default
+        }
     }
 
     pub fn resolve(cli: Option<&String>, config: Option<&String>, root: &Path) -> Self {
-        if let Some(s) = cli { if let Some(p) = Self::from_str(s) { return p; } }
-        if let Some(s) = config { if let Some(p) = Self::from_str(s) { return p; } }
+        if let Some(s) = cli {
+            if let Some(p) = Self::from_str(s) {
+                return p;
+            }
+        }
+        if let Some(s) = config {
+            if let Some(p) = Self::from_str(s) {
+                return p;
+            }
+        }
         Self::detect(root)
     }
 
@@ -56,7 +70,11 @@ impl Preset {
                     "Fix panic when diff is empty",
                     "Refactor cli args into separate module",
                 ],
-                avoid: &["vague 'Update stuff'", "overstating performance", "calling everything 'refactor'"],
+                avoid: &[
+                    "vague 'Update stuff'",
+                    "overstating performance",
+                    "calling everything 'refactor'",
+                ],
             },
             Self::JavaScript => Hints {
                 tone: "user-facing, product-aware, concise",
@@ -66,7 +84,11 @@ impl Preset {
                     "Fix form validation on submit",
                     "Refactor auth logic into custom hook",
                 ],
-                avoid: &["'Fix bug' with no context", "Rust-like terms", "listing files in subject"],
+                avoid: &[
+                    "'Fix bug' with no context",
+                    "Rust-like terms",
+                    "listing files in subject",
+                ],
             },
             Self::Python => Hints {
                 tone: "behavior-focused, clear, library-minded",
@@ -76,7 +98,10 @@ impl Preset {
                     "Fix edge case in date parsing",
                     "Improve type hints for core module",
                 ],
-                avoid: &["JS phrasing like 'Bump package-lock'", "omitting key behavior changes"],
+                avoid: &[
+                    "JS phrasing like 'Bump package-lock'",
+                    "omitting key behavior changes",
+                ],
             },
             Self::Default => Hints {
                 tone: "clear, informative, action-oriented",
@@ -86,7 +111,10 @@ impl Preset {
                     "Fix error handling in main loop",
                     "Refactor validation logic for clarity",
                 ],
-                avoid: &["vague 'Update stuff'", "listing files instead of describing changes"],
+                avoid: &[
+                    "vague 'Update stuff'",
+                    "listing files instead of describing changes",
+                ],
             },
         }
     }
@@ -114,8 +142,16 @@ Avoid:
             name,
             self.tone,
             self.nouns.join(", "),
-            self.examples.iter().map(|e| format!("  - \"{}\"", e)).collect::<Vec<_>>().join("\n"),
-            self.avoid.iter().map(|a| format!("  - {}", a)).collect::<Vec<_>>().join("\n"),
+            self.examples
+                .iter()
+                .map(|e| format!("  - \"{}\"", e))
+                .collect::<Vec<_>>()
+                .join("\n"),
+            self.avoid
+                .iter()
+                .map(|a| format!("  - {}", a))
+                .collect::<Vec<_>>()
+                .join("\n"),
         )
     }
 }
@@ -126,8 +162,8 @@ Avoid:
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::TempDir;
     use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn from_str_all() {
@@ -173,7 +209,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         fs::write(dir.path().join("Cargo.toml"), "").unwrap();
         let cli = "python".to_string();
-        assert_eq!(Preset::resolve(Some(&cli), None, dir.path()), Preset::Python);
+        assert_eq!(
+            Preset::resolve(Some(&cli), None, dir.path()),
+            Preset::Python
+        );
     }
 
     #[test]
