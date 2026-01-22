@@ -250,10 +250,14 @@ pub async fn cmd_resolve(
                     heuristic_all
                 } else {
                     // Step 2: per-region LLM with fallback to full-file
-                    eprintln!("  Needs LLM: trying per-region resolution...");
-                    llm::resolve_working_per_region_with_fallback(client, stream, &input)
-                        .await
-                        .with_context(|| format!("LLM resolution failed for {}", path))?
+                eprintln!("  Needs LLM: trying per-region resolution...");
+                    let resolved = if yes {
+                        llm::resolve_working_per_region_with_fallback(client, stream, &input).await
+                    } else {
+                        llm::resolve_working_per_region_interactive(client, stream, &input).await
+                    };
+                    resolved.with_context(|| format!("LLM resolution failed for {}", path))?
+    
                 }
             }
         };
@@ -293,10 +297,10 @@ pub async fn cmd_resolve(
             bail!("File still reported as conflicted after staging: {}", path);
         }
 
-        let cached = git_helper::git_cached_names()?;
-        if !cached.iter().any(|p| p == &path) {
-            bail!("File was not staged after git add: {}", path);
+        if git_helper::git_has_unmerged_entries(&path)? {
+            bail!("File still has unmerged index entries after git add: {}", path);
         }
+
 
         eprintln!("  Resolved and staged: {}", path);
     }

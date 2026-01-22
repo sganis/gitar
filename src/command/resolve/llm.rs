@@ -1,7 +1,9 @@
 use anyhow::{bail, Context, Result};
+use std::io::{self, Write};
 
 use crate::client::LlmClient;
 
+use super::diff_preview;
 use super::heuristic;
 use super::parser::{has_conflict_markers, ConflictInput, ConflictRegion};
 
@@ -86,7 +88,6 @@ Rules:\n\
 }
 
 fn strip_markdown_fences(s: &str) -> String {
-    // Defensive: region-mode asks for "no fences", but models sometimes add them.
     let mut out = String::new();
     for line in s.lines() {
         let t = line.trim();
@@ -125,8 +126,6 @@ fn take_first_n_lines(s: &str, n: usize) -> String {
 }
 
 fn extract_anchor_snippet(blob: &str, before_ctx: &str, after_ctx: &str) -> Option<String> {
-    // Best-effort: locate a snippet in `blob` using anchors derived from context.
-    // We use a small tail of BEFORE and a small head of AFTER as anchors.
     let before_anchor = take_last_n_lines(before_ctx, 3);
     let after_anchor = take_first_n_lines(after_ctx, 3);
 
@@ -143,7 +142,6 @@ fn extract_anchor_snippet(blob: &str, before_ctx: &str, after_ctx: &str) -> Opti
     let end_rel = rest.find(a)?;
     let mid = &rest[..end_rel];
 
-    // Keep it bounded (avoid surprises)
     let mut out = String::new();
     out.push_str(b);
     if !b.ends_with('\n') {
@@ -160,12 +158,61 @@ fn extract_anchor_snippet(blob: &str, before_ctx: &str, after_ctx: &str) -> Opti
     Some(out)
 }
 
+fn conflict_block_for_preview(region: &ConflictRegion) -> String {
+    // For diff preview only; labels are just hints.
+    let mut out = String::new();
+
+    out.push_str("<<<<<<< ");
+    if let Some(l) = &region.ours_label {
+        out.push_str(l);
+    } else {
+        out.push_str("OURS");
+    }
+    out.push('\n');
+
+    out.push_str(&region.ours);
+    if !region.ours.ends_with('\n') && !region.ours.is_empty() {
+        out.push('\n');
+    }
+
+    out.push_str("=======\n");
+
+    out.push_str(&region.theirs);
+    if !region.theirs.ends_with('\n') && !region.theirs.is_empty() {
+        out.push('\n');
+    }
+
+    out.push_str(">>>>>>> ");
+    if let Some(l) = &region.theirs_label {
+        out.push_str(l);
+    } else {
+        out.push_str("THEIRS");
+    }
+    out.push('\n');
+
+    out
+}
+
+fn prompt_region_action(region_no_1: usize, attempt_no_1: usize) -> Result<char> {
+    eprint!(
+        "  Region {} (attempt {}): accept [y], retry [r], fallback to full-file [f], quit [q] > ",
+        region_no_1, attempt_no_1
+    );
+    io::stderr().flush().ok();
+
+    let mut line = String::new();
+    io::stdin().read_line(&mut line)?;
+    let s = line.trim().to_lowercase();
+    Ok(s.chars().next().unwrap_or('q'))
+}
+
 async fn resolve_region_with_llm(
     client: &LlmClient,
     stream: bool,
     input: &ConflictInput,
     region_idx_0: usize,
     region: &ConflictRegion,
+    prev_attempt: Option<&str>,
 ) -> Result<String> {
     let system = "You are a merge conflict resolver.\n\
 Return ONLY the resolved block for the conflict region.\n\
@@ -180,7 +227,6 @@ Rules:\n\
     user.push_str(&format!("PATH: {}\n", input.path));
     user.push_str(&format!("REGION: {}\n\n", region_idx_0 + 1));
 
-    // Best-effort base snippet (cheap, optional).
     if let Some(base) = &input.base {
         if let Some(sn) = extract_anchor_snippet(base, &region.context_before, &region.context_after) {
             user.push_str("=== BASE SNIPPET (best-effort) ===\n");
@@ -220,6 +266,16 @@ Rules:\n\
     }
     user.push('\n');
 
+    if let Some(prev) = prev_attempt {
+        user.push_str("=== PREVIOUS ATTEMPT (was rejected) ===\n");
+        user.push_str(prev);
+        if !prev.ends_with('\n') {
+            user.push('\n');
+        }
+        user.push('\n');
+        user.push_str("Try a better resolution.\n\n");
+    }
+
     let raw = client.chat(system, &user, stream).await?;
     let cleaned = strip_markdown_fences(&raw);
 
@@ -227,8 +283,6 @@ Rules:\n\
         bail!("Region LLM output contains conflict markers");
     }
 
-    // Also reject if it looks like it returned headings / narrative.
-    // Keep it conservative: allow anything except obvious markdown code fences (already stripped).
     Ok(cleaned)
 }
 
@@ -237,12 +291,6 @@ pub async fn resolve_working_per_region_with_fallback(
     stream: bool,
     input: &ConflictInput,
 ) -> Result<String> {
-    // Walk the working file and replace each conflict region.
-    // For each region:
-    // - Try heuristic on (ours, theirs).
-    // - Else call per-region LLM.
-    //
-    // If anything fails, fallback to full-file LLM.
     let working = &input.working;
 
     let mut out = String::new();
@@ -251,7 +299,6 @@ pub async fn resolve_working_per_region_with_fallback(
 
     while let Some(line) = lines.next() {
         if line.starts_with("<<<<<<<") {
-            // collect ours
             let mut ours = String::new();
             while let Some(l) = lines.next() {
                 if l.starts_with("=======") {
@@ -259,7 +306,7 @@ pub async fn resolve_working_per_region_with_fallback(
                 }
                 ours.push_str(l);
             }
-            // collect theirs
+
             let mut theirs = String::new();
             while let Some(l) = lines.next() {
                 if l.starts_with(">>>>>>>") {
@@ -268,14 +315,11 @@ pub async fn resolve_working_per_region_with_fallback(
                 theirs.push_str(l);
             }
 
-            // Use pre-parsed region for context (must stay aligned).
             let region = input
                 .regions
                 .get(region_idx)
                 .with_context(|| format!("Region index {} out of bounds", region_idx + 1))?;
 
-            // Sanity: match parsed blocks with scanned blocks (cheap guard).
-            // If mismatch, bail to full-file fallback.
             if region.ours != ours || region.theirs != theirs {
                 let fallback = resolve_with_llm_full_file(client, stream, input).await?;
                 return Ok(fallback);
@@ -284,7 +328,7 @@ pub async fn resolve_working_per_region_with_fallback(
             if let Some(chosen) = heuristic::choose_region_heuristic(&ours, &theirs) {
                 out.push_str(&chosen);
             } else {
-                let resolved_block = match resolve_region_with_llm(client, stream, input, region_idx, region).await {
+                let resolved_block = match resolve_region_with_llm(client, stream, input, region_idx, region, None).await {
                     Ok(b) => b,
                     Err(_) => {
                         let fallback = resolve_with_llm_full_file(client, stream, input).await?;
@@ -308,9 +352,133 @@ pub async fn resolve_working_per_region_with_fallback(
     }
 
     if has_conflict_markers(&out) {
-        // Safety: should never happen, but fallback if it does.
         let fallback = resolve_with_llm_full_file(client, stream, input).await?;
         return Ok(fallback);
+    }
+
+    Ok(out)
+}
+
+pub async fn resolve_working_per_region_interactive(
+    client: &LlmClient,
+    stream: bool,
+    input: &ConflictInput,
+) -> Result<String> {
+    let working = &input.working;
+
+    let mut out = String::new();
+    let mut lines = working.split_inclusive('\n').peekable();
+    let mut region_idx = 0usize;
+
+    while let Some(line) = lines.next() {
+        if line.starts_with("<<<<<<<") {
+            let mut ours = String::new();
+            while let Some(l) = lines.next() {
+                if l.starts_with("=======") {
+                    break;
+                }
+                ours.push_str(l);
+            }
+
+            let mut theirs = String::new();
+            while let Some(l) = lines.next() {
+                if l.starts_with(">>>>>>>") {
+                    break;
+                }
+                theirs.push_str(l);
+            }
+
+            let region = input
+                .regions
+                .get(region_idx)
+                .with_context(|| format!("Region index {} out of bounds", region_idx + 1))?;
+
+            // If our scan doesn't match parsed model, don't play games: fallback.
+            if region.ours != ours || region.theirs != theirs {
+                eprintln!("  Region parsing mismatch; falling back to full-file LLM.");
+                return resolve_with_llm_full_file(client, stream, input).await;
+            }
+
+            if let Some(chosen) = heuristic::choose_region_heuristic(&ours, &theirs) {
+                eprintln!("  Region {}: auto-resolved by heuristic.", region_idx + 1);
+                out.push_str(&chosen);
+                region_idx += 1;
+                continue;
+            }
+
+            eprintln!("  Region {}: needs LLM.", region_idx + 1);
+
+            let mut prev: Option<String> = None;
+            let max_retries = 3usize;
+            let mut attempt = 0usize;
+
+            loop {
+                attempt += 1;
+
+                let resolved = resolve_region_with_llm(
+                    client,
+                    stream,
+                    input,
+                    region_idx,
+                    region,
+                    prev.as_deref(),
+                )
+                .await
+                .with_context(|| format!("Region {} LLM failed", region_idx + 1))?;
+
+                if has_conflict_markers(&resolved) {
+                    bail!("Region {} output contains conflict markers", region_idx + 1);
+                }
+
+                // Region preview diff
+                let before_block = conflict_block_for_preview(region);
+                eprintln!("  Region {} proposed diff:", region_idx + 1);
+                diff_preview::show_preview_diff_virtual(
+                    &format!("{}-region-{}", input.path, region_idx + 1),
+                    &before_block,
+                    &resolved,
+                )?;
+
+                let action = prompt_region_action(region_idx + 1, attempt)?;
+                match action {
+                    'y' => {
+                        out.push_str(&resolved);
+                        break;
+                    }
+                    'r' => {
+                        if attempt >= max_retries {
+                            eprintln!("  Region {}: max retries reached; falling back to full-file LLM.", region_idx + 1);
+                            return resolve_with_llm_full_file(client, stream, input).await;
+                        }
+                        prev = Some(resolved);
+                        continue;
+                    }
+                    'f' => {
+                        eprintln!("  Falling back to full-file LLM.");
+                        return resolve_with_llm_full_file(client, stream, input).await;
+                    }
+                    'q' => {
+                        bail!("Aborted by user");
+                    }
+                    _ => {
+                        eprintln!("  Unknown choice. Use y/r/f/q.");
+                        prev = Some(resolved);
+                        attempt -= 1; // don't count garbage input
+                        continue;
+                    }
+                }
+            }
+
+            region_idx += 1;
+            continue;
+        }
+
+        out.push_str(line);
+    }
+
+    if has_conflict_markers(&out) {
+        eprintln!("  Safety fallback: markers remain; using full-file LLM.");
+        return resolve_with_llm_full_file(client, stream, input).await;
     }
 
     Ok(out)
