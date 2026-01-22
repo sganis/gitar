@@ -1,6 +1,7 @@
 // src/git.rs
 use anyhow::{bail, Result};
-use std::path::PathBuf;
+use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 // =============================================================================
@@ -29,6 +30,30 @@ pub struct CommitInfo {
     pub author: String,
     pub date: String,
     pub message: String,
+}
+
+// =============================================================================
+// REPO STATE (Phase 0 foundation for plan/resolve/clean/etc.)
+// =============================================================================
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RepoState {
+    pub merge_in_progress: bool,
+    pub rebase_in_progress: bool,
+    pub cherry_pick_in_progress: bool,
+
+    pub conflicted_files: BTreeSet<String>,
+    pub staged_files: BTreeSet<String>,
+    pub unstaged_files: BTreeSet<String>,
+    pub untracked_files: BTreeSet<String>,
+}
+
+impl RepoState {
+    pub fn is_clean(&self) -> bool {
+        self.conflicted_files.is_empty()
+            && self.staged_files.is_empty()
+            && self.unstaged_files.is_empty()
+            && self.untracked_files.is_empty()
+    }
 }
 
 // =============================================================================
@@ -143,6 +168,113 @@ pub fn get_default_branch() -> String {
     }
     "main".into()
 }
+
+// =============================================================================
+// Repo state
+// =============================================================================
+
+pub fn get_repo_state() -> Result<RepoState> {
+    let status = run_git(&["status", "--porcelain=v2"])?;
+    let mut s = parse_status_porcelain_v2(&status);
+
+    // Add operation-in-progress markers by probing .git
+    if let Some(git_dir) = get_git_dir() {
+        let (merge, rebase, cherry) = detect_ops_in_progress(&git_dir);
+        s.merge_in_progress = merge;
+        s.rebase_in_progress = rebase;
+        s.cherry_pick_in_progress = cherry;
+    }
+
+    Ok(s)
+}
+
+/// Parse `git status --porcelain=v2` output into a RepoState (file sets only).
+///
+/// Notes:
+/// - Lines starting with:
+///   - "1 " = ordinary changed entry (XY status)
+///   - "2 " = rename/copy (XY status; path is last token, old path appears earlier)
+///   - "u " = unmerged/conflict entry
+///   - "? " = untracked
+pub fn parse_status_porcelain_v2(input: &str) -> RepoState {
+    let mut s = RepoState::default();
+
+    for raw in input.lines() {
+        let line = raw.trim_end();
+        if line.is_empty() {
+            continue;
+        }
+
+        if line.starts_with("# ") {
+            continue;
+        }
+
+        // Untracked
+        if let Some(rest) = line.strip_prefix("? ") {
+            let path = rest.trim();
+            if !path.is_empty() {
+                s.untracked_files.insert(path.to_string());
+            }
+            continue;
+        }
+
+        // Unmerged/conflict
+        if line.starts_with("u ") {
+            if let Some(path) = parse_path_last_token(line) {
+                s.conflicted_files.insert(path);
+            }
+            continue;
+        }
+
+        // Ordinary / rename
+        if line.starts_with("1 ") || line.starts_with("2 ") {
+            // Tokenize: "1 <XY> ..."
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 3 {
+                continue;
+            }
+            let xy = parts[1];
+            let x = xy.chars().nth(0).unwrap_or('.');
+            let y = xy.chars().nth(1).unwrap_or('.');
+
+            if let Some(path) = parts.last().map(|p| p.to_string()) {
+                if x != '.' {
+                    s.staged_files.insert(path.clone());
+                }
+                if y != '.' {
+                    s.unstaged_files.insert(path.clone());
+                }
+            }
+            continue;
+        }
+
+        // Other porcelain v2 record types exist (ignored for now).
+    }
+
+    s
+}
+
+fn parse_path_last_token(line: &str) -> Option<String> {
+    let parts: Vec<&str> = line.split_whitespace().collect();
+    parts.last().map(|p| p.to_string()).filter(|p| !p.is_empty())
+}
+
+/// Detect merge/rebase/cherry-pick in progress based on files/dirs in .git.
+///
+/// This is intentionally simple and robust:
+/// - merge: MERGE_HEAD exists
+/// - rebase: rebase-apply or rebase-merge exists
+/// - cherry-pick: CHERRY_PICK_HEAD exists
+pub fn detect_ops_in_progress(git_dir: &Path) -> (bool, bool, bool) {
+    let merge = git_dir.join("MERGE_HEAD").exists();
+    let rebase = git_dir.join("rebase-apply").exists() || git_dir.join("rebase-merge").exists();
+    let cherry = git_dir.join("CHERRY_PICK_HEAD").exists();
+    (merge, rebase, cherry)
+}
+
+// =============================================================================
+// Existing functions
+// =============================================================================
 
 pub fn get_commit_logs(
     limit: Option<usize>,
@@ -310,11 +442,80 @@ pub fn build_diff_target(from: Option<&str>, to: Option<&str>, base_branch: &str
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tempfile::tempdir;
 
-    // ==========================================================================
-    // Git command execution tests
-    // ==========================================================================
+    #[test]
+    fn parse_status_porcelain_v2_basic_sets() {
+        let input = r#"
+1 M. N... 100644 100644 100644 abcdef1 abcdef2 src/main.rs
+1 .M N... 100644 100644 100644 abcdef1 abcdef2 src/lib.rs
+? experiments/tmp.rs
+u UU N... 100644 100644 100644 100644 abcdef1 abcdef2 abcdef3 src/engine.rs
+"#;
+        let s = parse_status_porcelain_v2(input);
+        assert!(s.staged_files.contains("src/main.rs"));
+        assert!(!s.unstaged_files.contains("src/main.rs"));
 
+        assert!(s.unstaged_files.contains("src/lib.rs"));
+        assert!(!s.staged_files.contains("src/lib.rs"));
+
+        assert!(s.untracked_files.contains("experiments/tmp.rs"));
+        assert!(s.conflicted_files.contains("src/engine.rs"));
+    }
+
+    #[test]
+    fn parse_status_porcelain_v2_rename_counts_as_changed() {
+        // For "2" records, the last token is the new path.
+        let input = r#"
+2 R. N... 100644 100644 100644 abcdef1 abcdef2 R100 src/old.rs src/new.rs
+"#;
+        let s = parse_status_porcelain_v2(input);
+        assert!(s.staged_files.contains("src/new.rs"));
+        assert!(!s.unstaged_files.contains("src/new.rs"));
+    }
+
+    #[test]
+    fn detect_ops_in_progress_merge_rebase_cherry_pick() {
+        let dir = tempdir().unwrap();
+        let git_dir = dir.path();
+
+        // None
+        let (m, r, c) = detect_ops_in_progress(git_dir);
+        assert!(!m && !r && !c);
+
+        // Merge
+        std::fs::write(git_dir.join("MERGE_HEAD"), "x").unwrap();
+        let (m, r, c) = detect_ops_in_progress(git_dir);
+        assert!(m);
+        assert!(!r);
+        assert!(!c);
+
+        // Rebase
+        std::fs::create_dir_all(git_dir.join("rebase-merge")).unwrap();
+        let (m, r, c) = detect_ops_in_progress(git_dir);
+        assert!(m);
+        assert!(r);
+        assert!(!c);
+
+        // Cherry-pick
+        std::fs::write(git_dir.join("CHERRY_PICK_HEAD"), "y").unwrap();
+        let (m, r, c) = detect_ops_in_progress(git_dir);
+        assert!(m);
+        assert!(r);
+        assert!(c);
+    }
+
+    #[test]
+    fn repo_state_is_clean_helper() {
+        let s = RepoState::default();
+        assert!(s.is_clean());
+
+        let mut s2 = RepoState::default();
+        s2.untracked_files.insert("x".into());
+        assert!(!s2.is_clean());
+    }
+
+    // Existing tests kept from your file (run_git, truncation, ranges, etc.)
     #[test]
     fn run_git_succeeds_on_valid_command() {
         let result = run_git(&["--version"]);
@@ -344,15 +545,10 @@ mod tests {
 
     #[test]
     fn run_git_status_returns_tuple() {
-        let (stdout, stderr, success) = run_git_status(&["--version"]);
+        let (stdout, _stderr, success) = run_git_status(&["--version"]);
         assert!(success);
         assert!(stdout.contains("git version"));
-        assert!(stderr.is_empty() || !stderr.contains("fatal"));
     }
-
-    // ==========================================================================
-    // Truncation tests
-    // ==========================================================================
 
     #[test]
     fn truncate_diff_short_unchanged() {
@@ -381,10 +577,6 @@ mod tests {
         assert!(result.contains("[... truncated ...]"));
     }
 
-    // ==========================================================================
-    // Range building tests
-    // ==========================================================================
-
     #[test]
     fn build_range_with_ref() {
         assert_eq!(
@@ -403,10 +595,7 @@ mod tests {
 
     #[test]
     fn build_diff_target_with_ref() {
-        assert_eq!(
-            build_diff_target(Some("v1.0.0"), None, "main"),
-            "v1.0.0..HEAD"
-        );
+        assert_eq!(build_diff_target(Some("v1.0.0"), None, "main"), "v1.0.0..HEAD");
     }
 
     #[test]
@@ -416,10 +605,6 @@ mod tests {
             "v1.0.0..v1.0.1"
         );
     }
-
-    // ==========================================================================
-    // Commit log parsing tests
-    // ==========================================================================
 
     #[test]
     fn parse_commit_log_line() {
@@ -438,10 +623,6 @@ mod tests {
         assert_eq!(parts.len(), 4);
         assert_eq!(parts[3], "Message with | pipe | chars");
     }
-
-    // ==========================================================================
-    // Exclude patterns tests
-    // ==========================================================================
 
     #[test]
     fn exclude_patterns_format() {
@@ -462,10 +643,6 @@ mod tests {
         assert!(patterns.iter().any(|p| p.contains("target/*")));
         assert!(patterns.iter().any(|p| p.contains(".env")));
     }
-
-    // ==========================================================================
-    // Repo detection tests (conditional on being in a repo)
-    // ==========================================================================
 
     #[test]
     fn get_default_branch_returns_valid() {

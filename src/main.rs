@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
         bail!("Not a git repository");
     }
 
-    // Handle diff command (doesn't need LLM client)
+    // Handle commands that don't need LLM client
     if let Commands::Diff {
         target,
         staged,
@@ -57,6 +57,10 @@ async fn main() -> Result<()> {
             *stats_only,
             *compare,
         );
+    }
+
+    if let Commands::Plan { apply, suggest } = &cli.command {
+        return cmd_plan(*apply, *suggest);
     }
 
     let repo_root_path = git::get_repo_root_path()?;
@@ -250,7 +254,11 @@ async fn main() -> Result<()> {
         Commands::Models => cmd_models(&client).await?,
 
         // Already handled above
-        Commands::Init | Commands::Config | Commands::Hook { .. } | Commands::Diff { .. } => {
+        Commands::Init
+        | Commands::Config
+        | Commands::Hook { .. }
+        | Commands::Diff { .. }
+        | Commands::Plan { .. } => {
             unreachable!()
         }
     }
