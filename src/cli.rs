@@ -82,20 +82,6 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    /// Plan and execute clean git history from your working tree
-    ///
-    /// In this first iteration, plan prints repo state and a preview of what plan will do.
-    /// Later it will orchestrate: resolve -> clean -> complete -> amend -> split -> apply.
-    Plan {
-        /// Apply the plan (will become the default later). For now, prints a preview.
-        #[arg(long, default_value_t = false)]
-        apply: bool,
-
-        /// Suggest-only mode (default). Prints what would happen, no changes.
-        #[arg(long, default_value_t = true)]
-        suggest: bool,
-    },
-
     /// Create a commit with an AI-generated message
     ///
     /// By default this will generate a message from staged changes, then run `git commit`.
@@ -343,6 +329,36 @@ pub enum Commands {
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         algo: u8,
     },
+
+    /// Resolve merge/rebase/cherry-pick conflicts (semantic synthesis).
+    ///
+    /// Default: inspect and propose. Use --apply to write + stage.
+    Resolve {
+        /// Apply suggested resolutions (writes files + stages them)
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+
+        /// Assume "yes" for prompts (required with --apply for now)
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+
+        /// Stream output (per-command override). Global --stream also enables streaming.
+        #[arg(long, default_value_t = false)]
+        stream: bool,
+    },
+
+    /// Print a plan for turning the current repo state into clean history.
+    ///
+    /// This is the "done coding, make it professional" entrypoint.
+    Plan {
+        /// Execute the plan (scaffold: currently a no-op)
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+
+        /// Print next-command suggestions based on repo state
+        #[arg(long, default_value_t = false)]
+        suggest: bool,
+    },
 }
 
 #[derive(Subcommand, Clone)]
@@ -379,10 +395,14 @@ mod tests {
     use super::*;
     use clap::Parser;
 
+    // ==========================================================================
+    // Core command parsing tests
+    // ==========================================================================
+
     #[test]
     fn cli_parses_all_commands() {
+        // Test that all command variants parse correctly
         let commands = [
-            vec!["gitar", "plan"],
             vec!["gitar", "commit"],
             vec!["gitar", "staged"],
             vec!["gitar", "unstaged"],
@@ -396,6 +416,8 @@ mod tests {
             vec!["gitar", "models"],
             vec!["gitar", "diff"],
             vec!["gitar", "split"],
+            vec!["gitar", "resolve"],
+            vec!["gitar", "plan"],
             vec!["gitar", "hook", "install"],
             vec!["gitar", "hook", "uninstall"],
         ];
@@ -406,16 +428,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn cli_parses_plan_flags() {
-        let cli = Cli::try_parse_from(["gitar", "plan", "--apply"]).unwrap();
-        if let Commands::Plan { apply, suggest } = cli.command {
-            assert!(apply);
-            assert!(suggest);
-        } else {
-            panic!("Expected Plan command");
-        }
-    }
+    // ==========================================================================
+    // Algorithm flag tests
+    // ==========================================================================
 
     #[test]
     fn cli_parses_algo_flag() {
@@ -442,6 +457,10 @@ mod tests {
         assert!(Cli::try_parse_from(["gitar", "commit", "--algo", "5"]).is_err());
     }
 
+    // ==========================================================================
+    // Provider tests
+    // ==========================================================================
+
     #[test]
     fn cli_parses_valid_providers() {
         let providers = [
@@ -457,6 +476,10 @@ mod tests {
     fn cli_rejects_invalid_provider() {
         assert!(Cli::try_parse_from(["gitar", "--provider", "invalid", "staged"]).is_err());
     }
+
+    // ==========================================================================
+    // Preset tests
+    // ==========================================================================
 
     #[test]
     fn cli_parses_valid_presets() {
@@ -481,6 +504,10 @@ mod tests {
         assert!(Cli::try_parse_from(["gitar", "--preset", "invalid", "staged"]).is_err());
     }
 
+    // ==========================================================================
+    // Global options tests
+    // ==========================================================================
+
     #[test]
     fn cli_parses_global_options() {
         let cli = Cli::try_parse_from([
@@ -501,6 +528,10 @@ mod tests {
         assert!(cli.stream);
     }
 
+    // ==========================================================================
+    // Commit-specific flags tests
+    // ==========================================================================
+
     #[test]
     fn cli_parses_commit_flags() {
         let cli = Cli::try_parse_from(["gitar", "commit", "-p", "-a", "--no-tag"]).unwrap();
@@ -516,6 +547,10 @@ mod tests {
         }
     }
 
+    // ==========================================================================
+    // Diff command tests
+    // ==========================================================================
+
     #[test]
     fn cli_parses_diff_options() {
         let cli = Cli::try_parse_from(["gitar", "diff", "--compare", "--stats"]).unwrap();
@@ -527,11 +562,49 @@ mod tests {
         }
     }
 
+    // ==========================================================================
+    // Resolve + Plan command tests
+    // ==========================================================================
+
+    #[test]
+    fn cli_parses_resolve_flags() {
+        let cli =
+            Cli::try_parse_from(["gitar", "resolve", "--apply", "--yes", "--stream"]).unwrap();
+        if let Commands::Resolve { apply, yes, stream } = cli.command {
+            assert!(apply);
+            assert!(yes);
+            assert!(stream);
+        } else {
+            panic!("Expected Resolve command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_plan_flags() {
+        let cli = Cli::try_parse_from(["gitar", "plan", "--apply", "--suggest"]).unwrap();
+        if let Commands::Plan { apply, suggest } = cli.command {
+            assert!(apply);
+            assert!(suggest);
+        } else {
+            panic!("Expected Plan command");
+        }
+    }
+
+    // ==========================================================================
+    // Hook script tests
+    // ==========================================================================
+
     #[test]
     fn hook_script_contains_required_elements() {
         assert!(HOOK_SCRIPT.contains("gitar-hook"), "Should contain marker");
-        assert!(HOOK_SCRIPT.contains("COMMIT_SOURCE"), "Should check commit source");
-        assert!(HOOK_SCRIPT.contains("command -v gitar"), "Should check gitar installed");
+        assert!(
+            HOOK_SCRIPT.contains("COMMIT_SOURCE"),
+            "Should check commit source"
+        );
+        assert!(
+            HOOK_SCRIPT.contains("command -v gitar"),
+            "Should check gitar installed"
+        );
         assert!(HOOK_SCRIPT.contains("--write-to"), "Should use write-to flag");
     }
 }

@@ -37,7 +37,7 @@ async fn main() -> Result<()> {
         bail!("Not a git repository");
     }
 
-    // Handle commands that don't need LLM client
+    // Handle diff command (doesn't need LLM client)
     if let Commands::Diff {
         target,
         staged,
@@ -59,6 +59,7 @@ async fn main() -> Result<()> {
         );
     }
 
+    // Handle plan command (doesn't need LLM client)
     if let Commands::Plan { apply, suggest } = &cli.command {
         return cmd_plan(*apply, *suggest);
     }
@@ -251,6 +252,23 @@ async fn main() -> Result<()> {
 
         Commands::Split { algo } => cmd_split(&client, config.preset, algo).await?,
 
+        Commands::Resolve {
+            apply,
+            yes,
+            stream,
+        } => {
+            let do_stream = config.stream || stream;
+            cmd_resolve(
+                &client,
+                apply,
+                yes,
+                do_stream,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
+        }
+
         Commands::Models => cmd_models(&client).await?,
 
         // Already handled above
@@ -258,9 +276,7 @@ async fn main() -> Result<()> {
         | Commands::Config
         | Commands::Hook { .. }
         | Commands::Diff { .. }
-        | Commands::Plan { .. } => {
-            unreachable!()
-        }
+        | Commands::Plan { .. } => unreachable!(),
     }
 
     Ok(())
