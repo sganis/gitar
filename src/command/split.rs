@@ -3,7 +3,9 @@ use anyhow::Result;
 use std::io::{self, Write};
 
 use crate::client::LlmClient;
+use crate::context::load_all_context;
 use crate::git;
+use crate::prompt::template::{commit_system_with_context, COMMIT_USER};
 use crate::prompt::Preset;
 
 // =============================================================================
@@ -60,6 +62,9 @@ struct CommitPlan {
 pub async fn cmd_split(client: &LlmClient, preset: Preset, algo: u8) -> Result<()> {
     println!("\nGitar Split - Interactive commit splitting\n");
 
+    // Load contexts once (project + user)
+    let (project_ctx, user_ctx) = load_all_context();
+
     // Step 1: Scan the diff
     println!("Scanning working tree changes...");
     let changes = scan_diff()?;
@@ -79,7 +84,16 @@ pub async fn cmd_split(client: &LlmClient, preset: Preset, algo: u8) -> Result<(
 
     // Step 3: Use LLM to refine grouping and generate messages
     println!("Using AI to refine groups and generate commit messages...");
-    let plan = generate_plan(client, preset, algo, &changes, initial_groups).await?;
+    let plan = generate_plan(
+        client,
+        preset,
+        algo,
+        &changes,
+        initial_groups,
+        project_ctx.as_deref(),
+        user_ctx.as_deref(),
+    )
+    .await?;
 
     if plan.groups.is_empty() {
         println!("\x1b[33mWarning: No commit groups generated.\x1b[0m");
@@ -224,25 +238,51 @@ fn categorize_file(path: &str) -> FileCategory {
 fn group_changes(changes: &[FileChange]) -> Vec<Vec<FileChange>> {
     let mut groups: Vec<Vec<FileChange>> = Vec::new();
 
-    let docs: Vec<FileChange> = changes.iter().filter(|c| c.category == FileCategory::Documentation).cloned().collect();
-    if !docs.is_empty() { groups.push(docs); }
+    let docs: Vec<FileChange> = changes
+        .iter()
+        .filter(|c| c.category == FileCategory::Documentation)
+        .cloned()
+        .collect();
+    if !docs.is_empty() {
+        groups.push(docs);
+    }
 
-    let tests: Vec<FileChange> = changes.iter().filter(|c| c.category == FileCategory::Tests).cloned().collect();
-    if !tests.is_empty() { groups.push(tests); }
+    let tests: Vec<FileChange> = changes
+        .iter()
+        .filter(|c| c.category == FileCategory::Tests)
+        .cloned()
+        .collect();
+    if !tests.is_empty() {
+        groups.push(tests);
+    }
 
-    let config: Vec<FileChange> = changes.iter().filter(|c| c.category == FileCategory::Config).cloned().collect();
-    if !config.is_empty() { groups.push(config); }
+    let config: Vec<FileChange> = changes
+        .iter()
+        .filter(|c| c.category == FileCategory::Config)
+        .cloned()
+        .collect();
+    if !config.is_empty() {
+        groups.push(config);
+    }
 
-    let renames: Vec<FileChange> = changes.iter().filter(|c| matches!(c.status, ChangeStatus::Renamed { .. })).cloned().collect();
-    if !renames.is_empty() { groups.push(renames); }
+    let renames: Vec<FileChange> = changes
+        .iter()
+        .filter(|c| matches!(c.status, ChangeStatus::Renamed { .. }))
+        .cloned()
+        .collect();
+    if !renames.is_empty() {
+        groups.push(renames);
+    }
 
-    let code_changes: Vec<FileChange> = changes.iter()
+    let code_changes: Vec<FileChange> = changes
+        .iter()
         .filter(|c| c.category == FileCategory::Code && !matches!(c.status, ChangeStatus::Renamed { .. }))
         .cloned()
         .collect();
 
     if !code_changes.is_empty() {
-        let mut dir_groups: std::collections::HashMap<String, Vec<FileChange>> = std::collections::HashMap::new();
+        let mut dir_groups: std::collections::HashMap<String, Vec<FileChange>> =
+            std::collections::HashMap::new();
 
         for change in code_changes {
             let dir = if let Some(idx) = change.path.find('/') {
@@ -271,6 +311,8 @@ async fn generate_plan(
     _algo: u8,
     _changes: &[FileChange],
     groups: Vec<Vec<FileChange>>,
+    project_ctx: Option<&str>,
+    user_ctx: Option<&str>,
 ) -> Result<CommitPlan> {
     let mut commit_groups = Vec::new();
 
@@ -279,11 +321,12 @@ async fn generate_plan(
 
         let diff_output = get_diff_for_files(&files)?;
 
-        let system_prompt = build_system_prompt(preset, &files);
-        let user_prompt = format!(
-            "Generate a concise commit message (one line, imperative mood) for these changes:\n\n{}",
-            diff_output
-        );
+        // Use the same commit system prompt used by `gitar commit`,
+        // but with project/user context injected.
+        let system_prompt = commit_system_with_context(preset, project_ctx, user_ctx);
+
+        // Reuse the standard user template too.
+        let user_prompt = COMMIT_USER.replace("{diff}", &diff_output);
 
         let message = match client.chat(&system_prompt, &user_prompt, false).await {
             Ok(msg) => msg.trim().to_string(),
@@ -310,20 +353,6 @@ async fn generate_plan(
     }
 
     Ok(CommitPlan { groups: commit_groups })
-}
-
-fn build_system_prompt(preset: Preset, _files: &[String]) -> String {
-    let preset_hint = match preset {
-        Preset::Rust => "Focus on Rust conventions",
-        Preset::JavaScript => "Focus on JavaScript conventions",
-        Preset::Python => "Focus on Python conventions",
-        Preset::Default => "Focus on clear, concise descriptions",
-    };
-
-    format!(
-        "You are a commit message generator. Generate a single-line commit message in imperative mood. {}.",
-        preset_hint
-    )
 }
 
 fn get_diff_for_files(files: &[String]) -> Result<String> {

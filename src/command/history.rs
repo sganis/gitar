@@ -2,10 +2,11 @@
 use anyhow::Result;
 
 use crate::client::LlmClient;
+use crate::context::load_all_context;
 use crate::git::{get_commit_diff, get_commit_logs};
 use crate::prompt::preset::Preset;
 use crate::prompt::secret::SecretAction;
-use crate::prompt::template::{history_system, HISTORY_USER};
+use crate::prompt::template::{history_system_with_context, HISTORY_USER};
 
 use super::{apply_smart_diff, SHORT_HASH_LEN};
 
@@ -53,6 +54,9 @@ pub async fn cmd_history(
 
     println!("Processing {} commits...\n", commits.len());
 
+    let (project_ctx, user_ctx) = load_all_context();
+    let system = history_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
+
     for (i, c) in commits.iter().enumerate() {
         let h = &c.hash[..SHORT_HASH_LEN.min(c.hash.len())];
         let d = &c.date[..DATE_LEN.min(c.date.len())];
@@ -92,7 +96,6 @@ pub async fn cmd_history(
             .replace("{original_message}", &c.message)
             .replace("{diff}", &diff);
 
-        let system = history_system(preset);
         match client.chat(&system, &prompt, stream).await {
             Ok(r) => {
                 if stream {

@@ -2,9 +2,10 @@
 use anyhow::Result;
 
 use crate::client::LlmClient;
+use crate::context::load_all_context;
 use crate::git::{get_commit_logs, get_diff};
 use crate::prompt::secret::SecretAction;
-use crate::prompt::template::{CHANGELOG_SYSTEM, CHANGELOG_USER};
+use crate::prompt::template::{changelog_system_with_context, CHANGELOG_USER};
 
 use super::{apply_smart_diff, SHORT_HASH_LEN};
 
@@ -93,7 +94,10 @@ pub async fn cmd_changelog(
         .replace("{commits}", &ct)
         .replace("{diff}", &diff);
 
-    let r = client.chat(CHANGELOG_SYSTEM, &prompt, stream).await?;
+    let (project_ctx, user_ctx) = load_all_context();
+    let system = changelog_system_with_context(project_ctx.as_deref(), user_ctx.as_deref());
+
+    let r = client.chat(&system, &prompt, stream).await?;
     if stream {
         println!();
     } else {

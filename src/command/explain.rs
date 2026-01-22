@@ -2,9 +2,10 @@
 use anyhow::Result;
 
 use crate::client::LlmClient;
+use crate::context::load_all_context;
 use crate::git::{build_diff_target, get_commit_logs, get_diff, get_diff_stats};
 use crate::prompt::secret::SecretAction;
-use crate::prompt::template::{EXPLAIN_SYSTEM, EXPLAIN_USER};
+use crate::prompt::template::{explain_system_with_context, EXPLAIN_USER};
 
 use super::apply_smart_diff;
 
@@ -76,7 +77,10 @@ pub async fn cmd_explain(
         .replace("{stats}", &stats)
         .replace("{diff}", &diff);
 
-    let r = client.chat(EXPLAIN_SYSTEM, &prompt, stream).await?;
+    let (project_ctx, user_ctx) = load_all_context();
+    let system = explain_system_with_context(project_ctx.as_deref(), user_ctx.as_deref());
+
+    let r = client.chat(&system, &prompt, stream).await?;
     if stream {
         println!();
     } else {

@@ -1,95 +1,10 @@
-// src/commands/config.rs
-use anyhow::{bail, Result};
+// src/command/config.rs
+use anyhow::Result;
 
-use crate::cli::Cli;
-use crate::config::{normalize_provider, Config, DEFAULT_MAX_DIFF_CHARS};
+use crate::config::{Config, DEFAULT_MAX_DIFF_CHARS};
 use crate::git;
 use crate::prompt::preset::Preset;
 use std::path::PathBuf;
-
-pub fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
-    let mut config = file.clone();
-
-    let provider = cli
-        .provider
-        .as_ref()
-        .map(|p| normalize_provider(p).to_string())
-        .or_else(|| {
-            config
-                .default_provider
-                .as_ref()
-                .map(|p| normalize_provider(p).to_string())
-        });
-
-    if let Some(ref p) = provider {
-        let pc = config.get_provider_mut(p);
-        if cli.api_key.is_some() {
-            pc.api_key = cli.api_key.clone();
-        }
-        if cli.model.is_some() {
-            pc.model = cli.model.clone();
-        }
-        if cli.max_tokens.is_some() {
-            pc.max_tokens = cli.max_tokens;
-        }
-        if cli.temperature.is_some() {
-            pc.temperature = cli.temperature;
-        }
-        if cli.base_url.is_some() {
-            pc.base_url = cli.base_url.clone();
-        }
-        if cli.stream {
-            pc.stream = Some(true);
-        }
-
-        if cli.provider.is_some() {
-            config.default_provider = Some(p.clone());
-        }
-    } else if cli.stream
-        || cli.api_key.is_some()
-        || cli.model.is_some()
-        || cli.max_tokens.is_some()
-        || cli.temperature.is_some()
-    {
-        bail!("Please specify --provider when setting provider-specific options like --stream, --model, --api-key, etc.");
-    }
-
-    if cli.base_branch.is_some() {
-        config.base_branch = cli.base_branch.clone();
-    }
-
-    // Handle preset: normalize aliases to canonical names
-    if let Some(ref preset_str) = cli.preset {
-        let lower = preset_str.to_lowercase();
-        let normalized = match lower.as_str() {
-            "rs" => "rust",
-            "js" => "javascript",
-            "py" => "python",
-            "auto" | "default" => "auto",
-            _ => &lower,
-        };
-        config.preset = Some(normalized.to_string());
-    }
-
-    config.save()?;
-
-    if let Some(p) = &provider {
-        if cli.provider.is_some() {
-            println!("Default provider set to: {}", p);
-        } else {
-            println!("Updated provider: {}", p);
-        }
-    }
-
-    if cli.preset.is_some() {
-        println!(
-            "Preset set to: {}",
-            config.preset.as_deref().unwrap_or("auto")
-        );
-    }
-
-    Ok(())
-}
 
 pub fn cmd_config() -> Result<()> {
     let config = Config::load();
@@ -155,10 +70,7 @@ pub fn cmd_config() -> Result<()> {
                     .map(|k| format!("{}...", &k[..8.min(k.len())]))
                     .unwrap_or_else(|| format!("(env: {})", env_var))
             );
-            println!(
-                "  model:       {}",
-                p.model.as_deref().unwrap_or("(default)")
-            );
+            println!("  model:       {}", p.model.as_deref().unwrap_or("(default)"));
             println!(
                 "  max_tokens:  {}",
                 p.max_tokens

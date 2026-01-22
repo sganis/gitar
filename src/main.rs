@@ -7,6 +7,7 @@ mod git;
 mod prompt;
 mod provider;
 mod types;
+mod context;
 
 use anyhow::{bail, Result};
 use clap::Parser;

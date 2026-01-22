@@ -1,6 +1,7 @@
 // src/command/mod.rs
 mod changelog;
 mod commit;
+mod init;
 mod config;
 mod diff;
 mod explain;
@@ -13,7 +14,8 @@ mod version;
 
 pub use changelog::cmd_changelog;
 pub use commit::{cmd_commit, cmd_staged, cmd_unstaged};
-pub use config::{cmd_config, cmd_init};
+pub use config::cmd_config;
+pub use init::cmd_init;
 pub use diff::cmd_diff;
 pub use explain::cmd_explain;
 pub use history::cmd_history;

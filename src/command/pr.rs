@@ -2,11 +2,12 @@
 use anyhow::Result;
 
 use crate::client::LlmClient;
+use crate::context::load_all_context;
 use crate::git::{
     build_diff_target, build_range, get_commit_logs, get_current_branch, get_diff, get_diff_stats,
 };
 use crate::prompt::secret::SecretAction;
-use crate::prompt::template::{PR_SYSTEM, PR_USER};
+use crate::prompt::template::{pr_system_with_context, PR_USER};
 
 use super::apply_smart_diff;
 
@@ -72,7 +73,10 @@ pub async fn cmd_pr(
         .replace("{stats}", &stats)
         .replace("{diff}", &diff);
 
-    let r = client.chat(PR_SYSTEM, &prompt, stream).await?;
+    let (project_ctx, user_ctx) = load_all_context();
+    let system = pr_system_with_context(project_ctx.as_deref(), user_ctx.as_deref());
+
+    let r = client.chat(&system, &prompt, stream).await?;
     if stream {
         println!();
     } else {

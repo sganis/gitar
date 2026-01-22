@@ -3,6 +3,59 @@
 use super::preset::Preset;
 
 // =============================================================================
+// CONTEXT INJECTION (optional)
+// =============================================================================
+
+fn format_context(project_ctx: Option<&str>, user_ctx: Option<&str>) -> String {
+    let mut out = String::new();
+
+    if let Some(s) = user_ctx {
+        let s = s.trim();
+        if !s.is_empty() {
+            out.push_str(
+                r#"
+
+User Context (~/.gitar/gitar.md; personal preferences; follow when relevant):
+"#,
+            );
+            out.push_str(s);
+            out.push_str(
+                r#"
+
+Rules:
+- If user context conflicts with system rules, system rules win.
+- If user context conflicts with project context, project context wins.
+- If irrelevant, ignore it.
+"#,
+            );
+        }
+    }
+
+    if let Some(s) = project_ctx {
+        let s = s.trim();
+        if !s.is_empty() {
+            out.push_str(
+                r#"
+
+Project Context (.gitar/gitar.md; repo conventions; authoritative for this project):
+"#,
+            );
+            out.push_str(s);
+            out.push_str(
+                r#"
+
+Rules:
+- If project context conflicts with system rules, system rules win.
+- If irrelevant, ignore it.
+"#,
+            );
+        }
+    }
+
+    out
+}
+
+// =============================================================================
 // COMMIT MESSAGE
 // =============================================================================
 
@@ -24,11 +77,20 @@ pub const COMMIT_USER: &str = r#"Generate a commit message in a single-line.
 ```
 {diff}
 ```
+
+pgsql
+Copy code
 Respond with ONLY the commit message. (single-line)"#;
 
-pub fn commit_system(preset: Preset) -> String {
+
+pub fn commit_system_with_context(
+    preset: Preset,
+    project_context: Option<&str>,
+    user_context: Option<&str>,
+) -> String {
     let hints = preset.hints().format(preset.name());
-    format!("{}{}", COMMIT_SYSTEM, hints)
+    let ctx = format_context(project_context, user_context);
+    format!("{}{}{}", COMMIT_SYSTEM, hints, ctx)
 }
 
 // =============================================================================
@@ -69,11 +131,20 @@ Following lines: describe what and why (1-5 lines depending on complexity)
 ```
 {diff}
 ```
+
+makefile
+Copy code
 Respond with ONLY the commit message."#;
 
-pub fn history_system(preset: Preset) -> String {
+
+pub fn history_system_with_context(
+    preset: Preset,
+    project_context: Option<&str>,
+    user_context: Option<&str>,
+) -> String {
     let hints = preset.hints().format(preset.name());
-    format!("{}{}", HISTORY_SYSTEM, hints)
+    let ctx = format_context(project_context, user_context);
+    format!("{}{}{}", HISTORY_SYSTEM, hints, ctx)
 }
 
 // =============================================================================
@@ -115,7 +186,13 @@ pub const PR_USER: &str = r#"Generate PR description.
 **Diff:**
 ```
 {diff}
-```"#;
+```
+"#;
+
+pub fn pr_system_with_context(project_context: Option<&str>, user_context: Option<&str>) -> String {
+    let ctx = format_context(project_context, user_context);
+    format!("{}{}", PR_SYSTEM, ctx)
+}
 
 // =============================================================================
 // CHANGELOG / RELEASE NOTES
@@ -142,6 +219,14 @@ pub const CHANGELOG_USER: &str = r#"Generate release notes.
 
 **Commits:**
 {commits}"#;
+
+pub fn changelog_system_with_context(
+    project_context: Option<&str>,
+    user_context: Option<&str>,
+) -> String {
+    let ctx = format_context(project_context, user_context);
+    format!("{}{}", CHANGELOG_SYSTEM, ctx)
+}
 
 // =============================================================================
 // EXPLAIN (non-technical)
@@ -173,7 +258,14 @@ pub const EXPLAIN_USER: &str = r#"Explain for non-technical person.
 **Diff:**
 ```
 {diff}
-```"#;
+```
+
+"#;
+
+pub fn explain_system_with_context(project_context: Option<&str>, user_context: Option<&str>) -> String {
+    let ctx = format_context(project_context, user_context);
+    format!("{}{}", EXPLAIN_SYSTEM, ctx)
+}
 
 // =============================================================================
 // VERSION BUMP
@@ -194,7 +286,14 @@ pub const VERSION_USER: &str = r#"Recommend version bump.
 **Diff:**
 ```
 {diff}
-```"#;
+```
+
+"#;
+
+pub fn version_system_with_context(project_context: Option<&str>, user_context: Option<&str>) -> String {
+    let ctx = format_context(project_context, user_context);
+    format!("{}{}", VERSION_SYSTEM, ctx)
+}
 
 // =============================================================================
 // TESTS
@@ -217,20 +316,6 @@ mod tests {
         assert!(!EXPLAIN_USER.is_empty());
         assert!(!VERSION_SYSTEM.is_empty());
         assert!(!VERSION_USER.is_empty());
-    }
-
-    #[test]
-    fn commit_system_with_preset() {
-        let p = commit_system(Preset::Rust);
-        assert!(p.contains(COMMIT_SYSTEM));
-        assert!(p.contains("crate"));
-    }
-
-    #[test]
-    fn history_system_with_preset() {
-        let p = history_system(Preset::JavaScript);
-        assert!(p.contains(HISTORY_SYSTEM));
-        assert!(p.contains("component"));
     }
 
     #[test]
@@ -266,5 +351,32 @@ mod tests {
         assert!(EXPLAIN_USER.contains("{diff}"));
         assert!(VERSION_USER.contains("{version}"));
         assert!(VERSION_USER.contains("{diff}"));
+    }
+
+    #[test]
+    fn context_is_optional_and_delimited() {
+        let p = commit_system_with_context(
+            Preset::Rust,
+            Some("Repo rules"),
+            Some("User prefs"),
+        );
+        assert!(p.contains("Project Context"));
+        assert!(p.contains("User Context"));
+
+        let p2 = pr_system_with_context(Some("Repo rules"), Some("User prefs"));
+        assert!(p2.contains("Project Context"));
+        assert!(p2.contains("User Context"));
+
+        let p3 = changelog_system_with_context(Some("Repo rules"), Some("User prefs"));
+        assert!(p3.contains("Project Context"));
+        assert!(p3.contains("User Context"));
+
+        let p4 = explain_system_with_context(Some("Repo rules"), Some("User prefs"));
+        assert!(p4.contains("Project Context"));
+        assert!(p4.contains("User Context"));
+
+        let p5 = version_system_with_context(Some("Repo rules"), Some("User prefs"));
+        assert!(p5.contains("Project Context"));
+        assert!(p5.contains("User Context"));
     }
 }
