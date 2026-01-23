@@ -9,8 +9,9 @@ mod history;
 mod hook;
 mod models;
 mod pr;
-mod version;
 mod resolve;
+mod squash;
+mod rewrite;
 mod plan;
 mod release;
 
@@ -24,8 +25,9 @@ pub use history::cmd_history;
 pub use hook::cmd_hook;
 pub use models::cmd_models;
 pub use pr::cmd_pr;
-pub use version::cmd_version;
 pub use resolve::cmd_resolve;
+pub use squash::cmd_squash;
+pub use rewrite::cmd_rewrite;
 #[allow(unused_imports)]
 pub use resolve::{cmd_resolve_with_resolver, ConflictInput, ConflictResolver};
 pub use plan::{cmd_plan, AnalysisMode};

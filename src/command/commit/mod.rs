@@ -17,6 +17,7 @@ pub async fn cmd_commit(
     preset: Preset,
     push: bool,
     all: bool,
+    amend: bool,
     tag: bool,
     write_to: Option<String>,
     silent: bool,
@@ -25,23 +26,38 @@ pub async fn cmd_commit(
     max_diff_chars: usize,
     secret_action: SecretAction,
 ) -> Result<()> {
-    let staged = run_git(&["diff", "--cached"]).unwrap_or_default();
-    let unstaged = run_git(&["diff"]).unwrap_or_default();
-
-    let mut raw_diff = String::new();
-    if !staged.trim().is_empty() {
-        raw_diff.push_str(&staged);
-    }
-    if !unstaged.trim().is_empty() {
-        if !raw_diff.is_empty() {
-            raw_diff.push('\n');
+    // If amending, get the diff from HEAD~1..HEAD
+    let raw_diff = if amend {
+        if !silent {
+            println!("Generating new message for last commit...");
         }
-        raw_diff.push_str(&unstaged);
-    }
+        // Get the diff of the last commit
+        run_git(&["diff", "HEAD~1..HEAD"])?
+    } else {
+        // Normal commit flow: get staged and unstaged changes
+        let staged = run_git(&["diff", "--cached"]).unwrap_or_default();
+        let unstaged = run_git(&["diff"]).unwrap_or_default();
+
+        let mut diff = String::new();
+        if !staged.trim().is_empty() {
+            diff.push_str(&staged);
+        }
+        if !unstaged.trim().is_empty() {
+            if !diff.is_empty() {
+                diff.push('\n');
+            }
+            diff.push_str(&unstaged);
+        }
+        diff
+    };
 
     if raw_diff.trim().is_empty() {
         if !silent {
-            println!("Nothing to commit.");
+            if amend {
+                println!("Last commit has no changes.");
+            } else {
+                println!("Nothing to commit.");
+            }
         }
         return Ok(());
     }
@@ -120,8 +136,8 @@ pub async fn cmd_commit(
         }
     };
 
-    // Stage all changes if requested
-    if all {
+    // Stage all changes if requested (not applicable when amending)
+    if all && !amend {
         if !silent {
             println!("Staging all...");
         }
@@ -129,7 +145,11 @@ pub async fn cmd_commit(
     }
 
     if !silent {
-        println!("Committing...");
+        if amend {
+            println!("Amending commit...");
+        } else {
+            println!("Committing...");
+        }
     }
 
     let full_msg = if tag {
@@ -138,8 +158,13 @@ pub async fn cmd_commit(
         commit_message
     };
 
-    // Use -m (not -am) since we already staged with add -A if needed
-    let (out, err, ok) = run_git_status(&["commit", "-m", &full_msg]);
+    // Use --amend when amending, otherwise regular commit
+    let (out, err, ok) = if amend {
+        run_git_status(&["commit", "--amend", "-m", &full_msg])
+    } else {
+        run_git_status(&["commit", "-m", &full_msg])
+    };
+
     if !silent {
         println!("{}{}", out, err);
     }

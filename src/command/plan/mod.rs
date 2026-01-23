@@ -9,6 +9,7 @@ use anyhow::{bail, Result};
 use crate::client::LlmClient;
 use crate::config::ResolvedConfig;
 use crate::git;
+use crate::command::cmd_resolve;
 
 // Re-export public API
 pub use analyze::AnalysisMode;
@@ -19,6 +20,7 @@ pub async fn cmd_plan(
     config: &ResolvedConfig,
     mode: Option<AnalysisMode>,
     apply: bool,
+    resolve: bool,
     suggest: bool,
     interactive: bool,
     algo: u8,
@@ -28,10 +30,24 @@ pub async fn cmd_plan(
         return cmd_plan_suggest(mode);
     }
 
-    // Check for conflicts first
+    // Check for conflicts and resolve if requested
     if git::has_conflicts()? {
-        println!("Conflicts detected. Run `gitar resolve` first.");
-        return Ok(());
+        if resolve {
+            println!("Conflicts detected. Resolving...\n");
+            cmd_resolve(
+                client,
+                apply, // Use same apply flag as plan
+                true,  // Auto-confirm (yes=true)
+                config.stream,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?;
+            println!("\nConflicts resolved. Continuing with plan...\n");
+        } else {
+            println!("Conflicts detected. Run `gitar resolve` or use `gitar plan --resolve`.");
+            return Ok(());
+        }
     }
 
     // Step 1: Analyze repository state

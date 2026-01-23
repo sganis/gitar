@@ -23,7 +23,8 @@ use clap::{Parser, Subcommand};
     gitar hook install              # Install git hook for auto-commit messages
     gitar hook uninstall            # Remove gitar git hook
 
-    gitar version v1.0.0            # Version bump since tag
+    gitar release --bump auto       # LLM-powered version bump analysis
+    gitar release --bump minor      # Force minor version bump
 
     gitar diff --compare            # Compare smart diff algorithms
     gitar commit --algo 3            # Use hunk-level analysis for large refactors
@@ -86,6 +87,7 @@ pub enum Commands {
     ///
     /// By default this will generate a message from staged changes, then run `git commit`.
     /// Use `-a` to stage all changes first, and `-p` to push after committing.
+    /// Use `--amend` to regenerate the message for the last commit.
     Commit {
         /// Push after committing
         #[arg(short = 'p', long)]
@@ -94,6 +96,10 @@ pub enum Commands {
         /// Stage all changes before committing (`git add -A`)
         #[arg(short = 'a', long)]
         all: bool,
+
+        /// Amend the last commit with a new AI-generated message
+        #[arg(long)]
+        amend: bool,
 
         /// Add AI model/provider tag to the commit message (default: true)
         #[arg(long, default_value = "true")]
@@ -253,27 +259,6 @@ pub enum Commands {
         algo: u8,
     },
 
-    /// Suggest a semantic version bump (major/minor/patch) from changes
-    ///
-    /// Optionally provide the current version to influence the recommendation.
-    Version {
-        /// Base ref to compare against (tag, commit, branch)
-        #[arg(value_name = "REF")]
-        base: Option<String>,
-
-        /// Ending ref (default: HEAD)
-        #[arg(long)]
-        to: Option<String>,
-
-        /// Current version (e.g. 1.2.3) used to contextualize the bump suggestion
-        #[arg(long)]
-        current: Option<String>,
-
-        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
-        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        algo: u8,
-    },
-
     /// Manage git hooks for automatic commit message generation
     Hook {
         #[command(subcommand)]
@@ -335,6 +320,18 @@ pub enum Commands {
         /// Base reference (tag/commit/branch) - defaults to latest tag
         #[arg(long)]
         from: Option<String>,
+
+        /// Version bump strategy: auto (LLM analysis), major, minor, or patch
+        #[arg(long, default_value = "auto")]
+        bump: String,
+
+        /// Ending ref (default: HEAD) - used for LLM version analysis
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Diff algorithm for LLM analysis: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
+        algo: u8,
     },
 
     /// Resolve merge/rebase/cherry-pick conflicts (semantic synthesis).
@@ -354,6 +351,32 @@ pub enum Commands {
         stream: bool,
     },
 
+    /// Squash recent commits into one with an AI-generated message
+    ///
+    /// Combines multiple commits into a single commit with a unified message.
+    Squash {
+        /// Number of commits to squash (e.g., 3) or a ref (e.g., HEAD~5, v1.0.0)
+        #[arg(value_name = "COUNT_OR_REF")]
+        target: String,
+
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
+        algo: u8,
+    },
+
+    /// Rewrite commit history with AI-generated messages
+    ///
+    /// Interactively regenerate commit messages for a range of commits.
+    Rewrite {
+        /// Number of commits to rewrite (e.g., 5) or a ref (e.g., HEAD~5, v1.0.0)
+        #[arg(value_name = "COUNT_OR_REF")]
+        target: String,
+
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
+        algo: u8,
+    },
+
     /// Analyze repo state and create a multi-commit plan
     ///
     /// The plan command analyzes your changes and proposes an optimal commit structure.
@@ -362,6 +385,10 @@ pub enum Commands {
         /// Execute the plan after approval
         #[arg(long, default_value_t = false)]
         apply: bool,
+
+        /// Auto-resolve conflicts before planning
+        #[arg(long, default_value_t = false)]
+        resolve: bool,
 
         /// Legacy mode: print next-command suggestions based on repo state
         #[arg(long, default_value_t = false)]
@@ -441,7 +468,6 @@ mod tests {
             vec!["gitar", "pr", "main"],
             vec!["gitar", "changelog"],
             vec!["gitar", "explain"],
-            vec!["gitar", "version"],
             vec!["gitar", "history"],
             vec!["gitar", "init"],
             vec!["gitar", "config"],
@@ -450,6 +476,8 @@ mod tests {
             vec!["gitar", "resolve"],
             vec!["gitar", "plan"],
             vec!["gitar", "release"],
+            vec!["gitar", "squash", "3"],
+            vec!["gitar", "rewrite", "5"],
             vec!["gitar", "hook", "install"],
             vec!["gitar", "hook", "uninstall"],
         ];

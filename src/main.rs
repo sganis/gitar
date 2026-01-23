@@ -77,6 +77,7 @@ async fn main() -> Result<()> {
         Commands::Commit {
             push,
             all,
+            amend,
             tag,
             no_tag,
             write_to,
@@ -90,6 +91,7 @@ async fn main() -> Result<()> {
                 config.preset,
                 push,
                 all,
+                amend,
                 tag && !no_tag,
                 write_to,
                 silent,
@@ -218,32 +220,28 @@ async fn main() -> Result<()> {
             .await?
         }
 
-        Commands::Version {
-            base,
-            to,
-            current,
-            algo,
-        } => {
-            cmd_version(
-                &client,
-                base,
-                to,
-                &config.base_branch,
-                current,
-                config.stream,
-                algo,
-                config.max_diff_chars,
-                config.secret_action,
-            )
-            .await?
-        }
-
         Commands::Release {
             apply,
             skip_changelog,
             from,
+            bump,
+            to,
+            algo,
         } => {
-            cmd_release(&client, apply, skip_changelog, from, &config.base_branch).await?
+            cmd_release(
+                &client,
+                apply,
+                skip_changelog,
+                from,
+                bump,
+                to,
+                algo,
+                &config.base_branch,
+                config.stream,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
         }
 
         Commands::Resolve {
@@ -263,8 +261,35 @@ async fn main() -> Result<()> {
             .await?
         }
 
+        Commands::Squash { target, algo } => {
+            cmd_squash(
+                &client,
+                config.preset,
+                target,
+                config.stream,
+                algo,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
+        }
+
+        Commands::Rewrite { target, algo } => {
+            cmd_rewrite(
+                &client,
+                config.preset,
+                target,
+                config.stream,
+                algo,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
+        }
+
         Commands::Plan {
             apply,
+            resolve,
             suggest,
             mode,
             from,
@@ -297,6 +322,7 @@ async fn main() -> Result<()> {
                 &config,
                 analysis_mode,
                 apply,
+                resolve,
                 suggest,
                 is_interactive,
                 algo,

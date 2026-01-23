@@ -7,7 +7,11 @@ use anyhow::{bail, Context, Result};
 use std::io::{self, Write};
 
 use crate::client::LlmClient;
-use crate::git;
+use crate::git::{self, build_diff_target, get_current_version, get_diff};
+use crate::context::load_all_context;
+use crate::context::secret::SecretAction;
+use crate::context::template::{version_system_with_context, VERSION_USER};
+use crate::command::apply_smart_diff;
 
 use version::{detect_version_files, update_version_file, VersionFile};
 use tag::{create_tag, get_commits_since, get_latest_tag, tag_exists};
@@ -24,7 +28,13 @@ pub async fn cmd_release(
     apply: bool,
     skip_changelog: bool,
     from: Option<String>,
-    _base_branch: &str,
+    bump: String,
+    to: Option<String>,
+    algo: u8,
+    base_branch: &str,
+    stream: bool,
+    max_diff_chars: usize,
+    secret_action: SecretAction,
 ) -> Result<()> {
     println!("===========================================================");
     println!("Gitar Release Workflow");
@@ -63,7 +73,25 @@ pub async fn cmd_release(
     println!("Found {} new commit(s) since {}\n", commits.len(), from_ref);
 
     // Step 3: Analyze commits and suggest version bump
-    let version_bump = suggest_version_bump(&commits);
+    let version_bump = if bump == "auto" {
+        // Use LLM to analyze the diff and suggest version bump
+        println!("Analyzing changes with LLM to suggest version bump...\n");
+        suggest_version_bump_llm(
+            client,
+            &from_ref,
+            to.as_deref(),
+            base_branch,
+            stream,
+            algo,
+            max_diff_chars,
+            secret_action,
+        )
+        .await?
+    } else {
+        // Use explicit bump strategy
+        validate_bump_strategy(&bump)?;
+        bump.clone()
+    };
     println!("Suggested version bump: {}", version_bump);
 
     // Step 4: Detect version files
@@ -166,6 +194,81 @@ pub async fn cmd_release(
 // HELPER FUNCTIONS
 // =============================================================================
 
+fn validate_bump_strategy(bump: &str) -> Result<()> {
+    match bump {
+        "auto" | "major" | "minor" | "patch" => Ok(()),
+        _ => bail!("Invalid bump strategy: {}. Must be one of: auto, major, minor, patch", bump),
+    }
+}
+
+async fn suggest_version_bump_llm(
+    client: &LlmClient,
+    from_ref: &str,
+    to: Option<&str>,
+    base_branch: &str,
+    stream: bool,
+    algo: u8,
+    max_diff_chars: usize,
+    secret_action: SecretAction,
+) -> Result<String> {
+    // Get the current version from version files
+    let current = get_current_version();
+
+    // Build diff target
+    let diff_target = build_diff_target(Some(from_ref), to, base_branch);
+    let diff_target_ref = if diff_target.is_empty() {
+        None
+    } else {
+        Some(diff_target.as_str())
+    };
+
+    // Get the diff
+    let raw_diff = get_diff(diff_target_ref, false, usize::MAX)?;
+
+    if raw_diff.trim().is_empty() {
+        return Ok("patch".to_string());
+    }
+
+    // Apply smart diff shaping
+    let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, algo, secret_action)?;
+
+    // Build prompt
+    let prompt = VERSION_USER
+        .replace("{version}", &current)
+        .replace("{diff}", &diff);
+
+    let (project_ctx, user_ctx) = load_all_context();
+    let system = version_system_with_context(project_ctx.as_deref(), user_ctx.as_deref());
+
+    // Call LLM
+    let response = client.chat(&system, &prompt, stream).await?;
+    if stream {
+        println!();
+    }
+
+    // Parse the response to extract bump type
+    parse_version_bump_from_response(&response)
+}
+
+fn parse_version_bump_from_response(response: &str) -> Result<String> {
+    let lower = response.to_lowercase();
+
+    // Look for explicit mentions of version bump types
+    if lower.contains("major") && (lower.contains("breaking") || lower.contains("recommend major")) {
+        Ok("major".to_string())
+    } else if lower.contains("minor") && (lower.contains("feature") || lower.contains("recommend minor")) {
+        Ok("minor".to_string())
+    } else if lower.contains("patch") {
+        Ok("patch".to_string())
+    } else {
+        // Default to patch if unclear
+        eprintln!("Warning: Could not parse version bump from LLM response. Defaulting to 'patch'.");
+        eprintln!("LLM response: {}", response);
+        Ok("patch".to_string())
+    }
+}
+
+#[allow(dead_code)]
 fn suggest_version_bump(commits: &[CommitInfo]) -> String {
     // Simple heuristic based on commit messages
     let has_breaking = commits.iter().any(|c| {
