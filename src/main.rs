@@ -59,10 +59,7 @@ async fn main() -> Result<()> {
         );
     }
 
-    // Handle plan command (doesn't need LLM client)
-    if let Commands::Plan { apply, suggest } = &cli.command {
-        return cmd_plan(*apply, *suggest);
-    }
+    // Plan command now requires LLM client (handled below with other commands)
 
     let repo_root_path = git::get_repo_root_path()?;
 
@@ -250,6 +247,7 @@ async fn main() -> Result<()> {
             .await?
         }
 
+        #[allow(deprecated)]
         Commands::Split { algo } => cmd_split(&client, config.preset, algo).await?,
 
         Commands::Resolve {
@@ -269,14 +267,56 @@ async fn main() -> Result<()> {
             .await?
         }
 
+        Commands::Plan {
+            apply,
+            suggest,
+            mode,
+            from,
+            to,
+            interactive,
+            yes,
+            algo,
+        } => {
+            use command::AnalysisMode;
+
+            // Parse mode
+            let analysis_mode = match mode.as_deref() {
+                Some("working") => Some(AnalysisMode::WorkingTree),
+                Some("staged") => Some(AnalysisMode::Staged),
+                Some("history") => {
+                    let from_ref = from.as_ref().ok_or_else(|| {
+                        anyhow::anyhow!("--from is required for history mode")
+                    })?;
+                    Some(AnalysisMode::History {
+                        from: from_ref.clone(),
+                        to: to.clone(),
+                    })
+                }
+                Some("auto") | None => None,
+                Some(m) => bail!("Invalid mode: {}", m),
+            };
+
+            let is_interactive = interactive && !yes;
+
+            cmd_plan(
+                &client,
+                &config,
+                analysis_mode,
+                apply,
+                suggest,
+                is_interactive,
+                algo,
+            )
+            .await?
+        }
+
         Commands::Models => cmd_models(&client).await?,
 
         // Already handled above
         Commands::Init
         | Commands::Config
         | Commands::Hook { .. }
-        | Commands::Diff { .. }
-        | Commands::Plan { .. } => unreachable!(),
+        | Commands::Diff { .. } => unreachable!(),
     }
 
     Ok(())

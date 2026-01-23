@@ -319,11 +319,12 @@ pub enum Commands {
         compare: bool,
     },
 
-    /// Split a large working tree diff into multiple logical commits
+    /// [DEPRECATED] Split working tree into commits (use `gitar plan` instead)
     ///
-    /// Analyzes unstaged changes and guides you through creating a series of
-    /// small, focused commits. Groups changes by type (docs, tests, config)
-    /// and semantic intent. Requires interactive confirmation before each commit.
+    /// This command is deprecated and will be removed in v2.0.0.
+    /// Use `gitar plan --mode working --apply` for the same functionality
+    /// with improved features (interactive editing, better grouping, etc).
+    #[deprecated(since = "1.1.0", note = "use `gitar plan --mode working` instead")]
     Split {
         /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
@@ -347,17 +348,42 @@ pub enum Commands {
         stream: bool,
     },
 
-    /// Print a plan for turning the current repo state into clean history.
+    /// Analyze repo state and create a multi-commit plan
     ///
-    /// This is the "done coding, make it professional" entrypoint.
+    /// The plan command analyzes your changes and proposes an optimal commit structure.
+    /// You can review and refine the plan interactively before execution.
     Plan {
-        /// Execute the plan (scaffold: currently a no-op)
+        /// Execute the plan after approval
         #[arg(long, default_value_t = false)]
         apply: bool,
 
-        /// Print next-command suggestions based on repo state
+        /// Legacy mode: print next-command suggestions based on repo state
         #[arg(long, default_value_t = false)]
         suggest: bool,
+
+        /// Analysis mode: working, staged, or history
+        #[arg(long, value_parser = ["working", "staged", "history", "auto"])]
+        mode: Option<String>,
+
+        /// For history mode: starting ref (tag, commit, branch)
+        #[arg(long, requires = "mode")]
+        from: Option<String>,
+
+        /// For history mode: ending ref (default: HEAD)
+        #[arg(long, requires = "from")]
+        to: Option<String>,
+
+        /// Enable interactive mode (move files, edit messages, exclude files)
+        #[arg(long, short = 'i', default_value_t = true)]
+        interactive: bool,
+
+        /// Non-interactive mode (auto-approve plan)
+        #[arg(long, conflicts_with = "interactive")]
+        yes: bool,
+
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
+        algo: u8,
     },
 }
 
@@ -582,9 +608,29 @@ mod tests {
     #[test]
     fn cli_parses_plan_flags() {
         let cli = Cli::try_parse_from(["gitar", "plan", "--apply", "--suggest"]).unwrap();
-        if let Commands::Plan { apply, suggest } = cli.command {
+        if let Commands::Plan { apply, suggest, .. } = cli.command {
             assert!(apply);
             assert!(suggest);
+        } else {
+            panic!("Expected Plan command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_plan_mode() {
+        let cli = Cli::try_parse_from(["gitar", "plan", "--mode", "working"]).unwrap();
+        if let Commands::Plan { mode, .. } = cli.command {
+            assert_eq!(mode, Some("working".to_string()));
+        } else {
+            panic!("Expected Plan command");
+        }
+    }
+
+    #[test]
+    fn cli_parses_plan_algo() {
+        let cli = Cli::try_parse_from(["gitar", "plan", "--algo", "3"]).unwrap();
+        if let Commands::Plan { algo, .. } = cli.command {
+            assert_eq!(algo, 3);
         } else {
             panic!("Expected Plan command");
         }

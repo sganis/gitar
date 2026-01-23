@@ -27,7 +27,7 @@ pub use pr::cmd_pr;
 pub use split::cmd_split;
 pub use version::cmd_version;
 pub use resolve::{cmd_resolve, cmd_resolve_with_resolver, ConflictInput, ConflictResolver};
-pub use plan::cmd_plan;
+pub use plan::{cmd_plan, AnalysisMode};
 
 use crate::prompt::algo::{DiffAlg, DiffStats};
 use crate::prompt::diff::get_llm_diff_preview;

@@ -18,10 +18,12 @@ use super::analyze::{AnalysisResult, FileChange, FileCategory, ChangeStatus};
 
 #[derive(Debug, Clone)]
 pub struct CommitGroup {
+    #[allow(dead_code)]
     pub id: usize,
     pub title: String,        // Short label
     pub message: String,      // Full commit message
     pub files: Vec<String>,   // File paths
+    #[allow(dead_code)]
     pub estimated_tokens: usize,
 }
 

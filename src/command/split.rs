@@ -60,6 +60,10 @@ struct CommitPlan {
 // =============================================================================
 
 pub async fn cmd_split(client: &LlmClient, preset: Preset, algo: u8) -> Result<()> {
+    eprintln!("\n⚠️  WARNING: `gitar split` is deprecated.");
+    eprintln!("   Use `gitar plan --mode working --apply` instead.");
+    eprintln!("   The split command will be removed in v2.0.0\n");
+
     println!("\nGitar Split - Interactive commit splitting\n");
 
     // Load contexts once (project + user)

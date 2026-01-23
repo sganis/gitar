@@ -12,8 +12,7 @@ mod heuristic;
 mod llm;
 mod parser;
 
-pub use llm::resolve_with_llm_full_file;
-pub use parser::{has_conflict_markers, ConflictInput, ConflictRegion, ConflictResolver};
+pub use parser::{has_conflict_markers, ConflictInput, ConflictResolver};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AcceptMode {
@@ -58,6 +57,7 @@ fn prompt_yes_no(msg: &str) -> Result<bool> {
 // TEST HOOK (kept for your fake resolver integration test)
 // =============================================================================
 
+#[allow(dead_code)]
 pub async fn cmd_resolve_with_resolver<R: ConflictResolver>(
     resolver: &R,
     apply: bool,

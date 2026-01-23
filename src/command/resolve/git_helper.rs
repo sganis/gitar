@@ -29,6 +29,7 @@ pub fn git_conflicted_names() -> Result<Vec<String>> {
         .collect())
 }
 
+#[allow(dead_code)]
 pub fn git_cached_names() -> Result<Vec<String>> {
     let out = Command::new("git")
         .args(["diff", "--cached", "--name-only"])

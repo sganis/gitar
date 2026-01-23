@@ -22,6 +22,7 @@ pub struct ConflictInput {
     pub regions: Vec<ConflictRegion>,
 }
 
+#[allow(dead_code)]
 pub trait ConflictResolver {
     /// Returns FULL resolved file content (no narrative).
     fn resolve(&self, input: &ConflictInput) -> anyhow::Result<String>;

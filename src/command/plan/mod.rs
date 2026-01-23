@@ -1,58 +1,138 @@
 // src/command/plan/mod.rs
 
 pub mod analyze;
+pub mod group;
+pub mod editor;
+pub mod execute;
 
-use anyhow::Result;
+use anyhow::{bail, Result};
+use crate::client::LlmClient;
+use crate::config::ResolvedConfig;
 use crate::git;
 
-// Re-export public API from analyze (will be used by future modules)
-#[allow(unused_imports)]
-pub use analyze::{
-    AnalysisMode, AnalysisResult, FileChange, ChangeStatus, FileCategory,
-    detect_and_analyze, categorize_file,
-};
+// Re-export public API
+pub use analyze::AnalysisMode;
 
-/// Print (and optionally execute) a simple execution plan for the current repo state.
-///
-/// Current implementation (Phase 1 stub):
-/// - Uses new analyze module to detect repo state
-/// - Suggests appropriate next actions
-/// - Full orchestration will be implemented in later phases
-pub fn cmd_plan(apply: bool, suggest: bool) -> Result<()> {
-    if apply {
-        eprintln!("Plan execution is not implemented yet. Run without --apply.");
+/// Main entry point for plan command
+pub async fn cmd_plan(
+    client: &LlmClient,
+    config: &ResolvedConfig,
+    mode: Option<AnalysisMode>,
+    apply: bool,
+    suggest: bool,
+    interactive: bool,
+    algo: u8,
+) -> Result<()> {
+    // Handle legacy suggest mode (simple state inspection)
+    if suggest {
+        return cmd_plan_suggest(mode);
+    }
+
+    // Check for conflicts first
+    if git::has_conflicts()? {
+        println!("Conflicts detected. Run `gitar resolve` first.");
         return Ok(());
     }
 
-    // Use new analyze module
-    let analysis = analyze::detect_and_analyze(None)?;
+    // Step 1: Analyze repository state
+    let analysis = analyze::detect_and_analyze(mode)?;
 
-    // Handle conflicts
+    // Check if there are any changes
+    if analysis.files.is_empty() {
+        match analysis.mode {
+            AnalysisMode::Auto => {
+                println!("Working tree clean. Nothing to plan.");
+                return Ok(());
+            }
+            _ => {
+                println!("No changes found for the specified mode.");
+                return Ok(());
+            }
+        }
+    }
+
+    println!("Analyzing {} file(s)...", analysis.files.len());
+
+    // Step 2: Generate commit groups with LLM
+    let groups = group::create_groups(
+        &analysis,
+        client,
+        config.preset,
+        algo,
+        config.max_diff_chars,
+        config.secret_action,
+    )
+    .await?;
+
+    if groups.is_empty() {
+        bail!("Failed to generate commit plan. No groups created.");
+    }
+
+    println!("\nGenerated plan with {} commit(s)", groups.len());
+
+    // Step 3: Interactive editing (if interactive)
+    let approved_groups = if interactive {
+        let mut editor = editor::PlanEditor::new(groups);
+        match editor
+            .run_interactive(
+                client,
+                &analysis,
+                config.preset,
+                algo,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
+        {
+            editor::EditResult::Approved(g) => g,
+            editor::EditResult::Cancelled => {
+                println!("Plan cancelled.");
+                return Ok(());
+            }
+        }
+    } else {
+        // Non-interactive: display plan and ask for confirmation
+        println!("\nCommit Plan:");
+        println!("===========================================================");
+        for (idx, group) in groups.iter().enumerate() {
+            println!("\nCommit {}/{}", idx + 1, groups.len());
+            println!("{}", group.message);
+            println!("Files ({}): {}", group.files.len(), group.files.join(", "));
+        }
+        println!("\n===========================================================\n");
+        groups
+    };
+
+    // Step 4: Execute plan (if apply flag is set)
+    if apply {
+        execute::execute_plan(&approved_groups, &analysis.mode, false, interactive)?;
+        println!("✓ Plan executed successfully");
+    } else {
+        println!("Dry run complete. Use --apply to execute commits.");
+    }
+
+    Ok(())
+}
+
+/// Legacy suggest mode - simple state inspection
+fn cmd_plan_suggest(mode: Option<AnalysisMode>) -> Result<()> {
+    let analysis = analyze::detect_and_analyze(mode)?;
+
     if git::has_conflicts()? {
         println!("Plan:");
         println!("  - Conflicts detected: run `gitar resolve`");
         return Ok(());
     }
 
-    // Determine state from analysis mode
     let (staged, unstaged, untracked) = match &analysis.mode {
-        AnalysisMode::Auto => {
-            // Clean working tree
-            (false, false, false)
-        }
-        AnalysisMode::Staged => {
-            (true, false, false)
-        }
+        AnalysisMode::Auto => (false, false, false),
+        AnalysisMode::Staged => (true, false, false),
         AnalysisMode::WorkingTree => {
-            // Check if there are actually staged files too
             let staged_diff = git::run_git(&["diff", "--cached", "--name-only"])?;
             let has_staged = !staged_diff.trim().is_empty();
             (has_staged, true, true)
         }
-        AnalysisMode::History { .. } => {
-            // History mode not yet supported in suggestions
-            (false, false, false)
-        }
+        AnalysisMode::History { .. } => (false, false, false),
     };
 
     println!("Plan:");
@@ -62,16 +142,14 @@ pub fn cmd_plan(apply: bool, suggest: bool) -> Result<()> {
     );
     println!("  - Files detected: {}", analysis.files.len());
 
-    if suggest {
-        if staged && (unstaged || untracked) {
-            println!("  - Suggestion: run `gitar split`");
-        } else if unstaged || untracked {
-            println!("  - Suggestion: run `gitar split`");
-        } else if staged {
-            println!("  - Suggestion: run `gitar commit`");
-        } else {
-            println!("  - Suggestion: working tree clean");
-        }
+    if staged && (unstaged || untracked) {
+        println!("  - Suggestion: run `gitar plan --apply`");
+    } else if unstaged || untracked {
+        println!("  - Suggestion: run `gitar plan --apply`");
+    } else if staged {
+        println!("  - Suggestion: run `gitar commit`");
+    } else {
+        println!("  - Suggestion: working tree clean");
     }
 
     Ok(())
@@ -82,23 +160,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn plan_apply_is_safe_noop() {
-        // apply=true should always succeed (just prints warning)
-        let result = cmd_plan(true, true);
-        assert!(result.is_ok());
-    }
-
-    #[test]
-    fn plan_suggest_flag() {
+    fn plan_suggest_mode() {
         // Should not panic (may fail if not in git repo, which is ok)
-        let _result = cmd_plan(false, true);
+        let _result = cmd_plan_suggest(None);
         // Test passes if it doesn't panic
     }
 
     #[test]
-    fn plan_no_flags() {
-        // Should not panic (may fail if not in git repo, which is ok)
-        let _result = cmd_plan(false, false);
-        // Test passes if it doesn't panic
+    fn analyze_mode_variants() {
+        // Test that mode variants can be created
+        let _auto = AnalysisMode::Auto;
+        let _working = AnalysisMode::WorkingTree;
+        let _staged = AnalysisMode::Staged;
+        let _history = AnalysisMode::History {
+            from: "v1.0.0".to_string(),
+            to: None,
+        };
     }
 }

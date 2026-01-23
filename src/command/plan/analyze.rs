@@ -21,8 +21,10 @@ pub enum AnalysisMode {
 #[derive(Debug, Clone)]
 pub struct AnalysisResult {
     pub mode: AnalysisMode,
+    #[allow(dead_code)]
     pub diff: String,           // Raw diff
     pub files: Vec<FileChange>, // Parsed changes
+    #[allow(dead_code)]
     pub stats: DiffStats,       // From diff algorithm (populated later)
 }
 
@@ -52,7 +54,9 @@ fn empty_diff_stats() -> DiffStats {
 pub struct FileChange {
     pub path: String,
     pub status: ChangeStatus,
+    #[allow(dead_code)]
     pub additions: usize,
+    #[allow(dead_code)]
     pub deletions: usize,
     pub category: FileCategory,
 }
@@ -70,7 +74,9 @@ pub enum FileCategory {
     Documentation,
     Tests,
     Config,
+    #[allow(dead_code)]
     Formatting,
+    #[allow(dead_code)]
     Rename,
     Code,
 }
@@ -88,8 +94,13 @@ pub fn detect_and_analyze(mode: Option<AnalysisMode>) -> Result<AnalysisResult> 
 
     match &analysis_mode {
         AnalysisMode::Auto => {
-            // Auto was resolved in detect_mode(), this shouldn't happen
-            unreachable!("Auto mode should be resolved in detect_mode()")
+            // Auto mode means clean tree or conflicts - return empty result
+            Ok(AnalysisResult {
+                mode: AnalysisMode::Auto,
+                diff: String::new(),
+                files: vec![],
+                stats: empty_diff_stats(),
+            })
         }
         AnalysisMode::WorkingTree => analyze_working_tree(),
         AnalysisMode::Staged => analyze_staged(),
@@ -337,7 +348,6 @@ fn scan_staged() -> Result<Vec<FileChange>> {
 /// Analyze commit history (placeholder for Phase 6)
 pub fn analyze_history(from: &str, to: Option<&str>) -> Result<AnalysisResult> {
     let to_ref = to.unwrap_or("HEAD");
-    let range = format!("{}..{}", from, to_ref);
 
     // Get cumulative diff
     let diff = git::run_git(&["diff", from, to_ref])?;
