@@ -1,3 +1,46 @@
+## [1.1.0] - 2026-01-23
+
+# Release Notes
+## Features
+- Added `init` command with provider selection, client setup, and context loading.
+- Added `plan` command for repo state inspection and CLI integration.
+- Added `resolve` command for conflict resolution with per-region LLM diff previews and unmerged index detection.
+- Added `commit` planning with LLM integration and execution support.
+- Added `release` command with changelog generation, streaming, and diff options.
+- Added modular plan layer with analysis and grouping infrastructure.
+- Added prompt module for interactive TTY input and unified context management.
+- Added `GitarTheme` with cyan highlighting for improved prompt visuals.
+- Added Windows CMD, PowerShell, and curl-based installers with platform detection and version resolution.
+- Added MIT license and crates.io metadata to Cargo.toml.
+
+## Fixes
+- Reverted crate version in Cargo manifest to 1.0.7 to correct version mismatch.
+- Marked resolve tests as serial to prevent environment conflicts.
+- Removed Unicode output from prints for full ASCII compliance.
+
+## Improvements
+- Renamed `plan` command to `run` and enhanced release module with changelog file handling.
+- Replaced `version` command with enhanced release flow and added amend support to `commit` command.
+- Enhanced `cmd_init` to support interactive and non-interactive modes with API key validation.
+- Refactored prompt module into `context` and `util` namespaces for cleaner imports.
+- Completed modular plan layer implementation and command restructuring.
+- Clarified README with detailed architecture, setup flow, and provider configuration.
+- Improved install instructions with platform-specific guidance.
+- Revised CLI roadmap and reorganized documentation (README, PLAN.md).
+- Simplified split command output and refactored change grouping logic.
+- Formatted codebase with `cargo fmt`.
+
+## Breaking Changes
+- Deprecated `split` command replaced by new `plan` and `commit` planning workflow.
+- Replaced `version` command with `release` command.
+
+## Infrastructure
+- Bumped `dialoguer` dependency to version 0.12.
+- Enabled macOS Intel build job in CI workflow.
+- Added serial_test dependency.
+- Moved install scripts into `install/` directory.
+- Renamed artifact files from `gitar-v` to `gitar-`.
+
 # v1.0.6
 
 ## Features

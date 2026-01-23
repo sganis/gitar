@@ -195,7 +195,7 @@ pub async fn cmd_release(
     }
 
     // Step 11: Execute release
-    execute_release(&version_files, &new_version, &tag_name, &changelog, changelog_path.as_deref(), apply)?;
+    execute_release(&version_files, &new_version, &tag_name, &changelog, changelog_path.as_deref(), !apply)?;
 
     println!("\n===========================================================");
     success(format!("Release {} completed successfully!", new_version));
