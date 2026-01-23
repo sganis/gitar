@@ -1,4 +1,4 @@
-// src/command/commit.rs
+// src/command/commit/mod.rs
 use anyhow::{bail, Result};
 use std::fs;
 use std::io::{self, Write};

@@ -1,4 +1,4 @@
-// src/command/pr.rs
+// src/command/pr/mod.rs
 use anyhow::Result;
 
 use crate::client::LlmClient;

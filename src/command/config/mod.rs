@@ -1,4 +1,4 @@
-// src/command/config.rs
+// src/command/config/mod.rs
 use anyhow::Result;
 
 use crate::config::{Config, DEFAULT_MAX_DIFF_CHARS};

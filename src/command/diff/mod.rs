@@ -1,4 +1,4 @@
-// src/commands/diff.rs
+// src/command/diff/mod.rs
 use anyhow::Result;
 
 use crate::git::{get_diff, get_diff_stats};

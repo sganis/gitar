@@ -1,4 +1,4 @@
-// src/command/models.rs
+// src/command/models/mod.rs
 use crate::client::LlmClient;
 use anyhow::Result;
 

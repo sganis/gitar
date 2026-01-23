@@ -1,4 +1,4 @@
-// src/command/init.rs
+// src/command/init/mod.rs
 use anyhow::{bail, Result};
 use std::fs;
 use std::path::{Path, PathBuf};

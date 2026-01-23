@@ -1,4 +1,4 @@
-// src/command/split.rs
+// src/command/split/mod.rs
 use anyhow::Result;
 use std::io::{self, Write};
 

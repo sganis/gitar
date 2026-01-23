@@ -1,4 +1,4 @@
-// src/command/history.rs
+// src/command/history/mod.rs
 use anyhow::Result;
 
 use crate::client::LlmClient;

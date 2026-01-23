@@ -1,4 +1,4 @@
-// src/command/changelog.rs
+// src/command/changelog/mod.rs
 use anyhow::Result;
 
 use crate::client::LlmClient;

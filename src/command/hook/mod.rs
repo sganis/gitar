@@ -1,4 +1,4 @@
-// src/commands/hook.rs
+// src/command/hook/mod.rs
 use anyhow::{bail, Context, Result};
 use std::fs;
 #[cfg(unix)]
