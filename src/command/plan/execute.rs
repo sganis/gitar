@@ -1,10 +1,10 @@
 // src/command/plan/execute.rs
 use anyhow::{bail, Context, Result};
 use std::fs;
-use std::io::{self, Write};
 
 use crate::color::{success, warning};
 use crate::git;
+use crate::prompt;
 
 use super::analyze::AnalysisMode;
 use super::group::CommitGroup;
@@ -67,64 +67,54 @@ pub fn execute_plan(
 
         // Interactive confirmation
         if interactive {
-            loop {
-                print!("\n[Y] commit / [e] edit message / [s] skip / [q] quit: ");
-                io::stdout().flush()?;
-
-                let mut input = String::new();
-                io::stdin().read_line(&mut input)?;
-                let choice = input.trim().to_lowercase();
-
-                match choice.as_str() {
-                    "y" | "yes" | "" => {
+            let options = ["Commit", "Edit message", "Skip", "Quit"];
+            match prompt::select("Action", &options, 0)? {
+                0 => {
+                    // Commit
+                    if !dry_run {
+                        git::run_git(&["commit", "-m", &group.message])?;
+                        success("Committed");
+                    } else {
+                        println!("(Dry run - would commit)");
+                    }
+                }
+                1 => {
+                    // Edit message
+                    let new_message = prompt::input("Enter new message", Some(&group.message))?;
+                    if !new_message.is_empty() {
                         if !dry_run {
-                            git::run_git(&["commit", "-m", &group.message])?;
-                            success("Committed");
+                            git::run_git(&["commit", "-m", &new_message])?;
+                            success("Committed with edited message");
                         } else {
-                            println!("(Dry run - would commit)");
+                            println!("(Dry run - would commit with edited message)");
                         }
-                        break;
-                    }
-                    "e" | "edit" => {
-                        print!("Enter new message: ");
-                        io::stdout().flush()?;
-                        let mut new_message = String::new();
-                        io::stdin().read_line(&mut new_message)?;
-                        let new_message = new_message.trim();
-
-                        if !new_message.is_empty() {
-                            if !dry_run {
-                                git::run_git(&["commit", "-m", new_message])?;
-                                success("Committed with edited message");
-                            } else {
-                                println!("(Dry run - would commit with edited message)");
-                            }
-                            break;
-                        } else {
-                            println!("Message cannot be empty");
-                        }
-                    }
-                    "s" | "skip" => {
+                    } else {
+                        println!("Message cannot be empty - skipping");
                         if !dry_run {
                             for file in &group.files {
                                 git::run_git(&["reset", "HEAD", file])?;
                             }
                         }
-                        println!("Skipped (files unstaged)");
-                        break;
                     }
-                    "q" | "quit" => {
-                        if !dry_run {
-                            for file in &group.files {
-                                git::run_git(&["reset", "HEAD", file])?;
-                            }
+                }
+                2 => {
+                    // Skip
+                    if !dry_run {
+                        for file in &group.files {
+                            git::run_git(&["reset", "HEAD", file])?;
                         }
-                        println!("Quit (remaining files unstaged)");
-                        return Ok(());
                     }
-                    _ => {
-                        println!("Invalid choice. Please enter Y, e, s, or q.");
+                    println!("Skipped (files unstaged)");
+                }
+                _ => {
+                    // Quit
+                    if !dry_run {
+                        for file in &group.files {
+                            git::run_git(&["reset", "HEAD", file])?;
+                        }
                     }
+                    println!("Quit (remaining files unstaged)");
+                    return Ok(());
                 }
             }
         } else {
@@ -190,12 +180,7 @@ fn execute_history_mode(
     println!();
 
     // Confirmation prompt
-    print!("Are you sure you want to continue? [y/N]: ");
-    io::stdout().flush()?;
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-
-    if !input.trim().eq_ignore_ascii_case("y") {
+    if !prompt::confirm("Are you sure you want to continue?", false)? {
         println!("Aborted.");
         return Ok(());
     }

@@ -1,6 +1,5 @@
 // src/command/squash/mod.rs
 use anyhow::{bail, Context, Result};
-use std::io::{self, Write};
 
 use crate::client::LlmClient;
 use crate::color::success;
@@ -9,6 +8,7 @@ use crate::context::preset::Preset;
 use crate::context::secret::SecretAction;
 use crate::context::template::{commit_system_with_context, COMMIT_USER};
 use crate::context::repo::load_all_context;
+use crate::prompt;
 
 use super::{apply_smart_diff_with_context, AnalysisContext};
 
@@ -82,13 +82,8 @@ pub async fn cmd_squash(
 
     // Confirmation
     println!("{}", "=".repeat(50));
-    print!("Proceed with squash? [y/N]: ");
-    io::stdout().flush()?;
 
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-
-    if !input.trim().eq_ignore_ascii_case("y") {
+    if !prompt::confirm("Proceed with squash?", false)? {
         println!("Squash cancelled.");
         return Ok(());
     }

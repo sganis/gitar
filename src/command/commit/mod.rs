@@ -1,7 +1,6 @@
 // src/command/commit/mod.rs
 use anyhow::{bail, Result};
 use std::fs;
-use std::io::{self, Write};
 
 use crate::client::LlmClient;
 use crate::git::{get_diff, run_git, run_git_status};
@@ -9,6 +8,7 @@ use crate::context::preset::Preset;
 use crate::context::secret::SecretAction;
 use crate::context::template::{commit_system_with_context, COMMIT_USER};
 use crate::context::repo::load_all_context;
+use crate::prompt;
 
 use super::{apply_smart_diff_with_context, AnalysisContext};
 
@@ -108,28 +108,22 @@ pub async fn cmd_commit(
         }
 
         println!("{}", "=".repeat(50));
-        println!("  [Enter] Accept | [g] Regenerate | [e] Edit | [other] Cancel");
-        println!("{}", "=".repeat(50));
-        print!("> ");
-        io::stdout().flush()?;
 
-        let mut input = String::new();
-        io::stdin().read_line(&mut input)?;
-
-        match input.trim().to_lowercase().as_str() {
-            "" => break msg,
-            "g" => {
+        let options = ["Accept", "Regenerate", "Edit message", "Cancel"];
+        match prompt::select("Action", &options, 0)? {
+            0 => break msg, // Accept
+            1 => {
+                // Regenerate
                 println!("Regenerating...\n");
                 continue;
             }
-            "e" => {
-                print!("New message: ");
-                io::stdout().flush()?;
-                let mut ed = String::new();
-                io::stdin().read_line(&mut ed)?;
-                break if ed.trim().is_empty() { msg } else { ed.trim().into() };
+            2 => {
+                // Edit message
+                let edited = prompt::input("New message", Some(&msg))?;
+                break if edited.trim().is_empty() { msg } else { edited };
             }
             _ => {
+                // Cancel
                 println!("Canceled.");
                 return Ok(());
             }

@@ -5,6 +5,7 @@ use std::fs;
 use crate::client::LlmClient;
 use crate::git;
 use crate::context::secret::SecretAction;
+use crate::prompt;
 
 mod diff_preview;
 mod git_helper;
@@ -40,18 +41,8 @@ impl AcceptMode {
 // =============================================================================
 // UX
 // =============================================================================
-
-fn prompt_yes_no(msg: &str) -> Result<bool> {
-    use std::io::{self, Write};
-
-    eprint!("{}", msg);
-    io::stderr().flush().ok();
-
-    let mut line = String::new();
-    io::stdin().read_line(&mut line)?;
-    let s = line.trim().to_lowercase();
-    Ok(matches!(s.as_str(), "y" | "yes"))
-}
+//
+// (prompt_yes_no removed - now using prompt::confirm)
 
 // =============================================================================
 // TEST HOOK (kept for your fake resolver integration test)
@@ -120,7 +111,7 @@ pub async fn cmd_resolve_with_resolver<R: ConflictResolver>(
         let do_apply = if yes {
             true
         } else {
-            prompt_yes_no(&format!("Apply resolution for {}? [y/N] ", path))?
+            prompt::confirm(&format!("Apply resolution for {}?", path), false)?
         };
         if !do_apply {
             eprintln!("- {}  Skipped.", path);
@@ -274,7 +265,7 @@ pub async fn cmd_resolve(
         let do_apply = if yes {
             true
         } else {
-            prompt_yes_no(&format!("  Apply resolution for {}? [y/N] ", path))?
+            prompt::confirm(&format!("  Apply resolution for {}?", path), false)?
         };
 
         if !do_apply {

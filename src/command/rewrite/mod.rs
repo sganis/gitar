@@ -1,6 +1,5 @@
 // src/command/rewrite/mod.rs
 use anyhow::{bail, Context, Result};
-use std::io::{self, Write};
 
 use crate::client::LlmClient;
 use crate::color::{success, warning};
@@ -9,6 +8,7 @@ use crate::context::preset::Preset;
 use crate::context::secret::SecretAction;
 use crate::context::template::{commit_system_with_context, COMMIT_USER};
 use crate::context::repo::load_all_context;
+use crate::prompt;
 
 use super::{apply_smart_diff_with_context, AnalysisContext};
 
@@ -46,13 +46,7 @@ pub async fn cmd_rewrite(
     println!("   Only do this if you haven't pushed these commits,");
     println!("   or if you understand the implications of force-pushing.\n");
 
-    print!("Continue? [y/N]: ");
-    io::stdout().flush()?;
-
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-
-    if !input.trim().eq_ignore_ascii_case("y") {
+    if !prompt::confirm("Continue?", false)? {
         println!("Rewrite cancelled.");
         return Ok(());
     }
@@ -111,36 +105,31 @@ pub async fn cmd_rewrite(
             }
 
             println!("{}", "=".repeat(50));
-            println!("  [Enter] Accept | [k] Keep original | [g] Regenerate | [e] Edit | [s] Skip all");
-            println!("{}", "=".repeat(50));
-            print!("> ");
-            io::stdout().flush()?;
 
-            let mut choice = String::new();
-            io::stdin().read_line(&mut choice)?;
-
-            match choice.trim().to_lowercase().as_str() {
-                "" => break msg.trim().to_string(),
-                "k" => {
+            let options = ["Accept", "Keep original", "Regenerate", "Edit message", "Skip all remaining"];
+            match prompt::select("Action", &options, 0)? {
+                0 => break msg.trim().to_string(), // Accept
+                1 => {
+                    // Keep original
                     println!("Keeping original message.\n");
                     break commit.subject.clone();
                 }
-                "g" => {
+                2 => {
+                    // Regenerate
                     println!("Regenerating...\n");
                     continue;
                 }
-                "e" => {
-                    print!("New message: ");
-                    io::stdout().flush()?;
-                    let mut ed = String::new();
-                    io::stdin().read_line(&mut ed)?;
-                    break if ed.trim().is_empty() {
+                3 => {
+                    // Edit message
+                    let edited = prompt::input("New message", Some(&msg))?;
+                    break if edited.trim().is_empty() {
                         msg.trim().to_string()
                     } else {
-                        ed.trim().to_string()
+                        edited
                     };
                 }
-                "s" => {
+                4 => {
+                    // Skip all
                     println!("Skipping remaining commits. Keeping all original messages.");
                     // Add remaining original messages
                     for remaining in &commits[idx..] {

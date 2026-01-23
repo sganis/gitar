@@ -1,13 +1,13 @@
 // src/command/init/mod.rs
 use anyhow::{bail, Result};
 use std::fs;
-use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 
 use crate::cli::Cli;
 use crate::client::LlmClient;
 use crate::config::{normalize_provider, Config, ProviderConfig};
 use crate::git;
+use crate::prompt;
 
 const USER_CONTEXT_TEMPLATE: &str = r#"# Gitar User Context
 
@@ -147,55 +147,41 @@ fn ensure_context_files() -> Result<()> {
 // INTERACTIVE PROMPTS
 // =============================================================================
 
-fn prompt_user(message: &str) -> Result<String> {
-    print!("{}", message);
-    io::stdout().flush()?;
-    let mut input = String::new();
-    io::stdin().read_line(&mut input)?;
-    Ok(input.trim().to_string())
-}
-
-fn prompt_with_default(message: &str, default: &str) -> Result<String> {
-    let result = prompt_user(message)?;
-    if result.is_empty() {
-        Ok(default.to_string())
-    } else {
-        Ok(result)
-    }
-}
-
-fn select_provider(current: Option<&str>) -> Result<String> {
-    println!("\nAvailable providers:");
+fn select_provider(current: Option<&str>) -> Result<Option<String>> {
     let providers = vec!["openai", "claude", "gemini", "groq", "ollama"];
 
-    for (i, provider) in providers.iter().enumerate() {
-        if current == Some(provider) {
-            println!("  {}. {} (current)", i + 1, provider);
-        } else {
-            println!("  {}. {}", i + 1, provider);
-        }
+    // Find default index
+    let default_idx = if let Some(curr) = current {
+        providers.iter().position(|&p| p == curr).unwrap_or(0)
+    } else {
+        0 // openai
+    };
+
+    // Format providers (no unicode, just plain text)
+    let mut formatted: Vec<String> = providers
+        .iter()
+        .map(|&p| {
+            if current == Some(p) {
+                format!("{} (current)", p)
+            } else {
+                p.to_string()
+            }
+        })
+        .collect();
+
+    // Add cancel option
+    formatted.push("Cancel".to_string());
+
+    let idx = prompt::select("Select provider", &formatted, default_idx)?;
+
+    if idx == formatted.len() - 1 {
+        Ok(None) // User cancelled
+    } else {
+        Ok(Some(providers[idx].to_string()))
     }
-
-    let default = current.unwrap_or("openai");
-    let prompt = format!("\nSelect provider [1-{}] (default: {}): ", providers.len(), default);
-    let choice = prompt_with_default(&prompt, "1")?;
-
-    if let Ok(index) = choice.parse::<usize>() {
-        if index > 0 && index <= providers.len() {
-            return Ok(providers[index - 1].to_string());
-        }
-    }
-
-    // Try to match by name
-    let normalized = normalize_provider(&choice);
-    if providers.contains(&normalized) {
-        return Ok(normalized.to_string());
-    }
-
-    Ok(default.to_string())
 }
 
-async fn select_model(provider: &str, api_key: &str) -> Result<Option<String>> {
+async fn select_model(provider: &str, api_key: &str, current_model: Option<&str>) -> Result<Option<String>> {
     println!("\nFetching available models from {}...", provider);
 
     // Create a temporary config with the provider settings
@@ -226,30 +212,48 @@ async fn select_model(provider: &str, api_key: &str) -> Result<Option<String>> {
         return Ok(None);
     }
 
-    println!("\nAvailable models:");
-    for (i, model) in models.iter().enumerate().take(20) {
-        println!("  {}. {}", i + 1, model);
-    }
+    println!("Found {} available models\n", models.len());
 
-    if models.len() > 20 {
-        println!("  ... and {} more", models.len() - 20);
-    }
+    // Show ALL models (dialoguer handles scrolling with arrow keys automatically)
+    let mut display_models: Vec<String> = models
+        .iter()
+        .map(|m| {
+            if current_model == Some(m.as_str()) {
+                format!("{} (current)", m)
+            } else {
+                m.clone()
+            }
+        })
+        .collect();
 
-    let prompt = format!("\nSelect model number or enter model name (1-{}, or Enter for default): ", models.len().min(20));
-    let choice = prompt_user(&prompt)?;
+    // Add special options at the end
+    display_models.push("(Enter custom model name)".to_string());
+    display_models.push("Cancel".to_string());
 
-    if choice.is_empty() {
-        return Ok(None);
-    }
+    // Find default index - current model if it exists, otherwise first model
+    let default_idx = if let Some(curr) = current_model {
+        models.iter().position(|m| m == curr).unwrap_or(0)
+    } else {
+        0
+    };
 
-    if let Ok(index) = choice.parse::<usize>() {
-        if index > 0 && index <= models.len() {
-            return Ok(Some(models[index - 1].clone()));
+    let idx = prompt::select("Select model (use arrow keys to scroll)", &display_models, default_idx)?;
+
+    if idx == display_models.len() - 1 {
+        // Cancel
+        Ok(None)
+    } else if idx == display_models.len() - 2 {
+        // Enter custom model
+        let custom = prompt::input("Enter model name", None)?;
+        if custom.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(custom))
         }
+    } else {
+        // Selected a model from the list
+        Ok(Some(models[idx].clone()))
     }
-
-    // User entered model name directly
-    Ok(Some(choice))
 }
 
 // =============================================================================
@@ -280,7 +284,13 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         println!("==========================================================\n");
 
         // Step 1: Select provider
-        let selected_provider = select_provider(config.default_provider.as_deref())?;
+        let selected_provider = match select_provider(config.default_provider.as_deref())? {
+            Some(p) => p,
+            None => {
+                println!("Configuration cancelled.");
+                return Ok(());
+            }
+        };
         println!("Selected provider: {}", selected_provider);
 
         // Step 2: Get API key
@@ -289,8 +299,7 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
 
         let api_key = if let Some(ref key) = current_key {
             let masked = format!("{}...{}", &key[..4.min(key.len())], &key[key.len().saturating_sub(4)..]);
-            let prompt = format!("\nAPI key (current: {}, Enter to keep): ", masked);
-            let input = prompt_user(&prompt)?;
+            let input = prompt::input(&format!("API key (current: {})", masked), Some(""))?;
             if input.is_empty() {
                 key.clone()
             } else {
@@ -310,20 +319,19 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
                 if let Ok(env_key) = std::env::var(env_var) {
                     if !env_key.is_empty() {
                         println!("\nFound API key in ${}", env_var);
-                        let use_env = prompt_with_default("Use this key? [Y/n]: ", "y")?;
-                        if use_env.to_lowercase() != "n" {
+                        if prompt::confirm("Use this key?", true)? {
                             env_key
                         } else {
-                            prompt_user("\nEnter API key: ")?
+                            prompt::input("Enter API key", None)?
                         }
                     } else {
-                        prompt_user("\nEnter API key: ")?
+                        prompt::input("Enter API key", None)?
                     }
                 } else {
-                    prompt_user(&format!("\nEnter API key (or set ${} env var): ", env_var))?
+                    prompt::input(&format!("Enter API key (or set ${} env var)", env_var), None)?
                 }
             } else {
-                prompt_user("\nEnter API key: ")?
+                prompt::input("Enter API key", None)?
             }
         };
 
@@ -332,7 +340,14 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         }
 
         // Step 3: Select model (query API)
-        let selected_model = select_model(&selected_provider, &api_key).await?;
+        let current_model = provider_config.model.as_deref();
+        let selected_model = match select_model(&selected_provider, &api_key, current_model).await? {
+            Some(m) => Some(m),
+            None => {
+                println!("Configuration cancelled.");
+                return Ok(());
+            }
+        };
 
         // Update config
         let provider_config = config.get_provider_mut(&selected_provider);
@@ -343,22 +358,29 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         config.default_provider = Some(selected_provider.clone());
 
         // Step 4: Optional preset
-        println!("\nCommit message style preset:");
-        println!("  1. auto (detect from project files)");
-        println!("  2. rust");
-        println!("  3. javascript");
-        println!("  4. python");
-        println!("  5. conventional (Conventional Commits)");
-        println!("  6. none");
+        let presets = vec![
+            "auto (detect from project)",
+            "rust",
+            "javascript",
+            "python",
+            "conventional",
+            "none",
+            "Cancel",
+        ];
 
-        let preset_choice = prompt_with_default("\nSelect preset [1-6] (default: auto): ", "1")?;
-        let preset = match preset_choice.as_str() {
-            "1" | "auto" => "auto",
-            "2" | "rust" => "rust",
-            "3" | "javascript" | "js" => "javascript",
-            "4" | "python" | "py" => "python",
-            "5" | "conventional" => "conventional",
-            "6" | "none" => "none",
+        let preset_idx = prompt::select("Commit message style preset", &presets, 0)?;
+        if preset_idx == presets.len() - 1 {
+            println!("Configuration cancelled.");
+            return Ok(());
+        }
+
+        let preset = match preset_idx {
+            0 => "auto",
+            1 => "rust",
+            2 => "javascript",
+            3 => "python",
+            4 => "conventional",
+            5 => "none",
             _ => "auto",
         };
         config.preset = Some(preset.to_string());
