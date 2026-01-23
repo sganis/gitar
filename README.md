@@ -2,32 +2,60 @@
 
 # 🎸 Gitar
 
-**Gitar** is an AI-powered Git assistant that generates **commit messages, PR descriptions, changelogs, explanations, and version bump suggestions** directly from your diffs and history.
+**Gitar** is an AI-native Git interface that replaces manual Git workflows with intelligent, AI-assisted operations. Instead of memorizing Git commands and manually staging, splitting, and explaining changes, you ask Gitar to **analyze, plan, and safely execute**.
 
-Gitar supports:
+Under the hood, Gitar is built around a **skill-first architecture**: most operations are implemented as deterministic, reusable **skills**—structured pipelines that take diffs, files, or commit ranges, call the LLM only when needed, and validate and post-process the results to produce reliable outputs (commit messages, changelogs, explanations, conflict resolutions, etc.). For higher-level tasks that require planning and multi-step reasoning, Gitar uses lightweight **agents** as orchestrators that coordinate multiple skills in a controlled, auditable way.
 
+All layers share a powerful **context optimization engine**:
+- Smart diff shaping algorithms (4 modes)
+- Secret detection and redaction
+- Language-specific style presets
+- Token budget management
+
+
+**Supported LLM Providers:**
 - **openai** — OpenAI & compatible APIs (OpenRouter, Together, Mistral, …)
 - **claude** — Anthropic
 - **gemini** — Google
-- **groq**   — hosted LLM inference API
-- **ollama** — local models
+- **groq** — Fast hosted inference
+- **ollama** — Local models (100% private)
 
-The name combines **Git** + **Ai** + **Rust** (and happens to sound like *guitar*).
+The name combines **Git** + **AI** + **Rust** (and sounds like *guitar*).
 
 ---
 
-## Features
+## Conceptual Model
 
-- **commit** — Interactive commit with AI-generated message
-- **staged / unstaged** — Generate commit message for staged or unstaged changes
-- **history** — Generate meaningful messages for existing commit history
-- **pr** — Generate PR descriptions from branch changes
-- **changelog** — Generate release notes from commits
-- **explain** — Explain changes in plain English for non-technical stakeholders
-- **version** — Suggest semantic version bumps based on changes
-- **models** — List available models (when the provider exposes a models endpoint)
-- **hook** — Install Git hook to auto-generate commit messages on `git commit`
-- **diff** — Preview/compare what would be sent to the LLM (debug tool)
+Gitar organizes Git workflows into **four layers**:
+
+### 🚀 Plan (Core Product)
+AI-native commit planning engine that analyzes your changes and proposes optimal commit structure:
+- **Multi-commit planning** — Group changes into logical, reviewable commits
+- **Interactive editing** — Review, reorder, merge, or split commits before execution
+- **Multiple modes** — Working tree, staged changes, or historical commits
+- **Safe execution** — Dry-run by default, explicit `--apply` to execute
+
+### 📝 Narrate (Read-only)
+Explain and communicate Git state without modifying history:
+- **Commit messages** — Generate high-quality messages for staged/unstaged changes
+- **PR descriptions** — Auto-generate pull request descriptions from branch diffs
+- **Changelogs** — Create release notes from commit ranges
+- **Explanations** — Translate technical changes into plain English
+- **Version analysis** — Suggest semantic version bumps
+
+### 🧰 Release (Guided Workflow)
+Safe, deterministic release automation:
+- **Version management** — Analyze commits and suggest version bumps
+- **Changelog generation** — Auto-generate release notes
+- **Version file updates** — Update Cargo.toml, package.json, etc.
+- **Git tagging** — Create release commits and tags (never auto-pushes)
+
+### 🩹 Resolve (Conflict Resolution)
+Merge conflict resolver with heavy safety rails:
+- **Heuristic resolution** — Fast, deterministic conflict resolution
+- **LLM fallback** — Per-region and full-file AI-assisted resolution
+- **Safety checks** — Ensures no markers remain, no unmerged files
+- **Preview mode** — Inspect before applying
 
 ---
 
@@ -92,54 +120,115 @@ gitar.exe --version
 
 ## Quick Start
 
-The easiest way to configure gitar is using the `--provider` option:
+Configure Gitar interactively or via command line:
 
 ```bash
-# OpenAI
+# Interactive setup (recommended for first-time users)
+gitar init
+
+# Or specify provider directly
 export OPENAI_API_KEY="sk-..."
 gitar init --provider openai
 
-# Anthropic Claude
+# Claude
 export ANTHROPIC_API_KEY="sk-ant-..."
 gitar init --provider claude
 
-# Google Gemini
+# Gemini
 export GEMINI_API_KEY="AIza..."
 gitar init --provider gemini
 
-# Groq (OpenAI-compatible)
+# Groq
 export GROQ_API_KEY="gsk_..."
-gitar init --provider groq --model llama-3.3-70b-versatile
+gitar init --provider groq
 
 # Ollama (local, no API key needed)
-gitar init --provider ollama --model llama3.2:latest
+gitar init --provider ollama
+```
+
+Then start using Gitar:
+
+```bash
+# The core workflow: AI-powered commit planning
+gitar plan                      # Analyze changes and create multi-commit plan
+gitar plan --apply              # Execute the plan
+
+# Traditional workflow: generate commit messages
+git add .
+gitar commit                    # Create commit with AI-generated message
 ```
 
 ---
 
 ## Usage
 
-### Quick reference
+Gitar has four conceptual workflows:
+
+### 1. 🚀 Plan (Core Workflow) — Smart Commit Planning
+
+AI-powered commit planning and history shaping:
 
 ```bash
-gitar commit                    # Interactive commit
-gitar commit -a -p              # Stage all, commit, push
+gitar plan                      # Auto-detect changes and create multi-commit plan
+gitar plan --apply              # Execute the plan after review
+gitar plan -i                   # Interactive mode (edit, reorder, merge commits)
 
+gitar plan --mode working       # Plan for working tree changes
+gitar plan --mode staged        # Plan for staged changes
+gitar plan --mode history --from v1.0.0  # Plan for historical commits
+```
+
+### 2. 📝 Narrate (Read-only) — Understand & Communicate
+
+Generate messages, descriptions, and explanations without modifying history:
+
+```bash
+# Commit messages
+gitar commit                    # Interactive commit with AI message
+gitar commit -a -p              # Stage all, commit, push
 gitar staged                    # Message for staged changes
 gitar unstaged                  # Message for unstaged changes
 
-gitar history v1.0.0            # Regenerate messages since tag
-gitar history v1.0.0 --to v1.1.0
-
-gitar changelog v1.0.0          # Release notes since tag
+# Communication
 gitar pr                        # PR description
-gitar explain                   # Explain for non-technical audience
-gitar version                   # Suggest version bump
-gitar models                    # List available models (when supported)
+gitar pr main                   # PR against specific branch
+gitar changelog v1.0.0          # Release notes since tag
+gitar explain                   # Explain changes in plain English
+gitar explain --staged          # Explain staged changes
 
+# Analysis
+gitar history v1.0.0            # Generate messages for commit range
+gitar version                   # Suggest semantic version bump
+```
+
+### 3. 🧰 Release — Guided Release Workflow
+
+Safe, deterministic release automation:
+
+```bash
+gitar release                   # Dry-run: preview version bump and changelog
+gitar release --apply           # Execute release (version, changelog, tag)
+gitar release --skip-changelog  # Skip changelog generation
+gitar release --from v1.0.0     # Specify base version
+```
+
+### 4. 🩹 Resolve — Merge Conflict Resolution
+
+AI-assisted conflict resolution with safety checks:
+
+```bash
+gitar resolve                   # Detect conflicts and propose resolutions
+gitar resolve --apply           # Apply resolutions and stage files
+gitar resolve --apply --yes     # Non-interactive mode
+```
+
+### Utilities
+
+```bash
 gitar hook install              # Install git commit hook
-
+gitar models                    # List available models (when supported)
 gitar diff --compare            # Compare smart diff algorithms side-by-side
+gitar config                    # Show resolved configuration
 ```
 
 ---
@@ -405,345 +494,68 @@ Gitar sends **only what it needs** for the command you run (for example: a diff,
 
 ---
 
+## Advanced Commands
+
+### Plan Command
+
+The `plan` command analyzes your repository state and creates an intelligent multi-commit plan:
+
+```bash
+gitar plan                      # Auto-detect changes and create plan
+gitar plan --mode working       # Plan for working tree changes
+gitar plan --mode staged        # Plan for staged changes
+gitar plan --mode history --from v1.0.0  # Plan for historical commits
+
+gitar plan -i                   # Interactive mode (default)
+gitar plan --apply              # Execute plan after approval
+```
+
+**Features:**
+- AI-powered grouping of changes into logical commits
+- Interactive editor to review, reorder, merge, or split commits
+- Safe execution with dry-run by default
+- Multiple analysis modes (auto, working, staged, history)
+
+### Resolve Command
+
+AI-assisted merge conflict resolution with safety-first approach:
+
+```bash
+gitar resolve                   # Inspect conflicts and propose resolutions
+gitar resolve --apply           # Apply resolutions and stage files
+gitar resolve --apply --yes     # Non-interactive mode
+```
+
+**Resolution strategy:**
+1. Heuristic-based resolution (fast, deterministic)
+2. Per-region LLM resolution (precise, context-aware)
+3. Full-file LLM fallback (comprehensive)
+
+**Safety checks:**
+- Ensures no conflict markers remain
+- Verifies no unmerged files
+- Preview before applying
+
+### Release Command
+
+Guided release workflow with version management:
+
+```bash
+gitar release                   # Dry-run: preview version bump and changelog
+gitar release --apply           # Execute release (commit, tag, but never push)
+gitar release --skip-changelog  # Skip changelog generation
+gitar release --from v1.0.0     # Specify base version
+```
+
+**What it does:**
+- Analyzes commits since last tag
+- Suggests semantic version bump
+- Generates changelog
+- Updates version files (Cargo.toml, package.json, etc.)
+- Creates git commit and tag
+
+---
+
 ## License
 
 MIT
-
-
----
-
-# Future
-
-# Gitar — AI-Native Git Interface
-
-**Gitar** is an AI-powered Git CLI designed to **replace most direct Git usage** with a smarter, safer, AI-assisted workflow.
-
-Instead of memorizing Git commands and manually staging, splitting, and explaining changes, you:
-
-> **Ask Gitar to explain, plan, and safely execute.**
-
----
-
-# Mental Model
-
-Gitar has **four conceptual layers**:
-
-1. 📝 **Narrate** → Explain and summarize Git state (read-only)
-2. 🚀 **Plan** → Design commit structure and history (the product)
-3. 🧰 **Release** → Guided, safe release workflow
-4. 🩹 **Resolve** → Fix merge conflicts safely
-
-Under the hood, all of them share:
-
-> A powerful **diff shaping + secret detection + context optimization engine**.
-
----
-
-# What Gitar Is Great At
-
-- Writing high-quality commit messages
-- Explaining diffs to non-technical people
-- Generating changelogs and PR descriptions
-- Planning clean commit history
-- Splitting monster commits
-- Safely guiding releases
-- Fixing merge conflicts with fallback-heavy safety
-
----
-
-# Quick Start
-
-```bash
-gitar init        # Create ~/.gitar.toml
-gitar config      # Show current configuration
-
-git add .
-gitar commit      # Create a commit with AI-generated message
-````
-
----
-
-# Subsystems
-
----
-
-## 📝 1) Narration Layer (Read-only, already mature)
-
-> **Explain Git state in human language.**
-
-These commands **do not modify history**. They only describe it.
-
-### Available commands
-
-```bash
-gitar staged                    # Message for staged changes
-gitar unstaged                  # Message for unstaged changes
-
-gitar history v1.0.0            # Regenerate messages since tag
-gitar history v1.0.0 --to v1.1.0
-
-gitar changelog v1.0.0          # Release notes since tag
-gitar pr                        # PR description
-gitar explain                   # Explain for non-technical audience
-gitar version                   # Suggest version bump
-
-gitar diff --compare            # Compare smart diff algorithms side-by-side
-gitar models                    # List available models (when supported)
-```
-
-All of these are:
-
-> `Git state → shaped diff → LLM → text`
-
----
-
-## 🚀 2) Planning Layer — `gitar plan` (THE PRODUCT)
-
-> **AI-native commit planning and history shaping engine.**
-
-This is the **core of Gitar**.
-
-`gitar plan` (currently implemented as `split`) will:
-
-* Analyze:
-
-  * working tree
-  * staged
-  * untracked
-  * or history ranges
-* Propose:
-
-  * number of commits
-  * grouping
-  * ordering
-  * messages
-* Let the human:
-
-  * accept / reject
-  * move files between groups
-  * exclude files
-  * regenerate plan
-* Then:
-
-  * execute Git plumbing safely
-
-### Long-term goals
-
-* Clean commit creation
-* Splitting monster commits
-* History rewrite
-* Review-first workflows
-* Staging strategy
-* Commit message generation
-* Changelog generation
-
-> **AI proposes. Human approves. Git executes.**
-
----
-
-## 🧰 3) Release Layer — `gitar release` (Guided workflow)
-
-> **Safe, deterministic, boring release automation.**
-
-This command will:
-
-* Analyze commits since last tag
-* Decide version bump
-* Draft changelog
-* Update version file(s)
-* Commit
-* Tag
-
-It **never pushes**.
-
-Think of it as:
-
-> **“`gitar plan`, but specialized for releases.”**
-
----
-
-## 🩹 4) Resolve Layer — `gitar resolve`
-
-> **Merge conflict resolver with heavy safety rails.**
-
-Features:
-
-* Detect conflicts
-* Parse conflict regions
-* Try:
-
-  * heuristics
-  * per-region LLM
-  * fallback to full-file LLM
-* Enforce safety:
-
-  * no markers remain
-  * no unmerged files remain
-
-Philosophy:
-
-> **Safe. Cheap. Deterministic. Fallback-heavy.**
-
-No AST. No heroics.
-
----
-
-# Diff Shaping & Context Optimization (Core Infrastructure)
-
-Large diffs can blow up context windows and cost tokens. Gitar can **shape** the diff before sending it to your LLM.
-
-Most commands accept:
-
-```bash
---algo <1..4>
-```
-
-### Algorithms
-
-* **1 — Full Diff**
-  Sends the raw `git diff` (best fidelity, worst token usage).
-
-* **2 — Selective Files**
-  Splits the diff by file, filters out noise, ranks files by importance, packs whole-file patches.
-
-* **3 — Selective Hunks**
-  Extracts and ranks hunks across files, caps dominance per file.
-
-* **4 — Semantic JSON** *(default)*
-  Produces a compact JSON IR with file summaries and top-ranked hunks, adaptively shrinking until it fits.
-
-### Debug
-
-```bash
-gitar diff --algo 2 --max-chars 15000 --stats
-gitar diff --compare
-```
-
----
-
-# Secret Detection & Protection
-
-Gitar scans diffs **before sending to any LLM**:
-
-* API keys
-* Private keys
-* DB URLs
-* Passwords
-* Tokens
-* JWTs
-
-Configure in `~/.gitar.toml`:
-
-```toml
-secret_action = "redact"   # "redact" | "warn" | "block"
-```
-
-| Action | Behavior                                   |
-| ------ | ------------------------------------------ |
-| redact | Replace secrets with `[REDACTED:TYPE:Nch]` |
-| warn   | Warn but send                              |
-| block  | Abort                                      |
-
----
-
-# Style Presets
-
-Gitar adapts message style to your project:
-
-```bash
-gitar commit --preset rust
-gitar commit --preset js
-gitar commit --preset python
-gitar commit --preset auto
-```
-
-Auto-detection:
-
-| File                      | Preset     |
-| ------------------------- | ---------- |
-| Cargo.toml                | rust       |
-| package.json              | javascript |
-| pyproject.toml / setup.py | python     |
-
----
-
-# Git Hook
-
-Install once per repo:
-
-```bash
-gitar hook install
-```
-
-Then:
-
-```bash
-git add .
-git commit
-```
-
-Gitar auto-generates the message via `prepare-commit-msg`.
-
----
-
-# Configuration
-
-`~/.gitar.toml` example:
-
-```toml
-default_provider = "openai"
-base_branch = "main"
-max_diff_chars = 50000
-preset = "auto"
-secret_action = "redact"
-
-[openai]
-model = "gpt-4o"
-max_tokens = 500
-temperature = 0.5
-stream = true
-
-[claude]
-model = "claude-sonnet-4-5-20250929"
-
-[ollama]
-model = "llama3.2:latest"
-base_url = "http://localhost:11434/v1"
-```
-
-Show config:
-
-```bash
-gitar config
-```
-
----
-
-# Philosophy
-
-* AI proposes
-* Human approves
-* Git executes
-
-Never:
-
-* Auto-rewrite history
-* Auto-commit without showing a plan
-* Hide what Git is doing
-
----
-
-# Roadmap (Clear Priorities)
-
-1. 🚀 **`gitar plan`** (core product)
-2. 🧰 `gitar release`
-3. 📝 Narration improvements
-4. 🩹 `gitar resolve` maintenance only
-
----
-
-# One-Line Summary
-
-> **Gitar is an AI-native Git interface that helps you understand your history, plan it, and safely execute it.**
-
-```
