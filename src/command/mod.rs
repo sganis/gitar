@@ -25,7 +25,9 @@ pub use hook::cmd_hook;
 pub use models::cmd_models;
 pub use pr::cmd_pr;
 pub use version::cmd_version;
-pub use resolve::{cmd_resolve, cmd_resolve_with_resolver, ConflictInput, ConflictResolver};
+pub use resolve::cmd_resolve;
+#[allow(unused_imports)]
+pub use resolve::{cmd_resolve_with_resolver, ConflictInput, ConflictResolver};
 pub use plan::{cmd_plan, AnalysisMode};
 pub use release::cmd_release;
 

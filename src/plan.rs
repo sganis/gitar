@@ -2,12 +2,14 @@
 use std::fmt;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub struct Plan {
     pub title: String,
     pub steps: Vec<Action>,
 }
 
 impl Plan {
+    #[allow(dead_code)]
     pub fn new(title: impl Into<String>) -> Self {
         Self {
             title: title.into(),
@@ -15,16 +17,19 @@ impl Plan {
         }
     }
 
+    #[allow(dead_code)]
     pub fn push(&mut self, step: Action) {
         self.steps.push(step);
     }
 
+    #[allow(dead_code)]
     pub fn is_empty(&self) -> bool {
         self.steps.is_empty()
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[allow(dead_code)]
 pub enum Action {
     /// A high-level “do this next” step (no side effects yet).
     Suggest {
@@ -40,6 +45,7 @@ pub enum Action {
 }
 
 impl Action {
+    #[allow(dead_code)]
     pub fn suggest(label: impl Into<String>) -> Self {
         Self::Suggest {
             label: label.into(),
@@ -47,6 +53,7 @@ impl Action {
         }
     }
 
+    #[allow(dead_code)]
     pub fn suggest_with_detail(label: impl Into<String>, detail: impl Into<String>) -> Self {
         Self::Suggest {
             label: label.into(),
@@ -54,6 +61,7 @@ impl Action {
         }
     }
 
+    #[allow(dead_code)]
     pub fn git(args: &[&str]) -> Self {
         Self::Git {
             args: args.iter().map(|s| s.to_string()).collect(),
@@ -61,6 +69,7 @@ impl Action {
         }
     }
 
+    #[allow(dead_code)]
     pub fn git_labeled(label: impl Into<String>, args: &[&str]) -> Self {
         Self::Git {
             args: args.iter().map(|s| s.to_string()).collect(),

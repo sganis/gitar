@@ -23,6 +23,7 @@ pub enum VersionFileType {
 }
 
 impl VersionFileType {
+    #[allow(dead_code)]
     fn name(&self) -> &str {
         match self {
             Self::Cargo => "Cargo.toml",

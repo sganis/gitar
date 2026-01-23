@@ -193,6 +193,7 @@ pub fn shape_diff(
     }
 }
 
+#[allow(dead_code)]
 pub fn compare_algorithms(raw_diff: &str, max_chars: usize) -> String {
     let mut out = String::from("=== Algorithm Comparison ===\n\n");
 

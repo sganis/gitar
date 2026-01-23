@@ -14,6 +14,7 @@ pub fn get_latest_tag() -> Result<Option<String>> {
 }
 
 /// Get all tags sorted by creation date
+#[allow(dead_code)]
 pub fn get_all_tags() -> Result<Vec<String>> {
     let output = git::run_git_optional(&["tag", "--sort=-creatordate"])?;
 
@@ -49,6 +50,7 @@ pub fn create_tag(tag: &str, message: &str, dry_run: bool) -> Result<()> {
 }
 
 /// Get the commit hash for a reference
+#[allow(dead_code)]
 pub fn get_commit_hash(reference: &str) -> Result<String> {
     git::run_git(&["rev-parse", reference])
         .map(|s| s.trim().to_string())
@@ -79,11 +81,15 @@ pub fn get_commits_since(from: &str, to: Option<&str>) -> Result<Vec<CommitInfo>
 
 #[derive(Debug, Clone)]
 pub struct CommitInfo {
+    #[allow(dead_code)]
     pub hash: String,
     pub short_hash: String,
     pub subject: String,
+    #[allow(dead_code)]
     pub author_name: String,
+    #[allow(dead_code)]
     pub author_email: String,
+    #[allow(dead_code)]
     pub date: String,
 }
 

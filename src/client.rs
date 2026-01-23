@@ -2,7 +2,7 @@
 use anyhow::Result;
 use reqwest::{Client, Proxy};
 
-use crate::config::ResolvedConfig;
+use crate::config::{provider_to_url, ProviderConfig, ResolvedConfig};
 use crate::provider::{claude, gemini, openai};
 
 pub struct LlmClient {
@@ -40,6 +40,46 @@ impl LlmClient {
             model: config.model.clone(),
             max_tokens: config.max_tokens,
             temperature: config.temperature,
+        })
+    }
+
+    /// Create a client with just a provider and provider config (for init command)
+    pub fn new_with_provider(provider: &str, provider_config: &ProviderConfig) -> Result<Self> {
+        let mut builder = Client::builder().timeout(std::time::Duration::from_secs(120));
+
+        if let Ok(proxy_url) = std::env::var("ALL_PROXY") {
+            let proxy_url = proxy_url.trim();
+            if !proxy_url.is_empty() {
+                builder = builder.proxy(Proxy::all(proxy_url)?);
+            }
+        }
+
+        let base_url = provider_config
+            .base_url
+            .clone()
+            .or_else(|| provider_to_url(provider).map(String::from))
+            .ok_or_else(|| anyhow::anyhow!("Unknown provider: {}", provider))?;
+
+        let model = provider_config
+            .model
+            .clone()
+            .unwrap_or_else(|| match provider {
+                "openai" => "gpt-5-chat-latest".to_string(),
+                "claude" => "claude-sonnet-4-5-20250929".to_string(),
+                "gemini" => "gemini-2.5-flash".to_string(),
+                "groq" => "llama-3.3-70b-versatile".to_string(),
+                "ollama" => "llama3.2:latest".to_string(),
+                _ => "gpt-5-chat-latest".to_string(),
+            });
+
+        Ok(Self {
+            http: builder.build()?,
+            provider: provider.to_string(),
+            base_url: base_url.trim_end_matches('/').to_string(),
+            api_key: provider_config.api_key.clone(),
+            model,
+            max_tokens: provider_config.max_tokens.unwrap_or(4096),
+            temperature: provider_config.temperature.unwrap_or(0.7),
         })
     }
 

@@ -1,23 +1,12 @@
 // src/main.rs
-mod cli;
-mod client;
-mod config;
-mod context;
-mod executor;
-mod git;
-mod plan;
-mod provider;
-mod types;
-mod util;
-mod command;
-
 use anyhow::{bail, Result};
 use clap::Parser;
-use cli::{Cli, Commands};
-use client::LlmClient;
-use command::*;
-use config::{Config, ResolvedConfig};
-use git::{get_default_branch, is_git_repo};
+
+use gitar::cli::{Cli, Commands};
+use gitar::client::LlmClient;
+use gitar::command::*;
+use gitar::config::{Config, ResolvedConfig};
+use gitar::git::{get_default_branch, get_repo_root_path, is_git_repo};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -28,7 +17,7 @@ async fn main() -> Result<()> {
 
     // Handle commands that don't need git or LLM client
     match &cli.command {
-        Commands::Init => return cmd_init(&cli, &file_config),
+        Commands::Init => return cmd_init(&cli, &file_config).await,
         Commands::Config => return cmd_config(),
         Commands::Hook { command } => return cmd_hook(command.clone()),
         _ => {}
@@ -63,7 +52,7 @@ async fn main() -> Result<()> {
 
     // Plan command now requires LLM client (handled below with other commands)
 
-    let repo_root_path = git::get_repo_root_path()?;
+    let repo_root_path = get_repo_root_path()?;
 
     // Build config and LLM client for remaining commands
     let config = ResolvedConfig::new(
@@ -284,8 +273,6 @@ async fn main() -> Result<()> {
             yes,
             algo,
         } => {
-            use command::AnalysisMode;
-
             // Parse mode
             let analysis_mode = match mode.as_deref() {
                 Some("working") => Some(AnalysisMode::WorkingTree),

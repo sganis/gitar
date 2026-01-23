@@ -4,9 +4,11 @@ use anyhow::Result;
 use crate::git::run_git;
 use crate::plan::{Action, Plan};
 
+#[allow(dead_code)]
 pub struct Executor;
 
 impl Executor {
+    #[allow(dead_code)]
     pub fn execute(plan: &Plan, dry_run: bool) -> Result<()> {
         for step in &plan.steps {
             match step {
