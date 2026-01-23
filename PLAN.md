@@ -1,210 +1,235 @@
-# Gitar Vision Completion Plan
+# Gitar CLI API Improvement Plan
 
-> **Mission**: "Gitar is an AI-native Git interface that helps you understand your history, plan it, and safely execute it"
+## Overview
 
-## Current State Summary
+Improve the gitar CLI by removing redundancy, enhancing integrations, and adding new features while keeping the flat command structure.
 
-### Four Conceptual Layers
-| Layer | Status | Commands |
-|-------|--------|----------|
-| Narrate (read-only) | **MATURE** | changelog, explain, pr, history, version |
-| Plan (commit planning) | **EXISTS** (needs polish) | plan |
-| Release (guided workflow) | **NOT IMPLEMENTED** | - |
-| Resolve (conflict resolution) | **COMPLETE** | resolve |
+**Core Focus**: Git narrate, plan, and execute. AI-powered git operations, NOT code analysis or security scanning.
 
-### Issues Found
-1. **Code duplication**: Context loading (commit vs repo.rs), diff pipeline pattern (8+ commands)
-2. **Oversized files**: algo.rs (824 lines), analyze.rs (546 lines)
-3. **Deprecated code**: split command still present
-4. **Incomplete features**: plan history mode, release command
+## Current Commands (17)
 
----
+| Command | Purpose | Change |
+|---------|---------|--------|
+| `commit` | Create commit with AI message | Add `--amend` flag |
+| `staged` | Generate message for staged | Keep |
+| `unstaged` | Generate message for unstaged | Keep |
+| `history` | Describe commits | Keep |
+| `pr` | Generate PR description | Keep |
+| `changelog` | Generate release notes | Keep |
+| `explain` | Explain for stakeholders | Keep |
+| `version` | Suggest version bump | **Remove** → `release --bump` |
+| `plan` | Multi-commit planning | Add `--resolve` flag |
+| `resolve` | Conflict resolution | Keep |
+| `release` | Version + changelog + tag | Add `--bump` flag (absorb version) |
+| `init` | Create config | Keep |
+| `config` | Show config | Keep |
+| `hook` | Manage hooks | Keep |
+| `models` | List models | Keep |
+| `diff` | Debug diff | Keep |
 
-## Implementation Plan
-
-### Phase 1: Split Oversized Files
-
-**1.1 Split `src/context/algo.rs` (824 lines → 5 files)**
-
-Create `src/context/algo/` directory:
-```
-src/context/algo/
-├── mod.rs      (~100 lines) - Types, shape_diff(), re-exports
-├── full.rs     (~80 lines)  - Algorithm 1: full diff
-├── file.rs     (~100 lines) - Algorithm 2: selective files
-├── hunk.rs     (~120 lines) - Algorithm 3: selective hunks
-└── semantic.rs (~200 lines) - Algorithm 4: semantic JSON
-```
-
-**1.2 Extract shared utilities to `src/util/file.rs`**
-
-Move duplicated functions:
-- `categorize_file()` from plan/analyze.rs (lines 404-451)
-- `group_by_heuristics()` from plan/group.rs (lines 109-177)
-
-New file: `src/util/file.rs` (~80 lines)
-
----
-
-### Phase 2: Consolidate Duplicated Code
-
-**2.1 Remove duplicate context loading from `src/command/commit/mod.rs`**
-
-Delete lines 15-55 (home_dir, load_user_context, load_project_context).
-Use `crate::context::repo::load_all_context()` instead.
-
-**2.2 Create shared pipeline module `src/pipeline/`**
+## Proposed Commands (16 current + 2 future = 18)
 
 ```
-src/pipeline/
-├── mod.rs  (~20 lines) - Re-exports
-└── diff.rs (~100 lines) - DiffRequest, DiffResponse, process_diff()
-```
-
-```rust
-pub struct DiffRequest<'a> {
-    pub raw_diff: &'a str,
-    pub max_chars: usize,
-    pub algo: u8,
-    pub secret_action: SecretAction,
-    pub silent: bool,
-}
-
-pub fn process_diff(req: &DiffRequest) -> Result<DiffResponse>
-```
-
-Refactor these commands to use pipeline:
-- explain, pr, changelog, version, history, commit
-
----
-
-### Phase 3: Complete Plan Command
-
-**3.1 Implement history mode execution**
-
-File: `src/command/plan/execute.rs` (lines 40-42 currently just warns)
-
-Add `execute_history_mode()`:
-- Build rebase-todo script from commit groups
-- Execute interactive rebase with prepared script
-- Handle conflicts gracefully
-
-**3.2 Add editor capabilities**
-
-File: `src/command/plan/editor.rs`
-
-New actions:
-- `merge 1-3` - Merge commits 1 through 3 into single commit
-- `reorder 3 1` - Move commit 3 to position 1
-- `split 2` - Split commit 2 into multiple (re-analyze files)
-
----
-
-### Phase 4: Implement Release Command
-
-**New directory: `src/command/release/`**
-
-```
-src/command/release/
-├── mod.rs     (~200 lines) - Main workflow orchestration
-├── version.rs (~100 lines) - Version file detection/update
-└── tag.rs     (~80 lines)  - Tag creation helpers
-```
-
-**Workflow:**
-1. Analyze commits since last tag (or --from ref)
-2. Call existing version suggestion logic
-3. Generate changelog (reuse cmd_changelog)
-4. Detect version files (Cargo.toml, package.json, pyproject.toml)
-5. Update version files
-6. Create release commit
-7. Create annotated tag
-8. Display summary (never auto-push)
-
-**CLI:**
-```rust
-Release {
-    #[arg(long)] apply: bool,           // Execute (default: dry-run)
-    #[arg(long)] skip_changelog: bool,  // Skip changelog generation
-    #[arg(long)] from: Option<String>,  // Base ref (default: latest tag)
-}
+gitar
+├── commit [--amend]         # Add amend support
+├── staged                   # Keep as-is
+├── unstaged                 # Keep as-is
+├── history                  # Keep as-is
+├── pr                       # Keep as-is
+├── changelog                # Keep as-is
+├── explain                  # Keep as-is
+├── plan [--resolve]         # Add resolve integration
+├── resolve                  # Keep as-is
+├── release [--bump]         # Absorb version analysis
+├── init                     # Keep as-is
+├── config                   # Keep as-is
+├── hook                     # Keep as-is
+├── models                   # Keep as-is
+├── diff                     # Keep as-is
+│
+├── squash                   # [NEW] Squash with AI message
+└── rewrite                  # [NEW] Interactive history rewrite
 ```
 
 ---
 
-### Phase 5: Cleanup
+## Key Changes
 
-**5.1 Remove deprecated split command**
+### 1. Remove `version` command → `release --bump`
 
-Delete:
-- `src/command/split/mod.rs` (478 lines)
-- References in cli.rs, main.rs, command/mod.rs
+The standalone `version` command is removed. Its LLM-powered analysis moves into `release`:
 
-**5.2 Fix remaining warnings**
+```bash
+# Before
+gitar version v1.0.0          # Analyze and suggest bump
 
-- Remove `#![allow(unused_imports)]` from context/mod.rs
-- Remove `#![allow(dead_code)]` from context/algo/mod.rs after migration
-
----
-
-## Final Module Structure
-
-```
-src/
-├── main.rs, lib.rs, cli.rs, client.rs, config.rs
-├── git.rs, types.rs, plan.rs, executor.rs
-├── context/
-│   ├── mod.rs, repo.rs, secret.rs, preset.rs, template.rs
-│   └── algo/
-│       ├── mod.rs, full.rs, file.rs, hunk.rs, semantic.rs
-├── pipeline/
-│   ├── mod.rs, diff.rs
-├── util/
-│   ├── mod.rs, diff.rs, file.rs (NEW)
-└── command/
-    ├── commit/, changelog/, explain/, pr/, version/, history/
-    ├── diff/, config/, hook/, init/, models/
-    ├── plan/
-    │   ├── mod.rs, analyze.rs, group.rs, editor.rs, execute.rs
-    ├── resolve/
-    │   ├── mod.rs, parser.rs, heuristic.rs, llm.rs, diff_preview.rs, git_helper.rs
-    └── release/ (NEW)
-        ├── mod.rs, version.rs, tag.rs
+# After
+gitar release --bump auto     # LLM analyzes, suggests version
+gitar release --bump minor    # Override: force minor bump
+gitar release --bump patch    # Override: force patch bump
+gitar release --bump major    # Override: force major bump
 ```
 
+**Implementation:**
+- Remove `Commands::Version` variant from cli.rs
+- Remove `cmd_version` from main.rs dispatch
+- Move LLM version analysis logic from `command/version/mod.rs` to `command/release/mod.rs`
+- Replace naive heuristic in release with LLM call
+- Add `--bump` flag to release command
+
+### 2. Add `--amend` to `commit`
+
+Regenerate message for last commit and amend it:
+
+```bash
+gitar commit --amend    # Get diff of HEAD, regenerate message, git commit --amend
+```
+
+**Implementation:**
+- Add `amend: bool` flag to `Commands::Commit`
+- In `cmd_commit`: if amend, get diff of HEAD~1..HEAD, generate message, run `git commit --amend -m "..."`
+
+### 3. Add `--resolve` to `plan`
+
+Auto-resolve conflicts before planning:
+
+```bash
+gitar plan --resolve --apply  # Resolve conflicts first, then execute plan
+```
+
+**Implementation:**
+- Add `resolve: bool` flag to `Commands::Plan`
+- In `cmd_plan`: if conflicts detected and `--resolve` flag set, call `cmd_resolve` first
+
 ---
 
-## Critical Files to Modify
+## New Commands
 
-| File | Action | Lines Affected |
-|------|--------|----------------|
-| `src/context/algo.rs` | Split into 5 files | All 824 lines |
-| `src/command/commit/mod.rs` | Remove duplicate code | Lines 15-55 |
-| `src/command/plan/execute.rs` | Add history mode | Lines 40-42 + new function |
-| `src/command/plan/editor.rs` | Add merge/reorder | Add ~100 lines |
-| `src/cli.rs` | Add Release, remove Split | ~20 lines |
-| `src/main.rs` | Add Release routing | ~10 lines |
-| `src/command/split/mod.rs` | DELETE | 478 lines removed |
+### 4. `squash` - Squash Commits
+
+Squash recent commits with AI-generated message:
+
+```bash
+gitar squash 3            # Squash last 3 commits into 1
+gitar squash HEAD~5       # Squash commits since HEAD~5
+gitar squash v1.0.0       # Squash commits since tag
+```
+
+**Implementation:**
+- Collect commits in range
+- Generate unified commit message via LLM
+- Execute `git reset --soft` + `git commit`
+
+### 5. `rewrite` - Interactive History Rewrite
+
+Interactive history rewriting with AI-generated messages:
+
+```bash
+gitar rewrite HEAD~5      # Rewrite last 5 commits
+gitar rewrite v1.0.0      # Rewrite commits since tag
+```
+
+**Implementation:**
+- Similar to `history` but actually modifies commits
+- Interactive: show each commit, propose new message, confirm
+- Uses `git rebase --exec` or similar mechanism
 
 ---
 
-## Verification Plan
+## Implementation Phases
 
-1. **After each phase**: Run `cargo check` and `cargo test`
-2. **After algo split**: Run `gitar diff --compare` to verify algorithms work
-3. **After pipeline refactor**: Test each command manually with a sample repo
-4. **After release command**: Test dry-run flow in test repo
-5. **Final**: Run full test suite `cargo test -- --nocapture`
+### Phase 1: Remove Version + Enhance Release
+1. Add `--bump` flag to release command (auto|major|minor|patch)
+2. Move LLM version analysis from `cmd_version` to `cmd_release`
+3. Remove `version` command
+4. Update tests
+
+**Files:**
+- `src/cli.rs` - Remove Version variant, add bump to Release
+- `src/main.rs` - Remove version dispatch
+- `src/command/release/mod.rs` - Add LLM version analysis
+- `src/command/version/mod.rs` - Remove file
+
+### Phase 2: Add --amend to commit
+1. Add `amend: bool` flag to Commit
+2. Implement amend logic in `cmd_commit`
+3. Add tests
+
+**Files:**
+- `src/cli.rs` - Add amend flag
+- `src/command/commit/mod.rs` - Implement amend logic
+
+### Phase 3: Add --resolve to plan
+1. Add `resolve: bool` flag to Plan
+2. Call `cmd_resolve` when conflicts detected and flag set
+3. Add tests
+
+**Files:**
+- `src/cli.rs` - Add resolve flag
+- `src/command/plan/mod.rs` - Integrate resolve
+
+### Phase 4: Add squash command
+1. Add `Commands::Squash` variant
+2. Create `command/squash/mod.rs`
+3. Implement squash logic with LLM message generation
+
+**Files:**
+- `src/cli.rs` - Add Squash variant
+- `src/main.rs` - Add dispatch
+- `src/command/squash/mod.rs` - New file (~200 lines)
+
+### Phase 5: Add rewrite command
+1. Add `Commands::Rewrite` variant
+2. Create `command/rewrite/mod.rs`
+3. Implement interactive rebase with LLM messages
+
+**Files:**
+- `src/cli.rs` - Add Rewrite variant
+- `src/main.rs` - Add dispatch
+- `src/command/rewrite/mod.rs` - New file (~250 lines)
 
 ---
 
-## Execution Order
+## Verification
 
-1. Phase 1.1: Split algo.rs (foundation for everything else)
-2. Phase 1.2: Extract util/file.rs
-3. Phase 2.1: Remove commit duplication
-4. Phase 2.2: Create pipeline module
-5. Phase 3.1: Plan history mode
-6. Phase 3.2: Plan editor improvements
-7. Phase 4: Release command
-8. Phase 5: Cleanup (remove split, fix warnings)
+### Phase 1 (release --bump)
+```bash
+cargo test
+gitar release --bump auto      # Should use LLM analysis
+gitar release --bump minor     # Should force minor
+gitar version                  # Should fail: command not found
+```
+
+### Phase 2 (commit --amend)
+```bash
+cargo test
+gitar commit                   # Normal commit
+gitar commit --amend           # Should amend with new message
+```
+
+### Phase 3 (plan --resolve)
+```bash
+cargo test
+# Create merge conflict, then:
+gitar plan --resolve --apply   # Should resolve then plan
+```
+
+### Phase 4-5 (new commands)
+```bash
+cargo test
+gitar squash 2                 # Should squash last 2 commits
+gitar rewrite HEAD~3           # Should rewrite last 3 commits
+```
+
+---
+
+## Command Summary
+
+| Before (17) | After (16) | Future (+2) |
+|-------------|------------|-------------|
+| version | ❌ removed | |
+| release | release --bump | |
+| commit | commit --amend | |
+| plan | plan --resolve | |
+| | | squash |
+| | | rewrite |

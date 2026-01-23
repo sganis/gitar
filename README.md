@@ -437,6 +437,11 @@ gitar commit --write-to .git/COMMIT_EDITMSG --silent
 You can still edit it before saving.
 
 
+### Uninstall
+
+Run **gitar hook uninstall** or simply delete **.git/hooks/prepare-commit-msg**
+
+
 ---
 
 ## Using gitar Behind Firewalls (SSH Tunnel / Proxy)
@@ -466,12 +471,6 @@ export ALL_PROXY="socks5h://localhost:8000"
 ```
 
 Gitar will now route **all LLM API traffic** through the SSH tunnel.
-
-
-
-### Uninstall
-
-Run **gitar hook uninstall** or simply delete **.git/hooks/prepare-commit-msg**
 
 ---
 
