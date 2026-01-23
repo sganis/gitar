@@ -1,6 +1,5 @@
 // src/command/plan/group.rs
 use anyhow::Result;
-use std::collections::HashMap;
 
 use crate::client::LlmClient;
 use crate::command::apply_smart_diff;
@@ -10,7 +9,8 @@ use crate::context::secret::SecretAction;
 use crate::context::template::{commit_system_with_context, COMMIT_USER};
 use crate::context::Preset;
 
-use super::analyze::{AnalysisResult, FileChange, FileCategory, ChangeStatus};
+use super::analyze::AnalysisResult;
+use crate::util::group_by_heuristics;
 
 // =============================================================================
 // DATA STRUCTURES
@@ -54,10 +54,11 @@ pub async fn create_groups(
     let mut commit_groups = Vec::new();
 
     for (idx, group) in initial_groups.into_iter().enumerate() {
-        let files: Vec<String> = group.iter().map(|c| c.path.clone()).collect();
+        // Build comprehensive diff including all file states
+        let diff_output = get_diff_for_group(&group, &analysis.mode)?;
 
-        // Get diff for these files
-        let diff_output = get_diff_for_files(&files, &analysis.mode)?;
+        // Extract file paths for commit group
+        let files: Vec<String> = group.iter().map(|c| c.path.clone()).collect();
 
         // Apply diff algorithm + secret detection
         let shaped_diff = apply_smart_diff(
@@ -102,112 +103,148 @@ pub async fn create_groups(
 }
 
 // =============================================================================
-// HEURISTIC GROUPING
-// =============================================================================
-
-/// Group files by category (docs, tests, config, code by directory)
-pub fn group_by_heuristics(files: &[FileChange]) -> Vec<Vec<FileChange>> {
-    let mut groups: Vec<Vec<FileChange>> = Vec::new();
-
-    // Group 1: Documentation
-    let docs: Vec<FileChange> = files
-        .iter()
-        .filter(|c| c.category == FileCategory::Documentation)
-        .cloned()
-        .collect();
-    if !docs.is_empty() {
-        groups.push(docs);
-    }
-
-    // Group 2: Tests
-    let tests: Vec<FileChange> = files
-        .iter()
-        .filter(|c| c.category == FileCategory::Tests)
-        .cloned()
-        .collect();
-    if !tests.is_empty() {
-        groups.push(tests);
-    }
-
-    // Group 3: Config
-    let config: Vec<FileChange> = files
-        .iter()
-        .filter(|c| c.category == FileCategory::Config)
-        .cloned()
-        .collect();
-    if !config.is_empty() {
-        groups.push(config);
-    }
-
-    // Group 4: Renames
-    let renames: Vec<FileChange> = files
-        .iter()
-        .filter(|c| matches!(c.status, ChangeStatus::Renamed { .. }))
-        .cloned()
-        .collect();
-    if !renames.is_empty() {
-        groups.push(renames);
-    }
-
-    // Group 5: Code changes (grouped by top-level directory)
-    let code_changes: Vec<FileChange> = files
-        .iter()
-        .filter(|c| c.category == FileCategory::Code && !matches!(c.status, ChangeStatus::Renamed { .. }))
-        .cloned()
-        .collect();
-
-    if !code_changes.is_empty() {
-        let mut dir_groups: HashMap<String, Vec<FileChange>> = HashMap::new();
-
-        for change in code_changes {
-            let dir = if let Some(idx) = change.path.find('/') {
-                change.path[..idx].to_string()
-            } else {
-                "root".to_string()
-            };
-            dir_groups.entry(dir).or_default().push(change);
-        }
-
-        for (_dir, group) in dir_groups {
-            groups.push(group);
-        }
-    }
-
-    groups
-}
-
-// =============================================================================
 // DIFF HELPERS
 // =============================================================================
 
 use super::AnalysisMode;
+use super::analyze::{FileChange, ChangeStatus};
+use std::fs;
 
-/// Get diff for specific files based on analysis mode
-fn get_diff_for_files(files: &[String], mode: &AnalysisMode) -> Result<String> {
-    let diff = match mode {
+/// Get comprehensive diff for a group of files, handling all file states
+fn get_diff_for_group(group: &[FileChange], mode: &AnalysisMode) -> Result<String> {
+    let mut full_diff = String::new();
+
+    for file_change in group {
+        let file_diff = match &file_change.status {
+            ChangeStatus::Added => {
+                // Untracked file - show full content as addition
+                get_added_file_diff(&file_change.path)?
+            }
+            ChangeStatus::Deleted => {
+                // Deleted file - show as deletion
+                get_deleted_file_diff(&file_change.path, mode)?
+            }
+            ChangeStatus::Modified => {
+                // Modified file - use normal git diff
+                get_modified_file_diff(&file_change.path, mode)?
+            }
+            ChangeStatus::Renamed { from } => {
+                // Renamed file - show rename + any changes
+                get_renamed_file_diff(from, &file_change.path, mode)?
+            }
+        };
+
+        if !file_diff.is_empty() {
+            full_diff.push_str(&file_diff);
+            full_diff.push('\n');
+        }
+    }
+
+    Ok(full_diff)
+}
+
+/// Get diff for an added/untracked file
+fn get_added_file_diff(path: &str) -> Result<String> {
+    // Read file contents
+    let content = fs::read_to_string(path)
+        .unwrap_or_else(|_| String::from("(binary file)"));
+
+    // Format as git diff (all additions)
+    let mut diff = String::new();
+    diff.push_str(&format!("diff --git a/{} b/{}\n", path, path));
+    diff.push_str("new file mode 100644\n");
+    diff.push_str("--- /dev/null\n");
+    diff.push_str(&format!("+++ b/{}\n", path));
+    diff.push_str("@@ -0,0 +1,");
+    let line_count = content.lines().count();
+    diff.push_str(&format!("{} @@\n", line_count));
+
+    for line in content.lines() {
+        diff.push('+');
+        diff.push_str(line);
+        diff.push('\n');
+    }
+
+    Ok(diff)
+}
+
+/// Get diff for a deleted file
+fn get_deleted_file_diff(path: &str, mode: &AnalysisMode) -> Result<String> {
+    match mode {
+        AnalysisMode::WorkingTree | AnalysisMode::Staged => {
+            // For working tree or staged, show deletion from HEAD
+            match git::run_git_optional(&["show", &format!("HEAD:{}", path)]) {
+                Ok(Some(content)) => {
+                    let mut diff = String::new();
+                    diff.push_str(&format!("diff --git a/{} b/{}\n", path, path));
+                    diff.push_str("deleted file mode 100644\n");
+                    diff.push_str(&format!("--- a/{}\n", path));
+                    diff.push_str("+++ /dev/null\n");
+                    diff.push_str("@@ -1,");
+                    let line_count = content.lines().count();
+                    diff.push_str(&format!("{} +0,0 @@\n", line_count));
+
+                    for line in content.lines() {
+                        diff.push('-');
+                        diff.push_str(line);
+                        diff.push('\n');
+                    }
+                    Ok(diff)
+                }
+                _ => Ok(format!("deleted file: {}\n", path)),
+            }
+        }
+        AnalysisMode::History { from, to } => {
+            // For history mode, use git diff
+            let to_ref = to.as_deref().unwrap_or("HEAD");
+            git::run_git(&["diff", from, to_ref, "--", path])
+        }
+        AnalysisMode::Auto => Ok(String::new()),
+    }
+}
+
+/// Get diff for a modified file
+fn get_modified_file_diff(path: &str, mode: &AnalysisMode) -> Result<String> {
+    match mode {
         AnalysisMode::WorkingTree => {
             // Unstaged changes
-            let mut args = vec!["diff"];
-            args.extend(files.iter().map(|s| s.as_str()));
-            git::run_git(&args)?
+            git::run_git(&["diff", "--", path])
         }
         AnalysisMode::Staged => {
             // Staged changes
-            let mut args = vec!["diff", "--cached"];
-            args.extend(files.iter().map(|s| s.as_str()));
-            git::run_git(&args)?
+            git::run_git(&["diff", "--cached", "--", path])
         }
         AnalysisMode::History { from, to } => {
             // History range
             let to_ref = to.as_deref().unwrap_or("HEAD");
-            let mut args = vec!["diff", from.as_str(), to_ref];
-            args.extend(files.iter().map(|s| s.as_str()));
-            git::run_git(&args)?
+            git::run_git(&["diff", from, to_ref, "--", path])
         }
-        AnalysisMode::Auto => String::new(),
-    };
+        AnalysisMode::Auto => Ok(String::new()),
+    }
+}
 
-    Ok(diff)
+/// Get diff for a renamed file
+fn get_renamed_file_diff(from: &str, to: &str, mode: &AnalysisMode) -> Result<String> {
+    match mode {
+        AnalysisMode::Staged => {
+            // Staged rename - use git diff with rename detection
+            git::run_git(&["diff", "--cached", "-M", "--", from, to])
+        }
+        _ => {
+            // For other modes, show as separate delete + add
+            let mut diff = String::new();
+            diff.push_str(&format!("renamed: {} -> {}\n", from, to));
+
+            // Show any content changes if the file was modified during rename
+            if let Ok(changes) = get_modified_file_diff(to, mode) {
+                if !changes.is_empty() {
+                    diff.push_str(&changes);
+                }
+            }
+
+            Ok(diff)
+        }
+    }
 }
 
 // =============================================================================

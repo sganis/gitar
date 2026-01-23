@@ -319,16 +319,22 @@ pub enum Commands {
         compare: bool,
     },
 
-    /// [DEPRECATED] Split working tree into commits (use `gitar plan` instead)
+    /// Create a new release (version bump, changelog, tag)
     ///
-    /// This command is deprecated and will be removed in v2.0.0.
-    /// Use `gitar plan --mode working --apply` for the same functionality
-    /// with improved features (interactive editing, better grouping, etc).
-    #[deprecated(since = "1.1.0", note = "use `gitar plan --mode working` instead")]
-    Split {
-        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
-        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        algo: u8,
+    /// Analyzes commits since the last tag, suggests a version bump,
+    /// updates version files, generates a changelog, and creates a git tag.
+    Release {
+        /// Execute the release (default: dry-run)
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+
+        /// Skip changelog generation
+        #[arg(long, default_value_t = false)]
+        skip_changelog: bool,
+
+        /// Base reference (tag/commit/branch) - defaults to latest tag
+        #[arg(long)]
+        from: Option<String>,
     },
 
     /// Resolve merge/rebase/cherry-pick conflicts (semantic synthesis).
@@ -441,9 +447,9 @@ mod tests {
             vec!["gitar", "config"],
             vec!["gitar", "models"],
             vec!["gitar", "diff"],
-            vec!["gitar", "split"],
             vec!["gitar", "resolve"],
             vec!["gitar", "plan"],
+            vec!["gitar", "release"],
             vec!["gitar", "hook", "install"],
             vec!["gitar", "hook", "uninstall"],
         ];

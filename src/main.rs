@@ -249,8 +249,13 @@ async fn main() -> Result<()> {
             .await?
         }
 
-        #[allow(deprecated)]
-        Commands::Split { algo } => cmd_split(&client, config.preset, algo).await?,
+        Commands::Release {
+            apply,
+            skip_changelog,
+            from,
+        } => {
+            cmd_release(&client, apply, skip_changelog, from, &config.base_branch).await?
+        }
 
         Commands::Resolve {
             apply,

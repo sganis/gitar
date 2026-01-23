@@ -2,6 +2,8 @@
 use anyhow::Result;
 use crate::git;
 use crate::context::algo::{DiffAlg, DiffStats};
+use crate::util::{categorize_file, Groupable};
+pub use crate::util::FileCategory;
 
 // =============================================================================
 // ANALYSIS MODE & RESULT
@@ -69,16 +71,18 @@ pub enum ChangeStatus {
     Renamed { from: String },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum FileCategory {
-    Documentation,
-    Tests,
-    Config,
-    #[allow(dead_code)]
-    Formatting,
-    #[allow(dead_code)]
-    Rename,
-    Code,
+impl Groupable for FileChange {
+    fn category(&self) -> &FileCategory {
+        &self.category
+    }
+
+    fn is_rename(&self) -> bool {
+        matches!(self.status, ChangeStatus::Renamed { .. })
+    }
+
+    fn path(&self) -> &str {
+        &self.path
+    }
 }
 
 // =============================================================================
@@ -394,60 +398,6 @@ fn parse_diff_files(from: &str, to: &str) -> Result<Vec<FileChange>> {
     }
 
     Ok(changes)
-}
-
-// =============================================================================
-// FILE CATEGORIZATION
-// =============================================================================
-
-/// Categorize file by path (extracted from split.rs)
-pub fn categorize_file(path: &str) -> FileCategory {
-    let lower = path.to_lowercase();
-
-    // Documentation
-    if lower.ends_with(".md")
-        || lower.ends_with(".txt")
-        || lower.ends_with(".rst")
-        || lower.contains("readme")
-        || lower.contains("changelog")
-        || lower.contains("/docs/")
-        || lower.contains("/doc/")
-    {
-        return FileCategory::Documentation;
-    }
-
-    // Tests
-    if lower.contains("test")
-        || lower.contains("spec")
-        || lower.contains("__tests__")
-        || lower.ends_with("_test.rs")
-        || lower.ends_with("_test.go")
-        || lower.ends_with(".test.ts")
-        || lower.ends_with(".test.js")
-        || lower.ends_with(".spec.ts")
-        || lower.ends_with(".spec.js")
-    {
-        return FileCategory::Tests;
-    }
-
-    // Config
-    if lower.ends_with(".toml")
-        || lower.ends_with(".yaml")
-        || lower.ends_with(".yml")
-        || lower.ends_with(".json")
-        || lower.ends_with(".lock")
-        || lower.ends_with(".config.js")
-        || lower.ends_with(".config.ts")
-        || lower.ends_with("dockerfile")
-        || lower.contains(".github/")
-        || lower.contains(".vscode/")
-        || lower == "makefile"
-    {
-        return FileCategory::Config;
-    }
-
-    // Default to code
-    FileCategory::Code
 }
 
 // =============================================================================

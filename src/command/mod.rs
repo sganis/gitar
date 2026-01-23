@@ -9,10 +9,10 @@ mod history;
 mod hook;
 mod models;
 mod pr;
-mod split;
 mod version;
 mod resolve;
 mod plan;
+mod release;
 
 pub use changelog::cmd_changelog;
 pub use commit::{cmd_commit, cmd_staged, cmd_unstaged};
@@ -24,10 +24,10 @@ pub use history::cmd_history;
 pub use hook::cmd_hook;
 pub use models::cmd_models;
 pub use pr::cmd_pr;
-pub use split::cmd_split;
 pub use version::cmd_version;
 pub use resolve::{cmd_resolve, cmd_resolve_with_resolver, ConflictInput, ConflictResolver};
 pub use plan::{cmd_plan, AnalysisMode};
+pub use release::cmd_release;
 
 // Re-export utilities from util module for backward compatibility
 pub(crate) use crate::util::{
