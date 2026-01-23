@@ -1,5 +1,5 @@
 // src/config.rs
-use crate::prompt::{Preset, SecretAction};
+use crate::context::{Preset, SecretAction};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;

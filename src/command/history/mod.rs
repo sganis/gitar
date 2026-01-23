@@ -4,9 +4,9 @@ use anyhow::Result;
 use crate::client::LlmClient;
 use crate::context::load_all_context;
 use crate::git::{get_commit_diff, get_commit_logs};
-use crate::prompt::preset::Preset;
-use crate::prompt::secret::SecretAction;
-use crate::prompt::template::{history_system_with_context, HISTORY_USER};
+use crate::context::preset::Preset;
+use crate::context::secret::SecretAction;
+use crate::context::template::{history_system_with_context, HISTORY_USER};
 
 use super::{apply_smart_diff, SHORT_HASH_LEN};
 

@@ -4,8 +4,8 @@ use anyhow::Result;
 use crate::client::LlmClient;
 use crate::context::load_all_context;
 use crate::git::{build_diff_target, get_current_version, get_diff};
-use crate::prompt::secret::SecretAction;
-use crate::prompt::template::{version_system_with_context, VERSION_USER};
+use crate::context::secret::SecretAction;
+use crate::context::template::{version_system_with_context, VERSION_USER};
 
 use super::apply_smart_diff;
 

@@ -6,8 +6,8 @@ use crate::context::load_all_context;
 use crate::git::{
     build_diff_target, build_range, get_commit_logs, get_current_branch, get_diff, get_diff_stats,
 };
-use crate::prompt::secret::SecretAction;
-use crate::prompt::template::{pr_system_with_context, PR_USER};
+use crate::context::secret::SecretAction;
+use crate::context::template::{pr_system_with_context, PR_USER};
 
 use super::apply_smart_diff;
 

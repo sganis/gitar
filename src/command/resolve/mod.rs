@@ -4,7 +4,7 @@ use std::fs;
 
 use crate::client::LlmClient;
 use crate::git;
-use crate::prompt::secret::SecretAction;
+use crate::context::secret::SecretAction;
 
 mod diff_preview;
 mod git_helper;

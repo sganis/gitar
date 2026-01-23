@@ -1,7 +1,7 @@
 // src/command/plan/analyze.rs
 use anyhow::Result;
 use crate::git;
-use crate::prompt::algo::{DiffAlg, DiffStats};
+use crate::context::algo::{DiffAlg, DiffStats};
 
 // =============================================================================
 // ANALYSIS MODE & RESULT

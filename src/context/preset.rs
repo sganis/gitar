@@ -1,4 +1,4 @@
-// src/prompts/preset.rs - Language-specific commit message styles
+// src/context/preset.rs - Language-specific commit message styles
 
 use std::path::Path;
 

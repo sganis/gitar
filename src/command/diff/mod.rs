@@ -2,8 +2,8 @@
 use anyhow::Result;
 
 use crate::git::{get_diff, get_diff_stats};
-use crate::prompt::algo::DiffAlg;
-use crate::prompt::diff::get_llm_diff_preview;
+use crate::context::algo::DiffAlg;
+use crate::context::diff::get_llm_diff_preview;
 
 pub fn cmd_diff(
     target: Option<String>,

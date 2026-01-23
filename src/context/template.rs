@@ -1,4 +1,4 @@
-// src/prompts/templates.rs - LLM prompt templates
+// src/context/template.rs - LLM prompt templates
 
 use super::preset::Preset;
 

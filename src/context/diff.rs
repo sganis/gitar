@@ -1,4 +1,4 @@
-// src/prompts/diff.rs - High-level diff processing for LLM consumption
+// src/context/diff.rs - High-level diff processing for LLM consumption
 //
 // Orchestrates: git diff → algorithm shaping → secret scanning → result
 
@@ -68,7 +68,7 @@ pub fn get_llm_diff_preview(
     algo: DiffAlg,
     _include_header: bool,
 ) -> (String, DiffStats) {
-    let result = crate::prompt::algo::shape_diff(raw_diff, diff_stats, max_chars, algo);
+    let result = crate::context::algo::shape_diff(raw_diff, diff_stats, max_chars, algo);
     (result.content, result.stats)
 }
 /// Process staged changes

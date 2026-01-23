@@ -1,4 +1,4 @@
-// src/prompts/algo.rs - Diff shaping algorithms for LLM context optimization
+// src/context/algo.rs - Diff shaping algorithms for LLM context optimization
 //
 // Pure transformation functions: raw diff in, shaped diff out.
 // No I/O, no git calls, no secret scanning.

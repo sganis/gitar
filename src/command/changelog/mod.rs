@@ -4,8 +4,8 @@ use anyhow::Result;
 use crate::client::LlmClient;
 use crate::context::load_all_context;
 use crate::git::{get_commit_logs, get_diff};
-use crate::prompt::secret::SecretAction;
-use crate::prompt::template::{changelog_system_with_context, CHANGELOG_USER};
+use crate::context::secret::SecretAction;
+use crate::context::template::{changelog_system_with_context, CHANGELOG_USER};
 
 use super::{apply_smart_diff, SHORT_HASH_LEN};
 

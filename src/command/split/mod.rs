@@ -5,8 +5,8 @@ use std::io::{self, Write};
 use crate::client::LlmClient;
 use crate::context::load_all_context;
 use crate::git;
-use crate::prompt::template::{commit_system_with_context, COMMIT_USER};
-use crate::prompt::Preset;
+use crate::context::template::{commit_system_with_context, COMMIT_USER};
+use crate::context::Preset;
 
 // =============================================================================
 // DATA STRUCTURES

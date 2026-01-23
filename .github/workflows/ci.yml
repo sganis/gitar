@@ -36,15 +36,15 @@ jobs:
             artifact_ext: tar.gz
             binary_name: gitar
 
-          # -------------------------
-          # Linux aarch64 (ARM)
-          # -------------------------
-          - os: ubuntu-latest
-            target: aarch64-unknown-linux-gnu
-            pkg_os: linux
-            pkg_arch: aarch64
-            artifact_ext: tar.gz
-            binary_name: gitar
+          # # -------------------------
+          # # Linux aarch64 (ARM)
+          # # -------------------------
+          # - os: ubuntu-latest
+          #   target: aarch64-unknown-linux-gnu
+          #   pkg_os: linux
+          #   pkg_arch: aarch64
+          #   artifact_ext: tar.gz
+          #   binary_name: gitar
 
           # -------------------------
           # macOS Apple Silicon
@@ -56,15 +56,15 @@ jobs:
             artifact_ext: tar.gz
             binary_name: gitar
 
-          # -------------------------
-          # macOS Intel
-          # -------------------------
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            pkg_os: macos
-            pkg_arch: x86_64
-            artifact_ext: tar.gz
-            binary_name: gitar
+          # # -------------------------
+          # # macOS Intel
+          # # -------------------------
+          # - os: macos-latest
+          #   target: x86_64-apple-darwin
+          #   pkg_os: macos
+          #   pkg_arch: x86_64
+          #   artifact_ext: tar.gz
+          #   binary_name: gitar
 
           # -------------------------
           # Windows x86_64
@@ -76,15 +76,15 @@ jobs:
             artifact_ext: zip
             binary_name: gitar.exe
 
-          # -------------------------
-          # Windows ARM64
-          # -------------------------
-          - os: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            pkg_os: windows
-            pkg_arch: arm64
-            artifact_ext: zip
-            binary_name: gitar.exe
+          # # -------------------------
+          # # Windows ARM64
+          # # -------------------------
+          # - os: windows-11-arm
+          #   target: aarch64-pc-windows-msvc
+          #   pkg_os: windows
+          #   pkg_arch: arm64
+          #   artifact_ext: zip
+          #   binary_name: gitar.exe
 
     steps:
       - name: Checkout

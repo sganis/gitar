@@ -1,4 +1,4 @@
-// src/prompt/secret.rs - Secret detection and redaction
+// src/context/secret.rs - Secret detection and redaction
 //
 // Scans diffs for sensitive data before sending to LLMs.
 // Detects: API keys, tokens, private keys, passwords, connection strings.

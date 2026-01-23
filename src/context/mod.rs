@@ -1,6 +1,6 @@
-// src/prompts/mod.rs
+// src/context/mod.rs
 //
-// Everything related to preparing context for LLMs.
+// Everything related to context: LLM prompt preparation and repository state.
 // Re-exports maintain backward compatibility with existing commands.
 
 // NOTE:
@@ -14,6 +14,7 @@ pub mod diff;
 pub mod preset;
 pub mod secret;
 pub mod template;
+pub mod repo;
 
 // Re-export for backward compatibility with existing code
 pub use algo::{compare_algorithms, shape_diff, DiffAlg, DiffStats, ShapedDiff};
@@ -23,3 +24,6 @@ pub use diff::{
 };
 pub use preset::Preset;
 pub use secret::SecretAction;
+
+// Re-export repo context functions
+pub use repo::{load_all_context, load_project_context, load_user_context};

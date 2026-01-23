@@ -6,9 +6,9 @@ use crate::client::LlmClient;
 use crate::command::apply_smart_diff;
 use crate::context::load_all_context;
 use crate::git;
-use crate::prompt::secret::SecretAction;
-use crate::prompt::template::{commit_system_with_context, COMMIT_USER};
-use crate::prompt::Preset;
+use crate::context::secret::SecretAction;
+use crate::context::template::{commit_system_with_context, COMMIT_USER};
+use crate::context::Preset;
 
 use super::analyze::{AnalysisResult, FileChange, FileCategory, ChangeStatus};
 

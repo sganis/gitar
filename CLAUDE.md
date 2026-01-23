@@ -59,35 +59,44 @@ src/
 ├── types.rs          # Shared data structures
 ├── plan.rs           # Plan data structures (Plan, Action)
 ├── executor.rs       # Execute git commands from plans
-├── context.rs        # Global context/state (repo root, caching)
 ├── command/          # Command implementations
-│   ├── mod.rs        # Shared command utilities
-│   ├── commit.rs     # Interactive commit with AI message
-│   ├── changelog.rs  # Generate release notes
-│   ├── explain.rs    # Explain changes in plain English
-│   ├── history.rs    # Regenerate commit messages for history
-│   ├── pr.rs         # Generate PR descriptions
-│   ├── version.rs    # Suggest version bumps
-│   ├── diff.rs       # Debug diff algorithms
-│   ├── hook.rs       # Git hook installation
-│   ├── config.rs     # Show resolved configuration
-│   ├── init.rs       # Create/update ~/.gitar.toml
-│   ├── models.rs     # List available models
-│   ├── split.rs      # Split large diffs into logical commits
-│   ├── plan.rs       # Analyze repo state and suggest actions
-│   └── resolve/      # Merge conflict resolution
-│       ├── mod.rs    # Main resolve logic
-│       ├── parser.rs # Parse conflict markers
-│       ├── heuristic.rs  # Heuristic conflict resolution
-│       ├── llm.rs    # LLM-based resolution
+│   ├── mod.rs        # Module exports and shared utilities
+│   ├── commit/mod.rs # Interactive commit with AI message
+│   ├── changelog/mod.rs # Generate release notes
+│   ├── explain/mod.rs   # Explain changes in plain English
+│   ├── history/mod.rs   # Regenerate commit messages for history
+│   ├── pr/mod.rs        # Generate PR descriptions
+│   ├── version/mod.rs   # Suggest version bumps
+│   ├── diff/mod.rs      # Debug diff algorithms
+│   ├── hook/mod.rs      # Git hook installation
+│   ├── config/mod.rs    # Show resolved configuration
+│   ├── init/mod.rs      # Create/update ~/.gitar.toml
+│   ├── models/mod.rs    # List available models
+│   ├── split/mod.rs     # Split large diffs into logical commits
+│   ├── plan/            # Interactive commit planning (LLM-powered)
+│   │   ├── mod.rs       # Main plan logic & command entry
+│   │   ├── analyze.rs   # Repository state analysis
+│   │   ├── group.rs     # LLM-based commit grouping
+│   │   ├── editor.rs    # Interactive plan editing
+│   │   └── execute.rs   # Plan execution (git operations)
+│   └── resolve/         # Merge conflict resolution
+│       ├── mod.rs       # Main resolve logic
+│       ├── parser.rs    # Parse conflict markers
+│       ├── heuristic.rs # Heuristic conflict resolution
+│       ├── llm.rs       # LLM-based resolution
 │       ├── diff_preview.rs  # Preview resolution diffs
 │       └── git_helper.rs    # Git operations for conflicts
-├── prompt/           # LLM context preparation
+├── util/             # Shared utilities
+│   ├── mod.rs        # Module exports
+│   └── diff.rs       # Smart diff utilities (used by commands)
+├── context/          # Context management (LLM & repository)
+│   ├── mod.rs        # Module exports
 │   ├── algo.rs       # Diff shaping algorithms (1-4)
 │   ├── diff.rs       # Diff processing and context building
 │   ├── secret.rs     # Secret detection and redaction
 │   ├── preset.rs     # Language-specific commit styles
-│   └── template.rs   # System prompt templates
+│   ├── template.rs   # System prompt templates
+│   └── repo.rs       # Repository context (repo root, user/project context)
 └── provider/         # LLM provider implementations
     ├── openai.rs     # OpenAI & compatible APIs
     ├── claude.rs     # Anthropic Claude
@@ -110,14 +119,14 @@ src/
 - Provider-specific implementations in provider/ handle API differences
 - Automatic retry with exponential backoff (retry.rs) for transient failures
 
-**4. Diff Shaping Algorithms** (prompt/algo.rs)
+**4. Diff Shaping Algorithms** (context/algo.rs)
 - Algorithm 1: Full diff (truncate only)
 - Algorithm 2: Selective files by priority
 - Algorithm 3: Selective hunks by importance score
 - Algorithm 4: Semantic JSON (default, most token-efficient)
 - All algorithms are pure functions: raw diff in, shaped diff out
 
-**5. Secret Detection** (prompt/secret.rs)
+**5. Secret Detection** (context/secret.rs)
 - Regex-based detection of API keys, tokens, private keys, passwords
 - Three actions: redact (default), warn, block
 - Runs before any data is sent to LLM
@@ -126,7 +135,7 @@ src/
 **6. Plan & Execution Infrastructure**
 - `plan.rs`: Data structures for representing execution plans (Plan, Action enum)
 - `executor.rs`: Executes git commands from plans with dry-run support
-- `context.rs`: Global context/state management (repo root detection, home dir, caching)
+- `context/repo.rs`: Repository context/state management (repo root detection, home dir, user/project context loading)
 - Used by new commands (split, plan, resolve) for safe, reviewable git operations
 
 ### Important Implementation Details
@@ -144,7 +153,7 @@ src/
   - `run_git_optional()`: Returns Option<String> for commands where failure is expected
 - EXCLUDE_PATTERNS filter out lockfiles, vendored code, minified files
 
-**Style Presets** (prompt/preset.rs)
+**Style Presets** (context/preset.rs)
 - Auto-detected from project files (Cargo.toml → Rust, package.json → JS, etc.)
 - Can be overridden via CLI (--preset) or config (preset = "rust")
 - Provides language-specific hints to LLM for commit message style
@@ -180,15 +189,24 @@ fn test_command_name() {
 ## Important Recent Additions
 
 **New Commands (2024-2025)**
-- `split` — Split large working tree diffs into logical commits (guided workflow)
+- `plan` — LLM-powered interactive commit planning (groups changes into logical commits)
 - `resolve` — AI-assisted merge conflict resolution with heuristics + LLM fallback
-- `plan` — Analyze repo state and suggest next actions (future: full commit planning)
+- `split` — Split large working tree diffs into logical commits (may be superseded by `plan`)
 - `init` — Initialize ~/.gitar.toml configuration file
 
-**Split Command** (command/split.rs)
-- Analyzes unstaged changes and guides creating a series of focused commits
-- Groups changes by type (docs, tests, config) and semantic intent
-- Requires interactive confirmation before each commit
+**Plan Command** (command/plan/)
+- **Multi-mode analysis**: Auto-detect changes, or target staged/unstaged/history
+- **LLM-powered grouping**: Groups changes by semantic intent into logical commits
+- **Interactive editing**: Review, reorder, merge, split, or regenerate commit plans
+- **Safe execution**: Dry-run by default, use `--apply` to execute commits
+- **Legacy --suggest mode**: Simple state inspection without LLM (shows next actions)
+
+Architecture:
+- `analyze.rs`: Detects repository state (AnalysisMode enum: Auto, Staged, WorkingTree, History)
+- `group.rs`: Calls LLM to generate logical commit groups from analyzed files
+- `editor.rs`: Interactive TUI for reviewing and editing the generated plan
+- `execute.rs`: Executes git operations (add, commit) from approved plan
+- `mod.rs`: Main command orchestration and entry point
 
 **Resolve Command** (command/resolve/)
 - Detects and parses merge/rebase/cherry-pick conflicts
@@ -196,19 +214,30 @@ fn test_command_name() {
 - Safety checks: no markers remain, no unmerged files remain
 - Use `--apply` to write + stage, `--yes` to skip confirmation
 
-**Plan Command** (command/plan.rs)
-- Inspects repo state (staged, unstaged, untracked, conflicts)
-- Suggests next actions based on current state
-- Foundation for future commit planning features
+**Split Command** (command/split/)
+- Analyzes unstaged changes and guides creating a series of focused commits
+- Groups changes by type (docs, tests, config) and semantic intent
+- Requires interactive confirmation before each commit
+- Note: May be superseded by enhanced `plan` command with interactive mode
 
 ## Common Development Patterns
 
 **Adding a New Command**
 1. Add command variant to `Commands` enum in cli.rs
-2. Implement `cmd_<name>` function in command/<name>.rs
-3. Add route in main.rs match statement
-4. Export from command/mod.rs
-5. Add tests in tests/cli.rs
+2. Create new subdirectory: `command/<name>/`
+3. Implement `cmd_<name>` function in `command/<name>/mod.rs`
+4. For complex commands, split logic into submodules within the command directory
+5. Export from `command/mod.rs`: `pub use <name>::cmd_<name>;`
+6. Add route in main.rs match statement
+7. Add tests in tests/cli.rs
+
+**Command Structure Guidelines**
+- Simple commands: Single `command/<name>/mod.rs` file
+- Complex commands: Multiple submodules (see `plan/` and `resolve/` as examples)
+  - `mod.rs`: Main command entry point and orchestration
+  - Submodules: Logical separation (analyze, execute, editor, etc.)
+- Keep command modules focused and under 500 lines per file
+- Re-export utilities from `util/` module when shared across commands
 
 **Adding a New Provider**
 1. Add provider module in provider/
@@ -218,7 +247,7 @@ fn test_command_name() {
 5. Update normalize_provider() and default_model_for_provider()
 
 **Modifying Diff Algorithms**
-- All algorithm logic in prompt/algo.rs
+- All algorithm logic in context/algo.rs
 - Keep algorithms pure (no I/O, no git calls)
 - Update shape_diff() function for new algorithm
 - Add comparison logic to compare_algorithms() for --compare flag

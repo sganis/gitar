@@ -1,13 +1,15 @@
 // src/main.rs
 mod cli;
 mod client;
-mod command;
 mod config;
+mod context;
+mod executor;
 mod git;
-mod prompt;
+mod plan;
 mod provider;
 mod types;
-mod context;
+mod util;
+mod command;
 
 use anyhow::{bail, Result};
 use clap::Parser;

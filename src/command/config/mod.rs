@@ -3,7 +3,7 @@ use anyhow::Result;
 
 use crate::config::{Config, DEFAULT_MAX_DIFF_CHARS};
 use crate::git;
-use crate::prompt::preset::Preset;
+use crate::context::preset::Preset;
 use std::path::PathBuf;
 
 pub fn cmd_config() -> Result<()> {

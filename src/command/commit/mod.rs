@@ -6,9 +6,9 @@ use std::path::{Path, PathBuf};
 
 use crate::client::LlmClient;
 use crate::git::{get_diff, run_git, run_git_status};
-use crate::prompt::preset::Preset;
-use crate::prompt::secret::SecretAction;
-use crate::prompt::template::{commit_system_with_context, COMMIT_USER};
+use crate::context::preset::Preset;
+use crate::context::secret::SecretAction;
+use crate::context::template::{commit_system_with_context, COMMIT_USER};
 
 use super::{apply_smart_diff_with_context, AnalysisContext};
 

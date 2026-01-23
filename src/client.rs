@@ -116,7 +116,7 @@ impl LlmClient {
 mod tests {
     use super::*;
     use crate::config::ResolvedConfig;
-    use crate::prompt::{Preset, SecretAction};
+    use crate::context::{Preset, SecretAction};
 
     fn make_config(provider: &str, url: &str) -> ResolvedConfig {
         ResolvedConfig {

@@ -3,8 +3,8 @@ use anyhow::{bail, Result};
 use std::io::{self, Write};
 
 use crate::client::LlmClient;
-use crate::prompt::secret::SecretAction;
-use crate::prompt::Preset;
+use crate::context::secret::SecretAction;
+use crate::context::Preset;
 
 use super::analyze::AnalysisResult;
 use super::group::{create_groups, CommitGroup};
