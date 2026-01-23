@@ -1,4 +1,6 @@
 // tests/resolve.rs
+#![allow(dead_code, unused_imports)]
+
 use anyhow::{Context, Result};
 use std::fs;
 use std::process::Command;
