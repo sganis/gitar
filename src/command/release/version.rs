@@ -4,6 +4,8 @@ use anyhow::{bail, Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use crate::color::success;
+
 // =============================================================================
 // VERSION FILE DETECTION
 // =============================================================================
@@ -168,7 +170,7 @@ pub fn update_version_file(file: &VersionFile, new_version: &str, dry_run: bool)
     } else {
         fs::write(&file.path, updated)
             .context(format!("Failed to write {}", file.path.display()))?;
-        println!("✓ Updated {} from {} to {}", file.path.display(), file.current_version, new_version);
+        success(format!("Updated {} from {} to {}", file.path.display(), file.current_version, new_version));
     }
 
     Ok(())

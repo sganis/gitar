@@ -1,6 +1,7 @@
 // src/lib.rs
 pub mod cli;
 pub mod client;
+pub mod color;
 pub mod config;
 pub mod context;
 pub mod executor;

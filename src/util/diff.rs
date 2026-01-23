@@ -44,7 +44,7 @@ impl AnalysisContext {
              Model      : {}/{}\n\
              Diff algo  : {} - {}\n\
              Files      : {}/{} (truncated: {})\n\
-             Chars      : {} → {} ({:.1}% reduction)\n\
+             Chars      : {} -> {} ({:.1}% reduction)\n\
              Est Tokens : ~{}\n\
              -----------------------\n",
             provider,

@@ -1,6 +1,7 @@
 // src/command/release/tag.rs - Git tag creation helpers
 
 use anyhow::{Context, Result};
+use crate::color::success;
 use crate::git;
 
 // =============================================================================
@@ -45,7 +46,7 @@ pub fn create_tag(tag: &str, message: &str, dry_run: bool) -> Result<()> {
     git::run_git(&["tag", "-a", tag, "-m", message])
         .context("Failed to create git tag")?;
 
-    println!("✓ Created tag: {}", tag);
+    success(format!("Created tag: {}", tag));
     Ok(())
 }
 

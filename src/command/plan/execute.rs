@@ -3,6 +3,7 @@ use anyhow::{bail, Context, Result};
 use std::fs;
 use std::io::{self, Write};
 
+use crate::color::{success, warning};
 use crate::git;
 
 use super::analyze::AnalysisMode;
@@ -78,7 +79,7 @@ pub fn execute_plan(
                     "y" | "yes" | "" => {
                         if !dry_run {
                             git::run_git(&["commit", "-m", &group.message])?;
-                            println!("✓ Committed");
+                            success("Committed");
                         } else {
                             println!("(Dry run - would commit)");
                         }
@@ -94,7 +95,7 @@ pub fn execute_plan(
                         if !new_message.is_empty() {
                             if !dry_run {
                                 git::run_git(&["commit", "-m", new_message])?;
-                                println!("✓ Committed with edited message");
+                                success("Committed with edited message");
                             } else {
                                 println!("(Dry run - would commit with edited message)");
                             }
@@ -130,7 +131,7 @@ pub fn execute_plan(
             // Non-interactive: just commit
             if !dry_run {
                 git::run_git(&["commit", "-m", &group.message])?;
-                println!("✓ Committed");
+                success("Committed");
             } else {
                 println!("(Dry run - would commit)");
             }
@@ -143,7 +144,7 @@ pub fn execute_plan(
     if dry_run {
         println!("Dry run complete. Use --apply to execute.");
     } else {
-        println!("✓ All commits executed successfully");
+        success("All commits executed successfully");
     }
     println!("===========================================================\n");
 
@@ -183,7 +184,7 @@ fn execute_history_mode(
     println!("\n===========================================================");
     println!("History Mode Execution - Interactive Rebase");
     println!("===========================================================\n");
-    println!("⚠️  WARNING: This will rewrite git history!");
+    warning("WARNING: This will rewrite git history!");
     println!("   Range: {} to {}", from, to.unwrap_or("HEAD"));
     println!("   Commits to create: {}", groups.len());
     println!();
@@ -232,7 +233,7 @@ fn execute_history_mode(
     match result {
         (_, _, true) => {
             println!("\n===========================================================");
-            println!("✓ Rebase completed successfully");
+            success("Rebase completed successfully");
             println!("===========================================================\n");
             Ok(())
         }

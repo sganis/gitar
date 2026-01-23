@@ -3,6 +3,7 @@ use anyhow::{bail, Context, Result};
 use std::io::{self, Write};
 
 use crate::client::LlmClient;
+use crate::color::success;
 use crate::git::{run_git, run_git_status};
 use crate::context::preset::Preset;
 use crate::context::secret::SecretAction;
@@ -107,7 +108,7 @@ pub async fn cmd_squash(
         bail!("Squash commit failed. Your changes are staged. Use 'git reset --soft HEAD@{{1}}' to undo the reset.");
     }
 
-    println!("✓ Successfully squashed {} commits into one", num_commits);
+    success(format!("Successfully squashed {} commits into one", num_commits));
     println!("{}{}", out, err);
 
     Ok(())

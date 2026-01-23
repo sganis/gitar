@@ -7,6 +7,8 @@ use regex::Regex;
 use std::borrow::Cow;
 use std::sync::LazyLock;
 
+use crate::color::{bullet, dim_style, error_style, styled, success_style, warning_style};
+
 // =============================================================================
 // PUBLIC TYPES
 // =============================================================================
@@ -107,36 +109,36 @@ impl SecretScanResult {
         }
 
         let mut msg = format!(
-            "\n\x1b[33m⚠️  Found {} potential secret(s):\x1b[0m\n",
+            "\n{} Found {} potential secret(s):\n",
+            styled("[WARN]", warning_style()),
             self.total()
         );
 
         if self.high_count > 0 {
-            msg.push_str(&format!("   \x1b[31m● {} HIGH\x1b[0m\n", self.high_count));
+            msg.push_str(&format!("   {} {} HIGH\n", bullet(), styled(self.high_count, error_style())));
         }
         if self.medium_count > 0 {
             msg.push_str(&format!(
-                "   \x1b[33m● {} MEDIUM\x1b[0m\n",
-                self.medium_count
+                "   {} {} MEDIUM\n",
+                bullet(),
+                styled(self.medium_count, warning_style())
             ));
         }
         if self.low_count > 0 {
-            msg.push_str(&format!("   \x1b[90m● {} LOW\x1b[0m\n", self.low_count));
+            msg.push_str(&format!("   {} {} LOW\n", bullet(), styled(self.low_count, dim_style())));
         }
 
         msg.push('\n');
         for (i, m) in self.matches.iter().take(5).enumerate() {
-            let color = match m.severity {
-                Severity::High => "\x1b[31m",
-                Severity::Medium => "\x1b[33m",
-                Severity::Low => "\x1b[90m",
+            let styled_location = match m.severity {
+                Severity::High => styled(format!("{}:L{}", m.pattern_name, m.line_number), error_style()),
+                Severity::Medium => styled(format!("{}:L{}", m.pattern_name, m.line_number), warning_style()),
+                Severity::Low => styled(format!("{}:L{}", m.pattern_name, m.line_number), dim_style()),
             };
             msg.push_str(&format!(
-                "   {}. [{}{}:L{}\x1b[0m] {}\n",
+                "   {}. [{}] {}\n",
                 i + 1,
-                color,
-                m.pattern_name,
-                m.line_number,
+                styled_location,
                 m.masked_preview().chars().take(70).collect::<String>()
             ));
         }
@@ -297,7 +299,7 @@ pub fn process_secrets(text: &str, action: SecretAction) -> Result<Cow<'_, str>,
         }
         SecretAction::Redact => {
             eprintln!("{}", result.format_warning());
-            eprintln!("\x1b[32m✓ Secrets redacted before sending to LLM\x1b[0m\n");
+            eprintln!("{} Secrets redacted before sending to LLM\n", styled("[OK]", success_style()));
             Ok(redact(text))
         }
     }

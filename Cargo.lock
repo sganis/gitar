@@ -492,6 +492,8 @@ dependencies = [
 name = "gitar"
 version = "1.0.8"
 dependencies = [
+ "anstream",
+ "anstyle",
  "anyhow",
  "assert_cmd",
  "clap",

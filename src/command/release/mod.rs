@@ -7,6 +7,7 @@ use anyhow::{bail, Context, Result};
 use std::io::{self, Write};
 
 use crate::client::LlmClient;
+use crate::color::{arrow, success, warning};
 use crate::git::{self, build_diff_target, get_current_version, get_diff};
 use crate::context::load_all_context;
 use crate::context::secret::SecretAction;
@@ -98,7 +99,8 @@ pub async fn cmd_release(
     let version_files = detect_version_files()?;
 
     if version_files.is_empty() {
-        println!("\n⚠️  No version files detected (Cargo.toml, package.json, pyproject.toml)");
+        println!();
+        warning("No version files detected (Cargo.toml, package.json, pyproject.toml)");
         println!("   Skipping version update step.");
     } else {
         println!("\nDetected version files:");
@@ -151,7 +153,7 @@ pub async fn cmd_release(
     if !version_files.is_empty() {
         println!("Files to update:");
         for file in &version_files {
-            println!("  {} : {} → {}", file.path.display(), file.current_version, new_version);
+            println!("  {} : {} {} {}", file.path.display(), file.current_version, arrow(), new_version);
         }
     }
     println!("\nChangelog:");
@@ -179,7 +181,7 @@ pub async fn cmd_release(
     execute_release(&version_files, &new_version, &tag_name, &changelog, apply)?;
 
     println!("\n===========================================================");
-    println!("✓ Release {} completed successfully!", new_version);
+    success(format!("Release {} completed successfully!", new_version));
     println!("===========================================================");
     println!("\nNext steps:");
     println!("  1. Review the changes: git show {}", tag_name);
@@ -353,7 +355,7 @@ fn execute_release(
 
             let commit_message = format!("Release version {}", new_version);
             git::run_git(&["commit", "-m", &commit_message])?;
-            println!("✓ Created release commit");
+            success("Created release commit");
         }
     }
 

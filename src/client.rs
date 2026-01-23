@@ -2,6 +2,7 @@
 use anyhow::Result;
 use reqwest::{Client, Proxy};
 
+use crate::color::{styled, warning_style};
 use crate::config::{provider_to_url, ProviderConfig, ResolvedConfig};
 use crate::provider::{claude, gemini, openai};
 
@@ -21,7 +22,7 @@ impl LlmClient {
 
         // TLS verification: secure by default
         if config.insecure_tls {
-            eprintln!("\x1b[33m⚠️  TLS certificate verification disabled (insecure)\x1b[0m");
+            eprintln!("{} TLS certificate verification disabled (insecure)", styled("[WARN]", warning_style()));
             builder = builder.danger_accept_invalid_certs(true);
         }
 

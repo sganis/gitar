@@ -9,6 +9,7 @@
 
 use super::algo::{shape_diff, DiffAlg, DiffStats, ShapedDiff};
 use super::secret::{process_secrets, SecretAction, SecretScanResult};
+use crate::color::{error_style, styled, warning_style};
 use crate::git;
 use anyhow::{bail, Result};
 use std::borrow::Cow;
@@ -206,13 +207,13 @@ fn apply_secrets(content: String, stats: DiffStats, action: SecretAction) -> Res
 }
 
 fn format_block_error(r: &SecretScanResult) -> String {
-    let mut msg = String::from("\n\x1b[31mDetected secrets:\x1b[0m\n");
+    let mut msg = format!("\n{}\n", styled("Detected secrets:", error_style()));
 
     for (i, m) in r.matches.iter().take(8).enumerate() {
         msg.push_str(&format!(
-            "  {}. [\x1b[33m{}\x1b[0m] L{}: {}\n",
+            "  {}. [{}] L{}: {}\n",
             i + 1,
-            m.pattern_name,
+            styled(&m.pattern_name, warning_style()),
             m.line_number,
             m.masked_preview().chars().take(60).collect::<String>()
         ));
@@ -222,10 +223,10 @@ fn format_block_error(r: &SecretScanResult) -> String {
         msg.push_str(&format!("  ... and {} more\n", r.matches.len() - 8));
     }
 
-    msg.push_str("\n\x1b[36mOptions:\x1b[0m\n");
-    msg.push_str("  • Remove secrets from your changes\n");
-    msg.push_str("  • Set secret_action = \"redact\" in ~/.gitar.toml\n");
-    msg.push_str("  • Set secret_action = \"warn\" to send anyway\n");
+    msg.push_str("\nOptions:\n");
+    msg.push_str("  * Remove secrets from your changes\n");
+    msg.push_str("  * Set secret_action = \"redact\" in ~/.gitar.toml\n");
+    msg.push_str("  * Set secret_action = \"warn\" to send anyway\n");
     msg
 }
 

@@ -7,6 +7,7 @@ pub mod execute;
 
 use anyhow::{bail, Result};
 use crate::client::LlmClient;
+use crate::color::success;
 use crate::config::ResolvedConfig;
 use crate::git;
 use crate::command::cmd_resolve;
@@ -122,7 +123,7 @@ pub async fn cmd_plan(
     // Step 4: Execute plan (if apply flag is set)
     if apply {
         execute::execute_plan(&approved_groups, &analysis.mode, false, interactive)?;
-        println!("✓ Plan executed successfully");
+        success("Plan executed successfully");
     } else {
         println!("Dry run complete. Use --apply to execute commits.");
     }

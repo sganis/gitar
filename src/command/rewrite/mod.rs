@@ -3,6 +3,7 @@ use anyhow::{bail, Context, Result};
 use std::io::{self, Write};
 
 use crate::client::LlmClient;
+use crate::color::{success, warning};
 use crate::git::run_git;
 use crate::context::preset::Preset;
 use crate::context::secret::SecretAction;
@@ -41,7 +42,7 @@ pub async fn cmd_rewrite(
     println!();
 
     // Warning about history rewriting
-    println!("⚠️  WARNING: This will rewrite git history!");
+    warning("WARNING: This will rewrite git history!");
     println!("   Only do this if you haven't pushed these commits,");
     println!("   or if you understand the implications of force-pushing.\n");
 
@@ -62,7 +63,7 @@ pub async fn cmd_rewrite(
     let mut new_messages = Vec::new();
 
     for (idx, commit) in commits.iter().enumerate() {
-        println!("─────────────────────────────────────────────────────────");
+        println!("---------------------------------------------------------");
         println!("Commit {}/{}: {}", idx + 1, commits.len(), commit.hash);
         println!("Current message: {}", commit.subject);
         println!();
@@ -280,7 +281,8 @@ fn execute_rewrite(
             .with_context(|| format!("Failed to commit step {}/{}", idx + 1, commits.len()))?;
     }
 
-    println!("\n✓ Successfully rewrote {} commits", commits.len());
+    println!();
+    success(format!("Successfully rewrote {} commits", commits.len()));
     println!("  Old: {}..HEAD", base_ref);
     println!("  New: History rewritten with AI-generated messages");
     println!("\nNote: If you've already pushed, you'll need to force push:");

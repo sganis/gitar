@@ -4,6 +4,8 @@ use reqwest::StatusCode;
 use serde::Deserialize;
 use std::time::Duration;
 
+use crate::color::{styled, warning_style};
+
 /// Configuration for retry behavior
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
@@ -113,7 +115,8 @@ pub fn check_response_for_retry(
     if is_retryable_status(status) && attempt < config.max_retries {
         let delay = calculate_delay(attempt, config);
         eprintln!(
-            "\x1b[33m⚠️  {}\x1b[0m",
+            "{} {}",
+            styled("[WARN]", warning_style()),
             format_retry_error(status, attempt, config.max_retries)
         );
         return Ok(RetryDecision::Retry { delay });
