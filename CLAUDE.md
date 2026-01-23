@@ -73,12 +73,12 @@ src/
 │   ├── init/mod.rs      # Create/update ~/.gitar.toml
 │   ├── models/mod.rs    # List available models
 │   ├── split/mod.rs     # Split large diffs into logical commits
-│   ├── plan/            # Interactive commit planning (LLM-powered)
-│   │   ├── mod.rs       # Main plan logic & command entry
+│   ├── run/             # Interactive commit execution (LLM-powered)
+│   │   ├── mod.rs       # Main run logic & command entry
 │   │   ├── analyze.rs   # Repository state analysis
 │   │   ├── group.rs     # LLM-based commit grouping
-│   │   ├── editor.rs    # Interactive plan editing
-│   │   └── execute.rs   # Plan execution (git operations)
+│   │   ├── editor.rs    # Interactive strategy editing
+│   │   └── execute.rs   # Strategy execution (git operations)
 │   └── resolve/         # Merge conflict resolution
 │       ├── mod.rs       # Main resolve logic
 │       ├── parser.rs    # Parse conflict markers
@@ -132,11 +132,11 @@ src/
 - Runs before any data is sent to LLM
 - Detection patterns cover major providers (OpenAI, Anthropic, AWS, GitHub, etc.)
 
-**6. Plan & Execution Infrastructure**
+**6. Execution Infrastructure**
 - `plan.rs`: Data structures for representing execution plans (Plan, Action enum)
 - `executor.rs`: Executes git commands from plans with dry-run support
 - `context/repo.rs`: Repository context/state management (repo root detection, home dir, user/project context loading)
-- Used by new commands (split, plan, resolve) for safe, reviewable git operations
+- Used by new commands (split, run, resolve) for safe, reviewable git operations
 
 ### Important Implementation Details
 
@@ -189,23 +189,23 @@ fn test_command_name() {
 ## Important Recent Additions
 
 **New Commands (2024-2025)**
-- `plan` — LLM-powered interactive commit planning (groups changes into logical commits)
+- `run` — LLM-powered interactive commit execution (groups changes into logical commits)
 - `resolve` — AI-assisted merge conflict resolution with heuristics + LLM fallback
-- `split` — Split large working tree diffs into logical commits (may be superseded by `plan`)
+- `split` — Split large working tree diffs into logical commits (may be superseded by `run`)
 - `init` — Initialize ~/.gitar.toml configuration file
 
-**Plan Command** (command/plan/)
+**Run Command** (command/run/)
 - **Multi-mode analysis**: Auto-detect changes, or target staged/unstaged/history
 - **LLM-powered grouping**: Groups changes by semantic intent into logical commits
-- **Interactive editing**: Review, reorder, merge, split, or regenerate commit plans
+- **Interactive editing**: Review, reorder, merge, split, or regenerate commit strategies
 - **Safe execution**: Dry-run by default, use `--apply` to execute commits
 - **Legacy --suggest mode**: Simple state inspection without LLM (shows next actions)
 
 Architecture:
 - `analyze.rs`: Detects repository state (AnalysisMode enum: Auto, Staged, WorkingTree, History)
 - `group.rs`: Calls LLM to generate logical commit groups from analyzed files
-- `editor.rs`: Interactive TUI for reviewing and editing the generated plan
-- `execute.rs`: Executes git operations (add, commit) from approved plan
+- `editor.rs`: Interactive TUI for reviewing and editing the generated strategy
+- `execute.rs`: Executes git operations (add, commit) from approved strategy
 - `mod.rs`: Main command orchestration and entry point
 
 **Resolve Command** (command/resolve/)
@@ -218,7 +218,7 @@ Architecture:
 - Analyzes unstaged changes and guides creating a series of focused commits
 - Groups changes by type (docs, tests, config) and semantic intent
 - Requires interactive confirmation before each commit
-- Note: May be superseded by enhanced `plan` command with interactive mode
+- Note: May be superseded by enhanced `run` command with interactive mode
 
 ## Common Development Patterns
 
@@ -233,7 +233,7 @@ Architecture:
 
 **Command Structure Guidelines**
 - Simple commands: Single `command/<name>/mod.rs` file
-- Complex commands: Multiple submodules (see `plan/` and `resolve/` as examples)
+- Complex commands: Multiple submodules (see `run/` and `resolve/` as examples)
   - `mod.rs`: Main command entry point and orchestration
   - Submodules: Logical separation (analyze, execute, editor, etc.)
 - Keep command modules focused and under 500 lines per file

@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
         );
     }
 
-    // Plan command now requires LLM client (handled below with other commands)
+    // Run command now requires LLM client (handled below with other commands)
 
     let repo_root_path = get_repo_root_path()?;
 
@@ -223,6 +223,8 @@ async fn main() -> Result<()> {
         Commands::Release {
             apply,
             skip_changelog,
+            skip_changelog_file,
+            changelog_file,
             from,
             bump,
             to,
@@ -232,6 +234,8 @@ async fn main() -> Result<()> {
                 &client,
                 apply,
                 skip_changelog,
+                skip_changelog_file,
+                changelog_file,
                 from,
                 bump,
                 to,
@@ -287,7 +291,7 @@ async fn main() -> Result<()> {
             .await?
         }
 
-        Commands::Plan {
+        Commands::Run {
             apply,
             resolve,
             suggest,
@@ -317,7 +321,7 @@ async fn main() -> Result<()> {
 
             let is_interactive = interactive && !yes;
 
-            cmd_plan(
+            cmd_run(
                 &client,
                 &config,
                 analysis_mode,

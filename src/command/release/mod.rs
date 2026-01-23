@@ -4,7 +4,9 @@ mod version;
 mod tag;
 
 use anyhow::{bail, Context, Result};
+use std::fs;
 use std::io::{self, Write};
+use std::path::Path;
 
 use crate::client::LlmClient;
 use crate::color::{arrow, success, warning};
@@ -28,6 +30,8 @@ pub async fn cmd_release(
     client: &LlmClient,
     apply: bool,
     skip_changelog: bool,
+    skip_changelog_file: bool,
+    changelog_file: String,
     from: Option<String>,
     bump: String,
     to: Option<String>,
@@ -109,6 +113,15 @@ pub async fn cmd_release(
         }
     }
 
+    // Step 4a: Determine changelog file path
+    let changelog_path = if skip_changelog_file || skip_changelog {
+        None
+    } else {
+        let repo_root = git::get_repo_root()?;
+        let path = std::path::PathBuf::from(&repo_root).join(&changelog_file);
+        Some(path)
+    };
+
     // Step 5: Determine new version
     let new_version = if let Some(first_file) = version_files.first() {
         compute_new_version(&first_file.current_version, &version_bump)?
@@ -150,10 +163,14 @@ pub async fn cmd_release(
     println!("Tag         : {}", tag_name);
     println!("Base        : {}", from_ref);
     println!("Commits     : {}", commits.len());
-    if !version_files.is_empty() {
+    if !version_files.is_empty() || changelog_path.is_some() {
         println!("Files to update:");
         for file in &version_files {
             println!("  {} : {} {} {}", file.path.display(), file.current_version, arrow(), new_version);
+        }
+        if let Some(ref path) = changelog_path {
+            let status = if path.exists() { "prepend" } else { "create" };
+            println!("  {} ({})", path.display(), status);
         }
     }
     println!("\nChangelog:");
@@ -178,7 +195,7 @@ pub async fn cmd_release(
     }
 
     // Step 11: Execute release
-    execute_release(&version_files, &new_version, &tag_name, &changelog, apply)?;
+    execute_release(&version_files, &new_version, &tag_name, &changelog, changelog_path.as_deref(), apply)?;
 
     println!("\n===========================================================");
     success(format!("Release {} completed successfully!", new_version));
@@ -314,6 +331,82 @@ fn compute_new_version(current: &str, bump: &str) -> Result<String> {
     Ok(format!("{}.{}.{}", new_major, new_minor, new_patch))
 }
 
+/// Format a changelog entry with version header and date
+fn format_changelog_entry(version: &str, changelog_content: &str) -> String {
+    let date = chrono::Local::now().format("%Y-%m-%d");
+    format!("## [{}] - {}\n\n{}\n\n", version, date, changelog_content.trim())
+}
+
+/// Find the position after the changelog header
+/// Returns the byte offset where new content should be inserted
+fn find_header_end(content: &str) -> Option<usize> {
+    let lines: Vec<&str> = content.lines().collect();
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    // Check if first line is a header
+    let first_line = lines[0].trim().to_lowercase();
+    if !first_line.starts_with("# changelog")
+        && !first_line.starts_with("# change log")
+        && !first_line.starts_with("# history") {
+        return None;
+    }
+
+    // Find end of header section (after blank lines)
+    let mut pos = lines[0].len() + 1; // +1 for newline
+    for line in lines.iter().skip(1) {
+        if line.trim().is_empty() {
+            pos += line.len() + 1;
+        } else {
+            break;
+        }
+    }
+
+    Some(pos)
+}
+
+/// Prepend a new changelog entry to the changelog file
+///
+/// Behavior:
+/// - Creates file if it doesn't exist (with header "# Changelog\n\n")
+/// - Preserves existing header (lines starting with "# Changelog" or similar)
+/// - Inserts new entry after header, before existing entries
+fn prepend_to_changelog_file(
+    path: &Path,
+    entry: &str,
+    dry_run: bool,
+) -> Result<()> {
+    if dry_run {
+        println!("Would update {} with new changelog entry", path.display());
+        return Ok(());
+    }
+
+    let content = if path.exists() {
+        fs::read_to_string(path)
+            .with_context(|| format!("Failed to read {}", path.display()))?
+    } else {
+        String::new()
+    };
+
+    let new_content = if content.is_empty() {
+        // Create new file with header
+        format!("# Changelog\n\n{}", entry)
+    } else if let Some(header_end) = find_header_end(&content) {
+        // Insert after header
+        format!("{}{}{}", &content[..header_end], entry, &content[header_end..])
+    } else {
+        // No recognizable header, prepend directly
+        format!("{}{}", entry, content)
+    };
+
+    fs::write(path, new_content)
+        .with_context(|| format!("Failed to write {}", path.display()))?;
+    success(format!("Updated {}", path.display()));
+    Ok(())
+}
+
 async fn generate_changelog_content(
     commits: &[CommitInfo],
     from_ref: &str,
@@ -375,6 +468,7 @@ fn execute_release(
     new_version: &str,
     tag_name: &str,
     changelog: &str,
+    changelog_file_path: Option<&Path>,
     dry_run: bool,
 ) -> Result<()> {
     println!("\nExecuting release...\n");
@@ -384,20 +478,34 @@ fn execute_release(
         for file in version_files {
             update_version_file(file, new_version, dry_run)?;
         }
-
-        // Step 2: Stage and commit version changes
-        if !dry_run {
-            for file in version_files {
-                git::run_git(&["add", file.path.to_str().unwrap()])?;
-            }
-
-            let commit_message = format!("Release version {}", new_version);
-            git::run_git(&["commit", "-m", &commit_message])?;
-            success("Created release commit");
-        }
     }
 
-    // Step 3: Create annotated tag
+    // Step 2: Update changelog file
+    if let Some(path) = changelog_file_path {
+        let entry = format_changelog_entry(new_version, changelog);
+        prepend_to_changelog_file(path, &entry, dry_run)?;
+    }
+
+    // Step 3: Stage and commit all changes
+    if !dry_run {
+        // Stage version files
+        for file in version_files {
+            git::run_git(&["add", file.path.to_str().unwrap()])?;
+        }
+
+        // Stage changelog file if updated
+        if let Some(path) = changelog_file_path {
+            if path.exists() {
+                git::run_git(&["add", path.to_str().unwrap()])?;
+            }
+        }
+
+        let commit_message = format!("Release version {}", new_version);
+        git::run_git(&["commit", "-m", &commit_message])?;
+        success("Created release commit");
+    }
+
+    // Step 4: Create annotated tag
     create_tag(tag_name, changelog, dry_run)?;
 
     Ok(())

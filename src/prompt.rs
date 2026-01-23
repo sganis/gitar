@@ -301,7 +301,7 @@ mod tests {
     #[test]
     fn test_fallback_functions_exist() {
         // Ensure fallback functions compile
-        let items = vec!["a", "b", "c"];
+        let _items = vec!["a", "b", "c"];
         let _ = fallback_select::<&str>;
         let _ = fallback_confirm;
         let _ = fallback_input;

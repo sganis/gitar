@@ -254,7 +254,7 @@ fn get_renamed_file_diff(from: &str, to: &str, mode: &AnalysisMode) -> Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::plan::analyze::{FileChange, ChangeStatus, FileCategory};
+    use crate::command::run::analyze::{FileChange, ChangeStatus, FileCategory};
 
     #[test]
     fn group_by_heuristics_separates_categories() {

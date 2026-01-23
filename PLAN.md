@@ -94,7 +94,7 @@ gitar commit --amend    # Get diff of HEAD, regenerate message, git commit --ame
 Auto-resolve conflicts before planning:
 
 ```bash
-gitar plan --resolve --apply  # Resolve conflicts first, then execute plan
+gitar run --resolve --apply  # Resolve conflicts first, then execute plan
 ```
 
 **Implementation:**
@@ -211,7 +211,7 @@ gitar commit --amend           # Should amend with new message
 ```bash
 cargo test
 # Create merge conflict, then:
-gitar plan --resolve --apply   # Should resolve then plan
+gitar run --resolve --apply   # Should resolve then plan
 ```
 
 ### Phase 4-5 (new commands)

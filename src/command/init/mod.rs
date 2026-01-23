@@ -413,7 +413,7 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         println!("Preset: {}", preset);
         println!("\nYou can now use gitar commands like:");
         println!("  gitar commit");
-        println!("  gitar plan");
+        println!("  gitar run");
         println!("  gitar explain");
         println!();
 

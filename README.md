@@ -149,9 +149,9 @@ gitar init --provider ollama
 Then start using Gitar:
 
 ```bash
-# The core workflow: AI-powered commit planning
-gitar plan                      # Analyze changes and create multi-commit plan
-gitar plan --apply              # Execute the plan
+# The core workflow: AI-powered commit execution
+gitar run                       # Analyze changes and create multi-commit strategy
+gitar run --apply               # Execute the strategy
 
 # Traditional workflow: generate commit messages
 git add .
@@ -164,18 +164,18 @@ gitar commit                    # Create commit with AI-generated message
 
 Gitar has four conceptual workflows:
 
-### 1. 🚀 Plan (Core Workflow) — Smart Commit Planning
+### 1. 🚀 Run (Core Workflow) — Smart Commit Execution
 
-AI-powered commit planning and history shaping:
+AI-powered commit strategy and history shaping:
 
 ```bash
-gitar plan                      # Auto-detect changes and create multi-commit plan
-gitar plan --apply              # Execute the plan after review
-gitar plan -i                   # Interactive mode (edit, reorder, merge commits)
+gitar run                       # Auto-detect changes and create multi-commit strategy
+gitar run --apply               # Execute the strategy after review
+gitar run -i                    # Interactive mode (edit, reorder, merge commits)
 
-gitar plan --mode working       # Plan for working tree changes
-gitar plan --mode staged        # Plan for staged changes
-gitar plan --mode history --from v1.0.0  # Plan for historical commits
+gitar run --mode working        # Strategy for working tree changes
+gitar run --mode staged         # Strategy for staged changes
+gitar run --mode history --from v1.0.0  # Strategy for historical commits
 ```
 
 ### 2. 📝 Narrate (Read-only) — Understand & Communicate
@@ -495,18 +495,18 @@ Gitar sends **only what it needs** for the command you run (for example: a diff,
 
 ## Advanced Commands
 
-### Plan Command
+### Run Command
 
-The `plan` command analyzes your repository state and creates an intelligent multi-commit plan:
+The `run` command analyzes your repository state and creates an intelligent multi-commit strategy:
 
 ```bash
-gitar plan                      # Auto-detect changes and create plan
-gitar plan --mode working       # Plan for working tree changes
-gitar plan --mode staged        # Plan for staged changes
-gitar plan --mode history --from v1.0.0  # Plan for historical commits
+gitar run                       # Auto-detect changes and create strategy
+gitar run --mode working        # Strategy for working tree changes
+gitar run --mode staged         # Strategy for staged changes
+gitar run --mode history --from v1.0.0  # Strategy for historical commits
 
-gitar plan -i                   # Interactive mode (default)
-gitar plan --apply              # Execute plan after approval
+gitar run -i                    # Interactive mode (default)
+gitar run --apply               # Execute strategy after approval
 ```
 
 **Features:**

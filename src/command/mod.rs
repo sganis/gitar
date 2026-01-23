@@ -12,7 +12,7 @@ mod pr;
 mod resolve;
 mod squash;
 mod rewrite;
-mod plan;
+mod run;
 mod release;
 
 pub use changelog::cmd_changelog;
@@ -30,7 +30,7 @@ pub use squash::cmd_squash;
 pub use rewrite::cmd_rewrite;
 #[allow(unused_imports)]
 pub use resolve::{cmd_resolve_with_resolver, ConflictInput, ConflictResolver};
-pub use plan::{cmd_plan, AnalysisMode};
+pub use run::{cmd_run, AnalysisMode};
 pub use release::cmd_release;
 
 // Re-export utilities from util module for backward compatibility

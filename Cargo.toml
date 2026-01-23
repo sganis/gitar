@@ -24,6 +24,7 @@ regex = "1"
 anstream = "0.6"
 anstyle = "1"
 dialoguer = "0.12"
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
 
 [dev-dependencies]
 assert_cmd = "2"

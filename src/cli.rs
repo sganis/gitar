@@ -317,6 +317,14 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         skip_changelog: bool,
 
+        /// Skip writing changelog to CHANGELOG.md file
+        #[arg(long, default_value_t = false)]
+        skip_changelog_file: bool,
+
+        /// Custom changelog file path (default: CHANGELOG.md)
+        #[arg(long, default_value = "CHANGELOG.md")]
+        changelog_file: String,
+
         /// Base reference (tag/commit/branch) - defaults to latest tag
         #[arg(long)]
         from: Option<String>,
@@ -377,16 +385,16 @@ pub enum Commands {
         algo: u8,
     },
 
-    /// Analyze repo state and create a multi-commit plan
+    /// Analyze repo state and create a multi-commit execution plan
     ///
-    /// The plan command analyzes your changes and proposes an optimal commit structure.
+    /// The run command analyzes your changes and proposes an optimal commit structure.
     /// You can review and refine the plan interactively before execution.
-    Plan {
+    Run {
         /// Execute the plan after approval
         #[arg(long, default_value_t = false)]
         apply: bool,
 
-        /// Auto-resolve conflicts before planning
+        /// Auto-resolve conflicts before analysis
         #[arg(long, default_value_t = false)]
         resolve: bool,
 
@@ -474,7 +482,7 @@ mod tests {
             vec!["gitar", "models"],
             vec!["gitar", "diff"],
             vec!["gitar", "resolve"],
-            vec!["gitar", "plan"],
+            vec!["gitar", "run"],
             vec!["gitar", "release"],
             vec!["gitar", "squash", "3"],
             vec!["gitar", "rewrite", "5"],
@@ -623,7 +631,7 @@ mod tests {
     }
 
     // ==========================================================================
-    // Resolve + Plan command tests
+    // Resolve + Run command tests
     // ==========================================================================
 
     #[test]
@@ -640,33 +648,33 @@ mod tests {
     }
 
     #[test]
-    fn cli_parses_plan_flags() {
-        let cli = Cli::try_parse_from(["gitar", "plan", "--apply", "--suggest"]).unwrap();
-        if let Commands::Plan { apply, suggest, .. } = cli.command {
+    fn cli_parses_run_flags() {
+        let cli = Cli::try_parse_from(["gitar", "run", "--apply", "--suggest"]).unwrap();
+        if let Commands::Run { apply, suggest, .. } = cli.command {
             assert!(apply);
             assert!(suggest);
         } else {
-            panic!("Expected Plan command");
+            panic!("Expected Run command");
         }
     }
 
     #[test]
-    fn cli_parses_plan_mode() {
-        let cli = Cli::try_parse_from(["gitar", "plan", "--mode", "working"]).unwrap();
-        if let Commands::Plan { mode, .. } = cli.command {
+    fn cli_parses_run_mode() {
+        let cli = Cli::try_parse_from(["gitar", "run", "--mode", "working"]).unwrap();
+        if let Commands::Run { mode, .. } = cli.command {
             assert_eq!(mode, Some("working".to_string()));
         } else {
-            panic!("Expected Plan command");
+            panic!("Expected Run command");
         }
     }
 
     #[test]
-    fn cli_parses_plan_algo() {
-        let cli = Cli::try_parse_from(["gitar", "plan", "--algo", "3"]).unwrap();
-        if let Commands::Plan { algo, .. } = cli.command {
+    fn cli_parses_run_algo() {
+        let cli = Cli::try_parse_from(["gitar", "run", "--algo", "3"]).unwrap();
+        if let Commands::Run { algo, .. } = cli.command {
             assert_eq!(algo, 3);
         } else {
-            panic!("Expected Plan command");
+            panic!("Expected Run command");
         }
     }
 
