@@ -259,33 +259,46 @@ gitar diff --compare
 
 ---
 
-## Using gitar Behind Firewalls (SSH Tunnel / Proxy)
+## Configuration
 
-If your machine **does not have direct internet access** (corporate / air-gapped / restricted network), you can still use gitar by tunneling traffic through another machine.
+Gitar stores configuration in `~/.gitar.toml`. Here's a complete example:
 
-Gitar supports **HTTP and SOCKS proxies** via the `ALL_PROXY` environment variable.
+```toml
+# Global settings
+default_provider = "openai"
+base_branch = "main"
+max_diff_chars = 50000
+preset = "auto"
+secret_action = "redact"
 
-On your **local machine**, open a SOCKS proxy tunnel:
+# Provider-specific settings
+[openai]
+model = "gpt-4o"
+max_tokens = 500
+temperature = 0.5
+stream = true
+
+[claude]
+model = "claude-sonnet-4-5-20250929"
+max_tokens = 500
+temperature = 0.5
+
+[gemini]
+model = "gemini-2.5-flash"
+
+[groq]
+model = "llama-3.3-70b-versatile"
+
+[ollama]
+model = "llama3.2:latest"
+base_url = "http://localhost:11434/v1"
+```
+
+View your current configuration:
 
 ```bash
-ssh -N -D 8000 user@machine-with-internet
+gitar config
 ```
-
-This opens a local SOCKS5 proxy at:
-
-```
-socks5h://localhost:8000
-```
-
-Now tell gitar to use it:
-
-#### Linux / macOS
-
-```bash
-export ALL_PROXY="socks5h://localhost:8000"
-```
-
-Gitar will now route **all LLM API traffic** through the SSH tunnel.
 
 ---
 
@@ -334,52 +347,42 @@ gitar commit --write-to .git/COMMIT_EDITMSG --silent
 
 You can still edit it before saving.
 
-### Uninstall
-
-Run **gitar hook uninstall** or simply delete **.git/hooks/prepare-commit-msg**
 
 ---
 
-## Configuration
+## Using gitar Behind Firewalls (SSH Tunnel / Proxy)
 
-Gitar stores configuration in `~/.gitar.toml`. Here's a complete example:
+If your machine **does not have direct internet access** (corporate / air-gapped / restricted network), you can still use gitar by tunneling traffic through another machine.
 
-```toml
-# Global settings
-default_provider = "openai"
-base_branch = "main"
-max_diff_chars = 50000
-preset = "auto"
-secret_action = "redact"
+Gitar supports **HTTP and SOCKS proxies** via the `ALL_PROXY` environment variable.
 
-# Provider-specific settings
-[openai]
-model = "gpt-4o"
-max_tokens = 500
-temperature = 0.5
-stream = true
-
-[claude]
-model = "claude-sonnet-4-5-20250929"
-max_tokens = 500
-temperature = 0.5
-
-[gemini]
-model = "gemini-2.5-flash"
-
-[groq]
-model = "llama-3.3-70b-versatile"
-
-[ollama]
-model = "llama3.2:latest"
-base_url = "http://localhost:11434/v1"
-```
-
-View your current configuration:
+On your **local machine**, open a SOCKS proxy tunnel:
 
 ```bash
-gitar config
+ssh -N -D 8000 user@machine-with-internet
 ```
+
+This opens a local SOCKS5 proxy at:
+
+```
+socks5h://localhost:8000
+```
+
+Now tell gitar to use it:
+
+#### Linux / macOS
+
+```bash
+export ALL_PROXY="socks5h://localhost:8000"
+```
+
+Gitar will now route **all LLM API traffic** through the SSH tunnel.
+
+
+
+### Uninstall
+
+Run **gitar hook uninstall** or simply delete **.git/hooks/prepare-commit-msg**
 
 ---
 
@@ -405,3 +408,342 @@ Gitar sends **only what it needs** for the command you run (for example: a diff,
 ## License
 
 MIT
+
+
+---
+
+# Future
+
+# Gitar — AI-Native Git Interface
+
+**Gitar** is an AI-powered Git CLI designed to **replace most direct Git usage** with a smarter, safer, AI-assisted workflow.
+
+Instead of memorizing Git commands and manually staging, splitting, and explaining changes, you:
+
+> **Ask Gitar to explain, plan, and safely execute.**
+
+---
+
+# Mental Model
+
+Gitar has **four conceptual layers**:
+
+1. 📝 **Narrate** → Explain and summarize Git state (read-only)
+2. 🚀 **Plan** → Design commit structure and history (the product)
+3. 🧰 **Release** → Guided, safe release workflow
+4. 🩹 **Resolve** → Fix merge conflicts safely
+
+Under the hood, all of them share:
+
+> A powerful **diff shaping + secret detection + context optimization engine**.
+
+---
+
+# What Gitar Is Great At
+
+- Writing high-quality commit messages
+- Explaining diffs to non-technical people
+- Generating changelogs and PR descriptions
+- Planning clean commit history
+- Splitting monster commits
+- Safely guiding releases
+- Fixing merge conflicts with fallback-heavy safety
+
+---
+
+# Quick Start
+
+```bash
+gitar init        # Create ~/.gitar.toml
+gitar config      # Show current configuration
+
+git add .
+gitar commit      # Create a commit with AI-generated message
+````
+
+---
+
+# Subsystems
+
+---
+
+## 📝 1) Narration Layer (Read-only, already mature)
+
+> **Explain Git state in human language.**
+
+These commands **do not modify history**. They only describe it.
+
+### Available commands
+
+```bash
+gitar staged                    # Message for staged changes
+gitar unstaged                  # Message for unstaged changes
+
+gitar history v1.0.0            # Regenerate messages since tag
+gitar history v1.0.0 --to v1.1.0
+
+gitar changelog v1.0.0          # Release notes since tag
+gitar pr                        # PR description
+gitar explain                   # Explain for non-technical audience
+gitar version                   # Suggest version bump
+
+gitar diff --compare            # Compare smart diff algorithms side-by-side
+gitar models                    # List available models (when supported)
+```
+
+All of these are:
+
+> `Git state → shaped diff → LLM → text`
+
+---
+
+## 🚀 2) Planning Layer — `gitar plan` (THE PRODUCT)
+
+> **AI-native commit planning and history shaping engine.**
+
+This is the **core of Gitar**.
+
+`gitar plan` (currently implemented as `split`) will:
+
+* Analyze:
+
+  * working tree
+  * staged
+  * untracked
+  * or history ranges
+* Propose:
+
+  * number of commits
+  * grouping
+  * ordering
+  * messages
+* Let the human:
+
+  * accept / reject
+  * move files between groups
+  * exclude files
+  * regenerate plan
+* Then:
+
+  * execute Git plumbing safely
+
+### Long-term goals
+
+* Clean commit creation
+* Splitting monster commits
+* History rewrite
+* Review-first workflows
+* Staging strategy
+* Commit message generation
+* Changelog generation
+
+> **AI proposes. Human approves. Git executes.**
+
+---
+
+## 🧰 3) Release Layer — `gitar release` (Guided workflow)
+
+> **Safe, deterministic, boring release automation.**
+
+This command will:
+
+* Analyze commits since last tag
+* Decide version bump
+* Draft changelog
+* Update version file(s)
+* Commit
+* Tag
+
+It **never pushes**.
+
+Think of it as:
+
+> **“`gitar plan`, but specialized for releases.”**
+
+---
+
+## 🩹 4) Resolve Layer — `gitar resolve`
+
+> **Merge conflict resolver with heavy safety rails.**
+
+Features:
+
+* Detect conflicts
+* Parse conflict regions
+* Try:
+
+  * heuristics
+  * per-region LLM
+  * fallback to full-file LLM
+* Enforce safety:
+
+  * no markers remain
+  * no unmerged files remain
+
+Philosophy:
+
+> **Safe. Cheap. Deterministic. Fallback-heavy.**
+
+No AST. No heroics.
+
+---
+
+# Diff Shaping & Context Optimization (Core Infrastructure)
+
+Large diffs can blow up context windows and cost tokens. Gitar can **shape** the diff before sending it to your LLM.
+
+Most commands accept:
+
+```bash
+--algo <1..4>
+```
+
+### Algorithms
+
+* **1 — Full Diff**
+  Sends the raw `git diff` (best fidelity, worst token usage).
+
+* **2 — Selective Files**
+  Splits the diff by file, filters out noise, ranks files by importance, packs whole-file patches.
+
+* **3 — Selective Hunks**
+  Extracts and ranks hunks across files, caps dominance per file.
+
+* **4 — Semantic JSON** *(default)*
+  Produces a compact JSON IR with file summaries and top-ranked hunks, adaptively shrinking until it fits.
+
+### Debug
+
+```bash
+gitar diff --algo 2 --max-chars 15000 --stats
+gitar diff --compare
+```
+
+---
+
+# Secret Detection & Protection
+
+Gitar scans diffs **before sending to any LLM**:
+
+* API keys
+* Private keys
+* DB URLs
+* Passwords
+* Tokens
+* JWTs
+
+Configure in `~/.gitar.toml`:
+
+```toml
+secret_action = "redact"   # "redact" | "warn" | "block"
+```
+
+| Action | Behavior                                   |
+| ------ | ------------------------------------------ |
+| redact | Replace secrets with `[REDACTED:TYPE:Nch]` |
+| warn   | Warn but send                              |
+| block  | Abort                                      |
+
+---
+
+# Style Presets
+
+Gitar adapts message style to your project:
+
+```bash
+gitar commit --preset rust
+gitar commit --preset js
+gitar commit --preset python
+gitar commit --preset auto
+```
+
+Auto-detection:
+
+| File                      | Preset     |
+| ------------------------- | ---------- |
+| Cargo.toml                | rust       |
+| package.json              | javascript |
+| pyproject.toml / setup.py | python     |
+
+---
+
+# Git Hook
+
+Install once per repo:
+
+```bash
+gitar hook install
+```
+
+Then:
+
+```bash
+git add .
+git commit
+```
+
+Gitar auto-generates the message via `prepare-commit-msg`.
+
+---
+
+# Configuration
+
+`~/.gitar.toml` example:
+
+```toml
+default_provider = "openai"
+base_branch = "main"
+max_diff_chars = 50000
+preset = "auto"
+secret_action = "redact"
+
+[openai]
+model = "gpt-4o"
+max_tokens = 500
+temperature = 0.5
+stream = true
+
+[claude]
+model = "claude-sonnet-4-5-20250929"
+
+[ollama]
+model = "llama3.2:latest"
+base_url = "http://localhost:11434/v1"
+```
+
+Show config:
+
+```bash
+gitar config
+```
+
+---
+
+# Philosophy
+
+* AI proposes
+* Human approves
+* Git executes
+
+Never:
+
+* Auto-rewrite history
+* Auto-commit without showing a plan
+* Hide what Git is doing
+
+---
+
+# Roadmap (Clear Priorities)
+
+1. 🚀 **`gitar plan`** (core product)
+2. 🧰 `gitar release`
+3. 📝 Narration improvements
+4. 🩹 `gitar resolve` maintenance only
+
+---
+
+# One-Line Summary
+
+> **Gitar is an AI-native Git interface that helps you understand your history, plan it, and safely execute it.**
+
+```

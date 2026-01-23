@@ -51,25 +51,37 @@ The project supports cross-compilation for multiple platforms (see .github/workf
 ```
 src/
 ├── main.rs           # Entry point, command routing
+├── lib.rs            # Library entry point (module exports)
 ├── cli.rs            # CLI argument definitions (clap)
 ├── client.rs         # Unified LLM client interface
 ├── config.rs         # Configuration management (~/.gitar.toml)
 ├── git.rs            # Git operations (diffs, logs, commits)
 ├── types.rs          # Shared data structures
+├── plan.rs           # Plan data structures (Plan, Action)
+├── executor.rs       # Execute git commands from plans
+├── context.rs        # Global context/state (repo root, caching)
 ├── command/          # Command implementations
 │   ├── mod.rs        # Shared command utilities
 │   ├── commit.rs     # Interactive commit with AI message
-│   ├── staged.rs     # Generate message for staged changes
-│   ├── unstaged.rs   # Generate message for unstaged changes
-│   ├── history.rs    # Regenerate commit messages for history
-│   ├── pr.rs         # Generate PR descriptions
 │   ├── changelog.rs  # Generate release notes
 │   ├── explain.rs    # Explain changes in plain English
+│   ├── history.rs    # Regenerate commit messages for history
+│   ├── pr.rs         # Generate PR descriptions
 │   ├── version.rs    # Suggest version bumps
 │   ├── diff.rs       # Debug diff algorithms
 │   ├── hook.rs       # Git hook installation
-│   ├── config.rs     # Config/init commands
-│   └── models.rs     # List available models
+│   ├── config.rs     # Show resolved configuration
+│   ├── init.rs       # Create/update ~/.gitar.toml
+│   ├── models.rs     # List available models
+│   ├── split.rs      # Split large diffs into logical commits
+│   ├── plan.rs       # Analyze repo state and suggest actions
+│   └── resolve/      # Merge conflict resolution
+│       ├── mod.rs    # Main resolve logic
+│       ├── parser.rs # Parse conflict markers
+│       ├── heuristic.rs  # Heuristic conflict resolution
+│       ├── llm.rs    # LLM-based resolution
+│       ├── diff_preview.rs  # Preview resolution diffs
+│       └── git_helper.rs    # Git operations for conflicts
 ├── prompt/           # LLM context preparation
 │   ├── algo.rs       # Diff shaping algorithms (1-4)
 │   ├── diff.rs       # Diff processing and context building
@@ -110,6 +122,12 @@ src/
 - Three actions: redact (default), warn, block
 - Runs before any data is sent to LLM
 - Detection patterns cover major providers (OpenAI, Anthropic, AWS, GitHub, etc.)
+
+**6. Plan & Execution Infrastructure**
+- `plan.rs`: Data structures for representing execution plans (Plan, Action enum)
+- `executor.rs`: Executes git commands from plans with dry-run support
+- `context.rs`: Global context/state management (repo root detection, home dir, caching)
+- Used by new commands (split, plan, resolve) for safe, reviewable git operations
 
 ### Important Implementation Details
 
@@ -159,6 +177,30 @@ fn test_command_name() {
 }
 ```
 
+## Important Recent Additions
+
+**New Commands (2024-2025)**
+- `split` — Split large working tree diffs into logical commits (guided workflow)
+- `resolve` — AI-assisted merge conflict resolution with heuristics + LLM fallback
+- `plan` — Analyze repo state and suggest next actions (future: full commit planning)
+- `init` — Initialize ~/.gitar.toml configuration file
+
+**Split Command** (command/split.rs)
+- Analyzes unstaged changes and guides creating a series of focused commits
+- Groups changes by type (docs, tests, config) and semantic intent
+- Requires interactive confirmation before each commit
+
+**Resolve Command** (command/resolve/)
+- Detects and parses merge/rebase/cherry-pick conflicts
+- Three-tier resolution strategy: heuristics → per-region LLM → full-file LLM
+- Safety checks: no markers remain, no unmerged files remain
+- Use `--apply` to write + stage, `--yes` to skip confirmation
+
+**Plan Command** (command/plan.rs)
+- Inspects repo state (staged, unstaged, untracked, conflicts)
+- Suggests next actions based on current state
+- Foundation for future commit planning features
+
 ## Common Development Patterns
 
 **Adding a New Command**
@@ -199,3 +241,36 @@ fn test_command_name() {
 - Use const for string literals and configuration values
 - Module-level comments explain purpose and design
 - Function-level comments only where logic is non-obvious
+
+# Rust Coding Standards 
+
+## 1. File Headers
+- Every file MUST start with its full path relative to the project root as a comment.
+- Example: `// src/main.rs` or `// src/auth/mod.rs`.
+
+## 2. File Size & Token Management
+To prevent "lazy coding" and context drift, maintain a "Goldilocks Zone" for file length:
+- **Optimal Total Length:** 300–500 lines.
+- **Hard Limit:** 600 lines. 
+- **Component Budget:**
+    - Logic: 150–250 lines.
+    - Unit Tests (in-file): 100–200 lines.
+
+## 3. Test Coverage & Quality
+- **Target Coverage:** Aim for **80% code coverage**.
+- **Priority:** Focus on the "Happy Path," complex edge cases, and error handling.
+- **Efficiency:** Do not test trivial boilerplate. If testing pushes the file over 500 lines, prioritize core logic and move extra tests to a separate file.
+
+## 4. File & Folder Naming Conventions
+- **Singular Only:** Always use singular names (e.g., `user`, `model`).
+- **Short Over Long:** Choose the shortest descriptive name possible (e.g., `auth`).
+- **All Lowercase:** Never use uppercase letters in paths or filenames.
+- **Single word:** Avoid 2 words like app_log or applog unless is needed and short. Log or logger is better. Minimize underscores (`_`).
+
+## 5. Refactoring Triggers
+- If a request would push a file beyond 500 lines, you MUST propose a refactor plan to split the code into sub-modules (`mod`) before implementing the new feature.
+- Use `cargo check` frequently. If compilation exceeds 3 seconds, simplify module complexity.
+
+## 6. Interaction Style
+- Never use `// ... rest of code stays the same` comments. Rewrite the full file.
+- If you hit a "Loop of Shame" (fixing the same compiler error 3+ times), stop and propose a simplification immediately.

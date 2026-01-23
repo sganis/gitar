@@ -23,6 +23,7 @@ To prevent "lazy coding" and context drift, maintain a "Goldilocks Zone" for fil
 - **Singular Only:** Always use singular names (e.g., `user`, `model`).
 - **Short Over Long:** Choose the shortest descriptive name possible (e.g., `auth`).
 - **All Lowercase:** Never use uppercase letters in paths or filenames.
+- **Single word:** Avoid 2 words like app_log or applog unless is needed and short. Log or logger is better.
 - **No Underscores:** Avoid underscores (`_`) entirely. Use simple concatenation (e.g., `applog`).
 
 ## 5. Refactoring Triggers
