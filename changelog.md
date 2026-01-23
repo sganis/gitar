@@ -1,3 +1,19 @@
+## [1.1.2] - 2026-01-23
+
+# Release Notes
+## Features
+- Added logging for commit and tag steps in the release command for better visibility during release operations.
+
+## Improvements
+- Updated release command to use `git commit -a` to automatically stage all tracked file changes before committing.
+
+## [1.1.1] - 2026-01-2git s3
+
+# Release Notes
+## Fixes
+- Corrected inverted apply flag behavior in the release command, ensuring proper flag logic during release execution.
+- Updated changelog to include details for the 1.1.0 release.
+
 ## [1.1.0] - 2026-01-23
 
 # Release Notes
