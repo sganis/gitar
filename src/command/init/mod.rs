@@ -267,8 +267,8 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
     // Then: existing config init/update behavior for ~/.gitar.toml
     let mut config = file.clone();
 
-    // Check if running in interactive mode (no CLI params provided)
-    let interactive = cli.provider.is_none()
+    // Check if running in interactive mode (no CLI params provided AND stdin is a TTY)
+    let wants_interactive = cli.provider.is_none()
         && cli.api_key.is_none()
         && cli.model.is_none()
         && cli.base_url.is_none()
@@ -277,6 +277,15 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         && cli.temperature.is_none()
         && cli.preset.is_none()
         && cli.base_branch.is_none();
+
+    let interactive = wants_interactive && prompt::is_interactive();
+
+    if wants_interactive && !interactive {
+        // User ran `gitar init` without args in non-TTY (e.g., test, script, CI)
+        // Just create context files and exit successfully
+        println!("Created context files. Use 'gitar init --provider <provider> ...' to configure settings.");
+        return Ok(());
+    }
 
     if interactive {
         println!("==========================================================");
@@ -293,11 +302,17 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         };
         println!("Selected provider: {}", selected_provider);
 
-        // Step 2: Get API key
+        // Step 2: Get API key (skip for providers that don't need it)
+        let needs_api_key = !matches!(selected_provider.as_str(), "ollama" | "local");
+
         let provider_config = config.get_provider_mut(&selected_provider);
         let current_key = provider_config.api_key.clone();
 
-        let api_key = if let Some(ref key) = current_key {
+        let api_key = if !needs_api_key {
+            // Providers like ollama don't need API keys
+            println!("\n[INFO] {} doesn't require an API key", selected_provider);
+            String::new()
+        } else if let Some(ref key) = current_key {
             let masked = format!("{}...{}", &key[..4.min(key.len())], &key[key.len().saturating_sub(4)..]);
             let input = prompt::input(&format!("API key (current: {})", masked), Some(""))?;
             if input.is_empty() {
@@ -335,8 +350,9 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
             }
         };
 
-        if api_key.is_empty() {
-            bail!("API key cannot be empty");
+        // Validate API key for providers that need it
+        if api_key.is_empty() && needs_api_key {
+            bail!("API key cannot be empty for provider: {}", selected_provider);
         }
 
         // Step 3: Select model (query API)
