@@ -11,8 +11,8 @@ use crate::color::{arrow, success, warning};
 use crate::git::{self, build_diff_target, get_current_version, get_diff};
 use crate::context::load_all_context;
 use crate::context::secret::SecretAction;
-use crate::context::template::{version_system_with_context, VERSION_USER};
-use crate::command::apply_smart_diff;
+use crate::context::template::{changelog_system_with_context, version_system_with_context, CHANGELOG_USER, VERSION_USER};
+use crate::command::{apply_smart_diff, SHORT_HASH_LEN};
 
 use version::{detect_version_files, update_version_file, VersionFile};
 use tag::{create_tag, get_commits_since, get_latest_tag, tag_exists};
@@ -139,7 +139,7 @@ pub async fn cmd_release(
         format!("Release {}", new_version)
     } else {
         println!("\nGenerating changelog...");
-        generate_changelog_content(&commits, &from_ref, &new_version, client).await?
+        generate_changelog_content(&commits, &from_ref, &new_version, client, stream, algo, max_diff_chars, secret_action).await?
     };
 
     // Step 8: Display release plan
@@ -318,15 +318,53 @@ async fn generate_changelog_content(
     commits: &[CommitInfo],
     from_ref: &str,
     version: &str,
-    _client: &LlmClient,
+    client: &LlmClient,
+    stream: bool,
+    algo: u8,
+    max_diff_chars: usize,
+    secret_action: SecretAction,
 ) -> Result<String> {
-    // For now, generate a simple changelog
-    // In the future, this could call cmd_changelog or use LLM
-    let mut changelog = format!("# Release {}\n\n", version);
-    changelog.push_str(&format!("Changes since {}:\n\n", from_ref));
+    // Use LLM-powered changelog generation (same logic as cmd_changelog)
+    let end = "HEAD";
+    let display = format!("{}..{}", from_ref, end);
 
-    for commit in commits {
-        changelog.push_str(&format!("- {} ({})\n", commit.subject, commit.short_hash));
+    // Build commit list with messages (same format as cmd_changelog)
+    let commit_list = commits
+        .iter()
+        .map(|c| {
+            format!(
+                "- [{}] {}",
+                &c.short_hash[..SHORT_HASH_LEN.min(c.short_hash.len())],
+                c.subject
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    // Get combined diff for the range
+    let raw_diff = get_diff(Some(&format!("{}..{}", from_ref, end)), false, usize::MAX)?;
+    let diff = if raw_diff.trim().is_empty() {
+        String::new()
+    } else {
+        apply_smart_diff(&raw_diff, max_diff_chars, false, algo, secret_action)?
+    };
+
+    // Build the prompt using the same template as cmd_changelog
+    // Include version context for release notes
+    let range_with_version = format!("{} (Release v{})", display, version);
+    let prompt = CHANGELOG_USER
+        .replace("{range}", &range_with_version)
+        .replace("{count}", &commits.len().to_string())
+        .replace("{commits}", &commit_list)
+        .replace("{diff}", &diff);
+
+    let (project_ctx, user_ctx) = load_all_context();
+    let system = changelog_system_with_context(project_ctx.as_deref(), user_ctx.as_deref());
+
+    // Call LLM to generate the changelog
+    let changelog = client.chat(&system, &prompt, stream).await?;
+    if stream {
+        println!();
     }
 
     Ok(changelog)
