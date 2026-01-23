@@ -488,24 +488,26 @@ fn execute_release(
 
     // Step 3: Stage and commit all changes
     if !dry_run {
-        // Stage version files
-        for file in version_files {
-            git::run_git(&["add", file.path.to_str().unwrap()])?;
-        }
+        println!("Staging files for release commit...");
 
-        // Stage changelog file if updated
+        // Stage the changelog file if it exists (might be new/untracked)
         if let Some(path) = changelog_file_path {
             if path.exists() {
+                println!("  Adding: {}", path.display());
                 git::run_git(&["add", path.to_str().unwrap()])?;
             }
         }
 
+        // Commit with -a to include all tracked modified files (like Cargo.toml)
+        println!("Creating release commit...");
         let commit_message = format!("Release version {}", new_version);
-        git::run_git(&["commit", "-m", &commit_message])?;
+        git::run_git(&["commit", "-a", "-m", &commit_message])?;
         success("Created release commit");
+        println!();
     }
 
     // Step 4: Create annotated tag
+    println!("Creating annotated tag...");
     create_tag(tag_name, changelog, dry_run)?;
 
     Ok(())
