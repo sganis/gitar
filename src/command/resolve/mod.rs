@@ -315,26 +315,31 @@ pub async fn cmd_resolve(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn accept_mode_from_env_default_auto() {
         std::env::remove_var("GITAR_RESOLVE_ACCEPT");
         assert_eq!(AcceptMode::from_env(), AcceptMode::Auto);
     }
 
     #[test]
+    #[serial]
     fn accept_mode_from_env_ours() {
         std::env::set_var("GITAR_RESOLVE_ACCEPT", "ours");
         assert_eq!(AcceptMode::from_env(), AcceptMode::Ours);
     }
 
     #[test]
+    #[serial]
     fn accept_mode_from_env_theirs() {
         std::env::set_var("GITAR_RESOLVE_ACCEPT", "theirs");
         assert_eq!(AcceptMode::from_env(), AcceptMode::Theirs);
     }
 
     #[test]
+    #[serial]
     fn accept_mode_from_env_both() {
         std::env::set_var("GITAR_RESOLVE_ACCEPT", "both");
         assert_eq!(AcceptMode::from_env(), AcceptMode::Both);
