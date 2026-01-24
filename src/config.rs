@@ -97,6 +97,8 @@ pub struct Config {
     pub insecure: Option<bool>,
     pub preset: Option<String>,
     pub secret_action: Option<String>,
+    /// When true, commands default to --apply mode (execute instead of dry-run)
+    pub auto_apply: Option<bool>,
     pub openai: Option<ProviderConfig>,
     pub claude: Option<ProviderConfig>,
     pub gemini: Option<ProviderConfig>,
@@ -279,6 +281,14 @@ mod tests {
         let c = Config::default();
         assert!(c.default_provider.is_none());
         assert!(c.secret_action.is_none());
+        assert!(c.auto_apply.is_none());
+    }
+
+    #[test]
+    fn config_auto_apply_parses() {
+        let toml = r#"auto_apply = true"#;
+        let c: Config = toml::from_str(toml).unwrap();
+        assert_eq!(c.auto_apply, Some(true));
     }
 
     #[test]

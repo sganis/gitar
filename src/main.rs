@@ -18,7 +18,9 @@ async fn main() -> Result<()> {
     // Handle commands that don't need git or LLM client
     if let Some(ref cmd) = cli.command {
         match cmd {
-            Commands::Init { show } => return cmd_init(&cli, &file_config, *show).await,
+            Commands::Init { show, auto_apply } => {
+                return cmd_init(&cli, &file_config, *show, *auto_apply).await
+            }
             Commands::Hook { install, uninstall } => {
                 let action = if *install {
                     HookAction::Install
@@ -83,6 +85,7 @@ async fn main() -> Result<()> {
     // Handle default command (no subcommand = plan)
     let command = cli.command.unwrap_or(Commands::Plan {
         apply: false,
+        dry_run: false,
         fix: false,
         suggest: false,
         working: false,
@@ -94,10 +97,16 @@ async fn main() -> Result<()> {
         algo: 4,
     });
 
+    // Helper to resolve apply mode: --apply wins, --dry-run blocks, config provides default
+    let resolve_apply = |apply: bool, dry_run: bool| -> bool {
+        apply || (!dry_run && file_config.auto_apply.unwrap_or(false))
+    };
+
     // Dispatch to command handlers
     match command {
         Commands::Plan {
             apply,
+            dry_run,
             fix,
             suggest,
             working,
@@ -108,9 +117,10 @@ async fn main() -> Result<()> {
             yes,
             algo,
         } => {
+            let do_apply = resolve_apply(apply, dry_run);
             dispatch_plan(
-                &client, &config, apply, fix, suggest, working, staged, history, to, interactive,
-                yes, algo,
+                &client, &config, do_apply, fix, suggest, working, staged, history, to,
+                interactive, yes, algo,
             )
             .await?
         }
@@ -118,6 +128,7 @@ async fn main() -> Result<()> {
         // Alias: run -> plan
         Commands::Run {
             apply,
+            dry_run,
             fix,
             suggest,
             working,
@@ -128,9 +139,10 @@ async fn main() -> Result<()> {
             yes,
             algo,
         } => {
+            let do_apply = resolve_apply(apply, dry_run);
             dispatch_plan(
-                &client, &config, apply, fix, suggest, working, staged, history, to, interactive,
-                yes, algo,
+                &client, &config, do_apply, fix, suggest, working, staged, history, to,
+                interactive, yes, algo,
             )
             .await?
         }
@@ -340,11 +352,17 @@ async fn main() -> Result<()> {
             .await?
         }
 
-        Commands::Fix { apply, yes, stream } => {
+        Commands::Fix {
+            apply,
+            dry_run,
+            yes,
+            stream,
+        } => {
+            let do_apply = resolve_apply(apply, dry_run);
             let do_stream = config.stream || stream;
             cmd_fix(
                 &client,
-                apply,
+                do_apply,
                 yes,
                 do_stream,
                 config.max_diff_chars,
@@ -354,11 +372,17 @@ async fn main() -> Result<()> {
         }
 
         // Alias: resolve -> fix
-        Commands::Resolve { apply, yes, stream } => {
+        Commands::Resolve {
+            apply,
+            dry_run,
+            yes,
+            stream,
+        } => {
+            let do_apply = resolve_apply(apply, dry_run);
             let do_stream = config.stream || stream;
             cmd_fix(
                 &client,
-                apply,
+                do_apply,
                 yes,
                 do_stream,
                 config.max_diff_chars,
@@ -369,6 +393,7 @@ async fn main() -> Result<()> {
 
         Commands::Release {
             apply,
+            dry_run,
             skip_changelog,
             skip_changelog_file,
             changelog_file,
@@ -377,9 +402,10 @@ async fn main() -> Result<()> {
             to,
             algo,
         } => {
+            let do_apply = resolve_apply(apply, dry_run);
             cmd_release(
                 &client,
-                apply,
+                do_apply,
                 skip_changelog,
                 skip_changelog_file,
                 changelog_file,

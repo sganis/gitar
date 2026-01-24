@@ -203,6 +203,10 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         apply: bool,
 
+        /// Preview only, don't execute (overrides auto_apply config)
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
         /// Auto-fix conflicts before analysis
         #[arg(long, default_value_t = false)]
         fix: bool,
@@ -345,6 +349,10 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         apply: bool,
 
+        /// Preview only, don't apply (overrides auto_apply config)
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
+
         /// Assume "yes" for prompts (required with --apply for now)
         #[arg(long, default_value_t = false)]
         yes: bool,
@@ -363,6 +371,10 @@ pub enum Commands {
         /// Execute the release (default: dry-run)
         #[arg(long, default_value_t = false)]
         apply: bool,
+
+        /// Preview only, don't execute (overrides auto_apply config)
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
 
         /// Skip changelog generation
         #[arg(long, default_value_t = false)]
@@ -412,6 +424,10 @@ pub enum Commands {
         /// Show the resolved configuration instead of running setup
         #[arg(long)]
         show: bool,
+
+        /// Enable auto-apply mode (commands execute by default instead of dry-run)
+        #[arg(long)]
+        auto_apply: Option<bool>,
     },
 
     /// List available models (when the provider exposes a models endpoint)
@@ -482,6 +498,8 @@ pub enum Commands {
         #[arg(long, default_value_t = false)]
         apply: bool,
         #[arg(long, default_value_t = false)]
+        dry_run: bool,
+        #[arg(long, default_value_t = false)]
         fix: bool,
         #[arg(long, default_value_t = false)]
         suggest: bool,
@@ -506,6 +524,8 @@ pub enum Commands {
     Resolve {
         #[arg(long, default_value_t = false)]
         apply: bool,
+        #[arg(long, default_value_t = false)]
+        dry_run: bool,
         #[arg(long, default_value_t = false)]
         yes: bool,
         #[arg(long, default_value_t = false)]

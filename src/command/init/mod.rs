@@ -274,10 +274,23 @@ async fn select_model(
 // MAIN COMMAND
 // =============================================================================
 
-pub async fn cmd_init(cli: &Cli, file: &Config, show: bool) -> Result<()> {
+pub async fn cmd_init(cli: &Cli, file: &Config, show: bool, auto_apply: Option<bool>) -> Result<()> {
     // Handle --show flag: display resolved configuration
     if show {
         return show_config(file);
+    }
+
+    // Handle --auto-apply flag (non-interactive shortcut)
+    if let Some(value) = auto_apply {
+        let mut config = file.clone();
+        config.auto_apply = Some(value);
+        config.save()?;
+        println!(
+            "auto_apply set to: {} (commands will {} by default)",
+            value,
+            if value { "execute" } else { "dry-run" }
+        );
+        return Ok(());
     }
 
     // First: ensure context files exist (non-destructive)
@@ -431,6 +444,15 @@ pub async fn cmd_init(cli: &Cli, file: &Config, show: bool) -> Result<()> {
         };
         config.preset = Some(preset.to_string());
 
+        // Step 5: Auto-apply mode
+        let current_auto_apply = config.auto_apply.unwrap_or(false);
+        let auto_apply_prompt = if current_auto_apply {
+            "Enable auto-apply mode? (commands execute instead of dry-run) [current: enabled]"
+        } else {
+            "Enable auto-apply mode? (commands execute instead of dry-run)"
+        };
+        config.auto_apply = Some(prompt::confirm(auto_apply_prompt, current_auto_apply)?);
+
         config.save()?;
 
         println!("\n==========================================================");
@@ -444,6 +466,14 @@ pub async fn cmd_init(cli: &Cli, file: &Config, show: bool) -> Result<()> {
             println!("Model: {}", model);
         }
         println!("Preset: {}", preset);
+        println!(
+            "Auto-apply: {}",
+            if config.auto_apply.unwrap_or(false) {
+                "enabled (commands execute by default)"
+            } else {
+                "disabled (commands dry-run by default)"
+            }
+        );
         println!("\nYou can now use gitar commands like:");
         println!("  gitar plan           # Plan commits (or just: gitar)");
         println!("  gitar tell --commit  # Generate commit message");
@@ -585,6 +615,14 @@ fn show_config(config: &Config) -> Result<()> {
         None => format!("{} (auto-detected)", effective_preset.name()),
     };
     println!("preset:           {}", preset_display);
+
+    // Show auto_apply
+    let auto_apply_display = match config.auto_apply {
+        Some(true) => "true (commands execute by default)",
+        Some(false) => "false (commands dry-run by default)",
+        None => "false (default: dry-run)",
+    };
+    println!("auto_apply:       {}", auto_apply_display);
 
     let providers = [
         ("openai", &config.openai, "OPENAI_API_KEY"),

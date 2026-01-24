@@ -27,6 +27,19 @@ pub struct CommitGroup {
     pub estimated_tokens: usize,
 }
 
+// Lock files that should get default messages instead of LLM analysis
+const LOCK_FILES: &[&str] = &[
+    "Cargo.lock",
+    "package-lock.json",
+    "yarn.lock",
+    "pnpm-lock.yaml",
+    "poetry.lock",
+    "Pipfile.lock",
+    "Gemfile.lock",
+    "composer.lock",
+    "go.sum",
+];
+
 // =============================================================================
 // PUBLIC API: CREATE GROUPS
 // =============================================================================
@@ -58,37 +71,44 @@ pub async fn create_groups(
         .with_model(client.model());
 
     for (idx, group) in initial_groups.into_iter().enumerate() {
-        // Build comprehensive diff including all file states
-        let diff_output = get_diff_for_group(&group, &analysis.mode)?;
-
         // Extract file paths for commit group
         let files: Vec<String> = group.iter().map(|c| c.path.clone()).collect();
 
-        // Apply diff algorithm + secret detection
-        let shaped_diff = apply_smart_diff_with_context(
-            &diff_output,
-            max_chars,
-            false, // show context
-            algo,
-            Some(&context),
-            secret_action,
-        )?;
+        // Check if this group contains only lock files (dependency updates)
+        // These files are excluded from diff shaping, so use a default message
+        let (message, estimated_tokens) = if is_lock_file_group(&files) {
+            (get_lock_file_message(&files), 0)
+        } else {
+            // Build comprehensive diff including all file states
+            let diff_output = get_diff_for_group(&group, &analysis.mode)?;
 
-        // Use LLM to generate commit message
-        let system_prompt =
-            commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
-        let user_prompt = COMMIT_USER.replace("{diff}", &shaped_diff);
+            // Apply diff algorithm + secret detection
+            let shaped_diff = apply_smart_diff_with_context(
+                &diff_output,
+                max_chars,
+                false, // show context
+                algo,
+                Some(&context),
+                secret_action,
+            )?;
 
-        let message = match client.chat(&system_prompt, &user_prompt, false).await {
-            Ok(msg) => msg.trim().to_string(),
-            Err(e) => {
-                eprintln!("Warning: LLM error for group {}: {}", idx + 1, e);
-                format!("Update {} files", files.len())
-            }
+            // Use LLM to generate commit message
+            let system_prompt =
+                commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
+            let user_prompt = COMMIT_USER.replace("{diff}", &shaped_diff);
+
+            let msg = match client.chat(&system_prompt, &user_prompt, false).await {
+                Ok(m) => m.trim().to_string(),
+                Err(e) => {
+                    eprintln!("Warning: LLM error for group {}: {}", idx + 1, e);
+                    format!("Update {} files", files.len())
+                }
+            };
+
+            // Estimate tokens (rough: chars / 4)
+            let tokens = shaped_diff.len() / 4;
+            (msg, tokens)
         };
-
-        // Estimate tokens (rough: chars / 3.5)
-        let estimated_tokens = shaped_diff.len() / 4;
 
         let title = if message.len() > 60 {
             format!("{}...", &message[..57])
@@ -106,6 +126,40 @@ pub async fn create_groups(
     }
 
     Ok(commit_groups)
+}
+
+// =============================================================================
+// LOCK FILE HELPERS
+// =============================================================================
+
+/// Check if all files in the group are lock files
+fn is_lock_file_group(files: &[String]) -> bool {
+    !files.is_empty()
+        && files.iter().all(|f| {
+            let filename = f.rsplit('/').next().unwrap_or(f);
+            LOCK_FILES.iter().any(|lock| filename == *lock)
+        })
+}
+
+/// Generate appropriate message for lock file groups
+fn get_lock_file_message(files: &[String]) -> String {
+    if files.len() == 1 {
+        let file = &files[0];
+        let filename = file.rsplit('/').next().unwrap_or(file);
+        match filename {
+            "Cargo.lock" => "Update Rust dependencies".to_string(),
+            "package-lock.json" | "yarn.lock" | "pnpm-lock.yaml" => {
+                "Update npm dependencies".to_string()
+            }
+            "poetry.lock" | "Pipfile.lock" => "Update Python dependencies".to_string(),
+            "Gemfile.lock" => "Update Ruby dependencies".to_string(),
+            "composer.lock" => "Update PHP dependencies".to_string(),
+            "go.sum" => "Update Go dependencies".to_string(),
+            _ => "Update dependencies".to_string(),
+        }
+    } else {
+        "Update dependencies".to_string()
+    }
 }
 
 // =============================================================================
