@@ -288,7 +288,14 @@ async fn suggest_version_bump_llm(
         .with_model(client.model());
 
     // Apply smart diff shaping
-    let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, algo, Some(&context), secret_action)?;
+    let diff = apply_smart_diff_with_context(
+        &raw_diff,
+        max_diff_chars,
+        false,
+        algo,
+        Some(&context),
+        secret_action,
+    )?;
 
     // Build prompt
     let prompt = VERSION_USER
@@ -492,7 +499,14 @@ async fn generate_changelog_content(
     let diff = if raw_diff.trim().is_empty() {
         String::new()
     } else {
-        apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, algo, Some(&context), secret_action)?
+        apply_smart_diff_with_context(
+            &raw_diff,
+            max_diff_chars,
+            false,
+            algo,
+            Some(&context),
+            secret_action,
+        )?
     };
 
     // Build the prompt using the same template as cmd_changelog

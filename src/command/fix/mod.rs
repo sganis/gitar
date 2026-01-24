@@ -1,4 +1,4 @@
-// src/command/resolve/mod.rs
+// src/command/fix/mod.rs
 use anyhow::{bail, Context, Result};
 use std::fs;
 
@@ -39,17 +39,11 @@ impl AcceptMode {
 }
 
 // =============================================================================
-// UX
-// =============================================================================
-//
-// (prompt_yes_no removed - now using prompt::confirm)
-
-// =============================================================================
 // TEST HOOK (kept for your fake resolver integration test)
 // =============================================================================
 
 #[allow(dead_code)]
-pub async fn cmd_resolve_with_resolver<R: ConflictResolver>(
+pub async fn cmd_fix_with_resolver<R: ConflictResolver>(
     resolver: &R,
     apply: bool,
     yes: bool,
@@ -154,14 +148,14 @@ pub async fn cmd_resolve_with_resolver<R: ConflictResolver>(
 // PUBLIC COMMAND (keeps existing signature)
 // =============================================================================
 
-/// Resolve merge/rebase/cherry-pick conflicts.
+/// Fix merge/rebase/cherry-pick conflicts.
 ///
 /// vNext:
 /// - `GITAR_RESOLVE_ACCEPT=ours|theirs|both|auto` (no CLI change)
 /// - If accept != auto, resolves without LLM.
 /// - If accept == auto: heuristic first, else per-region LLM (fallback to full-file LLM).
 /// - Interactive apply shows a diff preview (git diff --no-index)
-pub async fn cmd_resolve(
+pub async fn cmd_fix(
     client: &LlmClient,
     apply: bool,
     yes: bool,

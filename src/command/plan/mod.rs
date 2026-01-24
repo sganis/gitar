@@ -1,4 +1,4 @@
-// src/command/run/mod.rs
+// src/command/plan/mod.rs
 
 pub mod analyze;
 pub mod editor;
@@ -7,7 +7,7 @@ pub mod group;
 
 use crate::client::LlmClient;
 use crate::color::success;
-use crate::command::cmd_resolve;
+use crate::command::cmd_fix;
 use crate::config::ResolvedConfig;
 use crate::git;
 use anyhow::{bail, Result};
@@ -15,27 +15,27 @@ use anyhow::{bail, Result};
 // Re-export public API
 pub use analyze::AnalysisMode;
 
-/// Main entry point for run command
-pub async fn cmd_run(
+/// Main entry point for plan command
+pub async fn cmd_plan(
     client: &LlmClient,
     config: &ResolvedConfig,
     mode: Option<AnalysisMode>,
     apply: bool,
-    resolve: bool,
+    fix: bool,
     suggest: bool,
     interactive: bool,
     algo: u8,
 ) -> Result<()> {
     // Handle legacy suggest mode (simple state inspection)
     if suggest {
-        return cmd_run_suggest(mode);
+        return cmd_plan_suggest(mode);
     }
 
-    // Check for conflicts and resolve if requested
+    // Check for conflicts and fix if requested
     if git::has_conflicts()? {
-        if resolve {
+        if fix {
             println!("Conflicts detected. Resolving...\n");
-            cmd_resolve(
+            cmd_fix(
                 client,
                 apply, // Use same apply flag as plan
                 true,  // Auto-confirm (yes=true)
@@ -46,7 +46,7 @@ pub async fn cmd_run(
             .await?;
             println!("\nConflicts resolved. Continuing with analysis...\n");
         } else {
-            println!("Conflicts detected. Run `gitar resolve` or use `gitar run --resolve`.");
+            println!("Conflicts detected. Run `gitar fix` or use `gitar plan --fix`.");
             return Ok(());
         }
     }
@@ -132,12 +132,12 @@ pub async fn cmd_run(
 }
 
 /// Legacy suggest mode - simple state inspection
-fn cmd_run_suggest(mode: Option<AnalysisMode>) -> Result<()> {
+fn cmd_plan_suggest(mode: Option<AnalysisMode>) -> Result<()> {
     let analysis = analyze::detect_and_analyze(mode)?;
 
     if git::has_conflicts()? {
         println!("Recommendation:");
-        println!("  - Conflicts detected: run `gitar resolve`");
+        println!("  - Conflicts detected: run `gitar fix`");
         return Ok(());
     }
 
@@ -160,9 +160,9 @@ fn cmd_run_suggest(mode: Option<AnalysisMode>) -> Result<()> {
     println!("  - Files detected: {}", analysis.files.len());
 
     if staged && (unstaged || untracked) {
-        println!("  - Suggestion: run `gitar run --apply`");
+        println!("  - Suggestion: run `gitar plan --apply`");
     } else if unstaged || untracked {
-        println!("  - Suggestion: run `gitar run --apply`");
+        println!("  - Suggestion: run `gitar plan --apply`");
     } else if staged {
         println!("  - Suggestion: run `gitar commit`");
     } else {
@@ -177,9 +177,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn run_suggest_mode() {
+    fn plan_suggest_mode() {
         // Should not panic (may fail if not in git repo, which is ok)
-        let _result = cmd_run_suggest(None);
+        let _result = cmd_plan_suggest(None);
         // Test passes if it doesn't panic
     }
 

@@ -1,4 +1,4 @@
-// src/command/resolve/git_helper.rs
+// src/command/fix/git_helper.rs
 use anyhow::{bail, Context, Result};
 use std::process::Command;
 

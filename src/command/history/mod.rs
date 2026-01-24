@@ -94,7 +94,14 @@ pub async fn cmd_history(
             }
         };
 
-        let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, true, alg, Some(&context), secret_action)?;
+        let diff = apply_smart_diff_with_context(
+            &raw_diff,
+            max_diff_chars,
+            true,
+            alg,
+            Some(&context),
+            secret_action,
+        )?;
 
         let prompt = HISTORY_USER
             .replace("{original_message}", &c.message)

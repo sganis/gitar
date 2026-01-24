@@ -33,7 +33,14 @@ pub async fn cmd_pr(
 
     let (diff, stats, commits_text) = if staged {
         let raw_diff = get_diff(None, true, usize::MAX)?;
-        let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?;
+        let diff = apply_smart_diff_with_context(
+            &raw_diff,
+            max_diff_chars,
+            false,
+            alg,
+            Some(&context),
+            secret_action,
+        )?;
         (diff, get_diff_stats(None, true)?, "(staged changes)".into())
     } else {
         let diff_target = build_diff_target(base.as_deref(), to.as_deref(), base_branch);
@@ -53,7 +60,14 @@ pub async fn cmd_pr(
         };
 
         let raw_diff = get_diff(diff_target_ref, false, usize::MAX)?;
-        let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?;
+        let diff = apply_smart_diff_with_context(
+            &raw_diff,
+            max_diff_chars,
+            false,
+            alg,
+            Some(&context),
+            secret_action,
+        )?;
 
         (
             diff,

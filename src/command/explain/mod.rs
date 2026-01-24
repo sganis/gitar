@@ -41,7 +41,14 @@ pub async fn cmd_explain(
     let (diff, stats) = if staged {
         println!("Explaining staged changes...\n");
         let raw_diff = get_diff(None, true, usize::MAX)?;
-        let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?;
+        let diff = apply_smart_diff_with_context(
+            &raw_diff,
+            max_diff_chars,
+            false,
+            alg,
+            Some(&context),
+            secret_action,
+        )?;
         (diff, get_diff_stats(None, true)?)
     } else {
         let effective_from = match (&from, &since, &until) {
@@ -67,7 +74,14 @@ pub async fn cmd_explain(
         };
 
         let raw_diff = get_diff(diff_target_ref, false, usize::MAX)?;
-        let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?;
+        let diff = apply_smart_diff_with_context(
+            &raw_diff,
+            max_diff_chars,
+            false,
+            alg,
+            Some(&context),
+            secret_action,
+        )?;
         (diff, get_diff_stats(diff_target_ref, false)?)
     };
 
