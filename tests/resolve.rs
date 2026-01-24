@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::process::Command;
 
-use gitar::command::{cmd_resolve_with_resolver, ConflictInput, ConflictResolver};
+use gitar::command::{cmd_fix_with_resolver, ConflictInput, ConflictResolver};
 
 /// Fake resolver that keeps both sides (ours then theirs) for testing
 struct FakeResolver;
@@ -233,7 +233,7 @@ async fn resolve_with_fake_resolver_removes_markers() -> Result<()> {
     std::env::set_current_dir(&repo)?;
 
     // Run resolve with fake resolver
-    let result = cmd_resolve_with_resolver(&FakeResolver, true, true).await;
+    let result = cmd_fix_with_resolver(&FakeResolver, true, true).await;
 
     // Restore directory
     std::env::set_current_dir(prev)?;

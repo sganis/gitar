@@ -47,11 +47,11 @@ fn commit_file(repo: &Path, rel: &str, content: &str, msg: &str) {
 }
 
 // =============================================================================
-// STAGED/UNSTAGED TESTS (require git repo, no LLM)
+// EXPLAIN STAGED/UNSTAGED TESTS (require git repo, no LLM)
 // =============================================================================
 
 #[test]
-fn staged_requires_git_repo() {
+fn explain_staged_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -59,14 +59,14 @@ fn staged_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.arg("staged")
+    cmd.args(["explain", "staged"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
 #[test]
-fn unstaged_requires_git_repo() {
+fn explain_unstaged_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -74,18 +74,18 @@ fn unstaged_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.arg("unstaged")
+    cmd.args(["explain", "unstaged"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
 // =============================================================================
-// RUN COMMAND TESTS
+// PLAN COMMAND TESTS
 // =============================================================================
 
 #[test]
-fn run_requires_git_repo() {
+fn plan_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -93,14 +93,14 @@ fn run_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.arg("run")
+    cmd.arg("plan")
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
 #[test]
-fn run_suggest_works_in_repo() {
+fn plan_suggest_works_in_repo() {
     let home = tempfile::tempdir().unwrap();
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
@@ -112,11 +112,11 @@ fn run_suggest_works_in_repo() {
     cmd.current_dir(repo.path());
 
     // --suggest mode doesn't require LLM
-    cmd.args(["run", "--suggest"]).assert().success();
+    cmd.args(["plan", "--suggest"]).assert().success();
 }
 
 #[test]
-fn run_detects_no_changes() {
+fn plan_detects_no_changes() {
     let home = tempfile::tempdir().unwrap();
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
@@ -127,8 +127,8 @@ fn run_detects_no_changes() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(repo.path());
 
-    // With no changes, run --suggest should indicate clean state
-    cmd.args(["run", "--suggest"])
+    // With no changes, plan --suggest should indicate clean state
+    cmd.args(["plan", "--suggest"])
         .assert()
         .success()
         .stdout(predicate::str::contains("nothing").or(predicate::str::contains("clean")));
@@ -153,13 +153,12 @@ fn release_requires_git_repo() {
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
-
 // =============================================================================
-// RESOLVE COMMAND TESTS
+// FIX COMMAND TESTS
 // =============================================================================
 
 #[test]
-fn resolve_requires_git_repo() {
+fn fix_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -167,14 +166,14 @@ fn resolve_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.arg("resolve")
+    cmd.arg("fix")
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
 #[test]
-fn resolve_fails_without_conflicts() {
+fn fix_fails_without_conflicts() {
     let home = tempfile::tempdir().unwrap();
     let repo = tempfile::tempdir().unwrap();
     init_repo(repo.path());
@@ -186,7 +185,7 @@ fn resolve_fails_without_conflicts() {
     cmd.current_dir(repo.path());
 
     // Should fail when no conflicts exist
-    cmd.arg("resolve")
+    cmd.arg("fix")
         .assert()
         .failure()
         .stderr(predicate::str::contains("No conflict"));
@@ -304,11 +303,11 @@ fn models_requires_git_repo() {
 }
 
 // =============================================================================
-// PR COMMAND TESTS
+// EXPLAIN SUBCOMMAND TESTS
 // =============================================================================
 
 #[test]
-fn pr_requires_git_repo() {
+fn explain_report_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -316,18 +315,78 @@ fn pr_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.arg("pr")
+    cmd.args(["explain", "report"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Not a git repository"));
+}
+
+#[test]
+fn explain_commit_requires_git_repo() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
+    with_isolated_home(&mut cmd, home.path());
+    cmd.current_dir(tmp.path());
+
+    cmd.args(["explain", "commit"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Not a git repository"));
+}
+
+#[test]
+fn explain_pr_requires_git_repo() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
+    with_isolated_home(&mut cmd, home.path());
+    cmd.current_dir(tmp.path());
+
+    cmd.args(["explain", "pr"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Not a git repository"));
+}
+
+#[test]
+fn explain_changelog_requires_git_repo() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
+    with_isolated_home(&mut cmd, home.path());
+    cmd.current_dir(tmp.path());
+
+    cmd.args(["explain", "changelog"])
+        .assert()
+        .failure()
+        .stderr(predicate::str::contains("Not a git repository"));
+}
+
+#[test]
+fn explain_history_requires_git_repo() {
+    let home = tempfile::tempdir().unwrap();
+    let tmp = tempfile::tempdir().unwrap();
+
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
+    with_isolated_home(&mut cmd, home.path());
+    cmd.current_dir(tmp.path());
+
+    cmd.args(["explain", "history"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
 // =============================================================================
-// CHANGELOG COMMAND TESTS
+// DEFAULT COMMAND TESTS
 // =============================================================================
 
 #[test]
-fn changelog_requires_git_repo() {
+fn default_command_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -335,46 +394,8 @@ fn changelog_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.arg("changelog")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("Not a git repository"));
-}
-
-// =============================================================================
-// EXPLAIN COMMAND TESTS
-// =============================================================================
-
-#[test]
-fn explain_requires_git_repo() {
-    let home = tempfile::tempdir().unwrap();
-    let tmp = tempfile::tempdir().unwrap();
-
-    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
-    with_isolated_home(&mut cmd, home.path());
-    cmd.current_dir(tmp.path());
-
-    cmd.arg("explain")
-        .assert()
-        .failure()
-        .stderr(predicate::str::contains("Not a git repository"));
-}
-
-// =============================================================================
-// HISTORY COMMAND TESTS
-// =============================================================================
-
-#[test]
-fn history_requires_git_repo() {
-    let home = tempfile::tempdir().unwrap();
-    let tmp = tempfile::tempdir().unwrap();
-
-    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
-    with_isolated_home(&mut cmd, home.path());
-    cmd.current_dir(tmp.path());
-
-    cmd.arg("history")
-        .assert()
+    // Running just "gitar" should default to "plan" and require git repo
+    cmd.assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
