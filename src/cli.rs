@@ -321,11 +321,11 @@ pub enum Commands {
 
         /// Add AI model/provider tag to the commit message (--commit only)
         #[arg(long, default_value = "true")]
-        tag: bool,
+        ai_author: bool,
 
         /// Do not add AI model/provider tag (--commit only)
-        #[arg(long = "no-tag")]
-        no_tag: bool,
+        #[arg(long = "no-ai-author")]
+        no_ai_author: bool,
 
         /// Write commit message to file instead of committing (internal)
         #[arg(long, hide = true)]
@@ -521,9 +521,9 @@ pub enum Commands {
         #[arg(long)]
         amend: bool,
         #[arg(long, default_value = "true")]
-        tag: bool,
-        #[arg(long = "no-tag")]
-        no_tag: bool,
+        ai_author: bool,
+        #[arg(long = "no-ai-author")]
+        no_ai_author: bool,
         #[arg(long, hide = true)]
         write_to: Option<String>,
         #[arg(long, hide = true)]

@@ -29,7 +29,7 @@ pub use init::cmd_init;
 pub use models::cmd_models;
 pub use plan::{cmd_plan, AnalysisMode};
 pub use pr::cmd_pr;
-pub use release::cmd_release;
+pub use release::{cmd_release, get_latest_tag};
 pub use rewrite::cmd_rewrite;
 pub use squash::cmd_squash;
 

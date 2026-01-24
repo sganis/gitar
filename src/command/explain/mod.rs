@@ -7,7 +7,7 @@ use crate::context::secret::SecretAction;
 use crate::context::template::{explain_system_with_context, EXPLAIN_USER};
 use crate::git::{build_diff_target, get_commit_logs, get_diff, get_diff_stats};
 
-use super::{apply_smart_diff_with_context, AnalysisContext};
+use super::{apply_smart_diff_with_context, get_latest_tag, AnalysisContext};
 
 pub async fn cmd_explain(
     client: &LlmClient,
@@ -22,23 +22,11 @@ pub async fn cmd_explain(
     max_diff_chars: usize,
     secret_action: SecretAction,
 ) -> Result<()> {
-    let display = match (&from, &to, &since, &until) {
-        (Some(r), Some(t), _, _) => format!("{}..{}", r, t),
-        (Some(r), None, _, _) => format!("{}..HEAD", r),
-        (None, Some(t), _, _) => format!("..{}", t),
-        (None, None, Some(s), Some(u)) => format!("--since {} --until {}", s, u),
-        (None, None, Some(s), None) => format!("--since {}", s),
-        (None, None, None, Some(u)) => format!("--until {}", u),
-        (None, None, None, None) => "working tree vs HEAD".into(),
-    };
-
     let context = AnalysisContext::new()
         .with_provider(client.provider())
         .with_model(client.model());
 
-    let mut commit_count: Option<usize> = None;
-
-    let (diff, stats) = if staged {
+    let (diff, stats, display) = if staged {
         println!("Explaining staged changes...\n");
         let raw_diff = get_diff(None, true, usize::MAX)?;
         let diff = apply_smart_diff_with_context(
@@ -49,22 +37,36 @@ pub async fn cmd_explain(
             Some(&context),
             secret_action,
         )?;
-        (diff, get_diff_stats(None, true)?)
+        (diff, get_diff_stats(None, true)?, "staged".to_string())
     } else {
-        let effective_from = match (&from, &since, &until) {
-            (Some(_), _, _) => from.clone(),
-            (None, Some(_), _) | (None, None, Some(_)) => {
-                let commits = get_commit_logs(None, since.as_deref(), until.as_deref(), None)?;
-                commit_count = Some(commits.len());
-                commits.last().map(|c| c.hash.clone())
+        // Determine effective 'from': use provided, or latest tag, or None (working tree)
+        let (effective_from, display) = match (&from, &since, &until) {
+            (Some(r), _, _) => (Some(r.clone()), format!("{}..HEAD", r)),
+            (None, Some(s), Some(u)) => {
+                let commits = get_commit_logs(None, Some(s), Some(u), None)?;
+                let display = format!("--since {} --until {} ({} commits)", s, u, commits.len());
+                (commits.last().map(|c| c.hash.clone()), display)
             }
-            _ => None,
+            (None, Some(s), None) => {
+                let commits = get_commit_logs(None, Some(s), None, None)?;
+                let display = format!("--since {} ({} commits)", s, commits.len());
+                (commits.last().map(|c| c.hash.clone()), display)
+            }
+            (None, None, Some(u)) => {
+                let commits = get_commit_logs(None, None, Some(u), None)?;
+                let display = format!("--until {} ({} commits)", u, commits.len());
+                (commits.last().map(|c| c.hash.clone()), display)
+            }
+            (None, None, None) => {
+                // Default: try latest tag, otherwise working tree
+                match get_latest_tag() {
+                    Ok(Some(tag)) => (Some(tag.clone()), format!("{}..HEAD", tag)),
+                    _ => (None, "working tree".to_string()),
+                }
+            }
         };
 
-        match commit_count {
-            Some(n) => println!("Explaining changes for {} ({} commits)...\n", display, n),
-            None => println!("Explaining changes for {}...\n", display),
-        }
+        println!("Processing changes ({})...\n", display);
 
         let diff_target = build_diff_target(effective_from.as_deref(), to.as_deref(), base_branch);
         let diff_target_ref = if diff_target.is_empty() {
@@ -82,7 +84,7 @@ pub async fn cmd_explain(
             Some(&context),
             secret_action,
         )?;
-        (diff, get_diff_stats(diff_target_ref, false)?)
+        (diff, get_diff_stats(diff_target_ref, false)?, display)
     };
 
     if diff.trim().is_empty() {

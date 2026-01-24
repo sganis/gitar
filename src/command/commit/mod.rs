@@ -18,7 +18,7 @@ pub async fn cmd_commit(
     push: bool,
     all: bool,
     amend: bool,
-    tag: bool,
+    ai_author: bool,
     write_to: Option<String>,
     silent: bool,
     stream: bool,
@@ -146,7 +146,7 @@ pub async fn cmd_commit(
         }
     }
 
-    let full_msg = if tag {
+    let full_msg = if ai_author {
         format!("{} [AI:{}]", commit_message, client.model())
     } else {
         commit_message

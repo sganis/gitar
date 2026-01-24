@@ -175,19 +175,19 @@ fn cli_parses_global_options() {
 #[test]
 fn cli_parses_commit_flags() {
     let cli =
-        Cli::try_parse_from(["gitar", "tell", "--commit", "-p", "-a", "--no-tag"]).unwrap();
+        Cli::try_parse_from(["gitar", "tell", "--commit", "-p", "-a", "--no-ai-author"]).unwrap();
     if let Some(Commands::Tell {
         commit,
         push,
         all,
-        no_tag,
+        no_ai_author,
         ..
     }) = cli.command
     {
         assert!(commit);
         assert!(push);
         assert!(all);
-        assert!(no_tag);
+        assert!(no_ai_author);
     } else {
         panic!("Expected Tell command with --commit flag");
     }

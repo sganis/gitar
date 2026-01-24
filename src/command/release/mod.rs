@@ -18,11 +18,11 @@ use crate::context::template::{
 };
 use crate::git::{self, build_diff_target, get_current_version, get_diff};
 
-use tag::{create_tag, get_commits_since, get_latest_tag, tag_exists};
+use tag::{create_tag, get_commits_since, tag_exists};
 use version::{detect_version_files, update_version_file, VersionFile};
 
 // Re-exports for external use
-pub use self::tag::CommitInfo;
+pub use self::tag::{get_latest_tag, CommitInfo};
 
 // =============================================================================
 // MAIN COMMAND

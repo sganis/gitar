@@ -8,7 +8,7 @@ use crate::context::secret::SecretAction;
 use crate::context::template::{history_system_with_context, HISTORY_USER};
 use crate::git::{get_commit_diff, get_commit_logs};
 
-use super::{apply_smart_diff_with_context, AnalysisContext, SHORT_HASH_LEN};
+use super::{apply_smart_diff_with_context, get_latest_tag, AnalysisContext, SHORT_HASH_LEN};
 
 const MAX_AUTHOR_LEN: usize = 15;
 const MAX_MESSAGE_PREVIEW_LEN: usize = 40;
@@ -28,23 +28,29 @@ pub async fn cmd_history(
     max_diff_chars: usize,
     secret_action: SecretAction,
 ) -> Result<()> {
-    let limit = match (&from, limit) {
-        (Some(_), None) => None,
-        (None, None) => Some(50),
-        (_, Some(n)) => Some(n),
+    // Determine the effective 'from' reference: use provided, or latest tag, or default to 50 commits
+    let (effective_from, limit) = match (&from, limit) {
+        (Some(r), _) => (Some(r.clone()), None), // Explicit from: no limit
+        (None, Some(n)) => (None, Some(n)),      // Explicit limit
+        (None, None) => {
+            // Default: try latest tag, otherwise 50 commits
+            match get_latest_tag() {
+                Ok(Some(tag)) => (Some(tag), None),
+                _ => (None, Some(50)),
+            }
+        }
     };
 
     let end = to.as_deref().unwrap_or("HEAD");
-    let range = from.as_ref().map(|r| format!("{}..{}", r, end));
+    let range = effective_from.as_ref().map(|r| format!("{}..{}", r, end));
 
-    let display = match (&from, &to, &since, &until) {
+    let display = match (&effective_from, &to, &since, &until) {
         (Some(r), Some(t), _, _) => format!("{}..{}", r, t),
         (Some(r), None, _, _) => format!("{}..HEAD", r),
         (None, None, Some(s), _) => format!("--since {}", s),
-        _ => "recent".into(),
+        _ => format!("last {} commits", limit.unwrap_or(50)),
     };
 
-    println!("Fetching commits ({})...", display);
     let commits = get_commit_logs(limit, since.as_deref(), until.as_deref(), range.as_deref())?;
 
     if commits.is_empty() {
@@ -52,7 +58,7 @@ pub async fn cmd_history(
         return Ok(());
     }
 
-    println!("Processing {} commits...\n", commits.len());
+    println!("Processing {} commits ({})...\n", commits.len(), display);
 
     let context = AnalysisContext::new()
         .with_provider(client.provider())
