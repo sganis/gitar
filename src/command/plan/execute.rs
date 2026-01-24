@@ -134,11 +134,13 @@ pub fn execute_plan(
         println!();
     }
 
+    println!("===========================================================");
     if dry_run {
-        println!("===========================================================");
         println!("Dry run complete. Use --apply to execute.");
-        println!("===========================================================\n");
+    } else {
+        success("Plan executed successfully");
     }
+    println!("===========================================================\n");
 
     // Post-execution validation
     if !dry_run {
