@@ -73,7 +73,14 @@ pub async fn cmd_changelog(
         if raw_diff.trim().is_empty() {
             String::new()
         } else {
-            apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?
+            apply_smart_diff_with_context(
+                &raw_diff,
+                max_diff_chars,
+                false,
+                alg,
+                Some(&context),
+                secret_action,
+            )?
         }
     } else if let Some(first_commit) = commits.last() {
         // Use oldest commit's parent as base
@@ -86,7 +93,14 @@ pub async fn cmd_changelog(
         if raw_diff.trim().is_empty() {
             String::new()
         } else {
-            apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?
+            apply_smart_diff_with_context(
+                &raw_diff,
+                max_diff_chars,
+                false,
+                alg,
+                Some(&context),
+                secret_action,
+            )?
         }
     } else {
         String::new()
