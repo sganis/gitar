@@ -56,30 +56,36 @@ src/
 ├── client.rs         # Unified LLM client interface
 ├── config.rs         # Configuration management (~/.gitar.toml)
 ├── git.rs            # Git operations (diffs, logs, commits)
+├── color.rs          # Terminal color/styling utilities
+├── prompt.rs         # Interactive TTY input (select, confirm, input)
 ├── types.rs          # Shared data structures
 ├── plan.rs           # Plan data structures (Plan, Action)
 ├── executor.rs       # Execute git commands from plans
 ├── command/          # Command implementations
 │   ├── mod.rs        # Module exports and shared utilities
-│   ├── commit/mod.rs # Interactive commit with AI message
-│   ├── changelog/mod.rs # Generate release notes
-│   ├── explain/mod.rs   # Explain changes in plain English
-│   ├── history/mod.rs   # Regenerate commit messages for history
-│   ├── pr/mod.rs        # Generate PR descriptions
-│   ├── version/mod.rs   # Suggest version bumps
-│   ├── diff/mod.rs      # Debug diff algorithms
-│   ├── hook/mod.rs      # Git hook installation
-│   ├── config/mod.rs    # Show resolved configuration
-│   ├── init/mod.rs      # Create/update ~/.gitar.toml
-│   ├── models/mod.rs    # List available models
-│   ├── split/mod.rs     # Split large diffs into logical commits
-│   ├── run/             # Interactive commit execution (LLM-powered)
+│   ├── commit/       # Interactive commit with AI message
+│   ├── changelog/    # Generate release notes
+│   ├── explain/      # Explain changes in plain English
+│   ├── history/      # Describe commit ranges
+│   ├── pr/           # Generate PR descriptions
+│   ├── diff/         # Debug diff algorithms
+│   ├── hook/         # Git hook installation
+│   ├── config/       # Show resolved configuration
+│   ├── init/         # Create/update ~/.gitar.toml
+│   ├── models/       # List available models
+│   ├── squash/       # Squash commits with AI message
+│   ├── rewrite/      # Rewrite commit history with AI messages
+│   ├── run/          # Interactive commit execution (LLM-powered)
 │   │   ├── mod.rs       # Main run logic & command entry
 │   │   ├── analyze.rs   # Repository state analysis
 │   │   ├── group.rs     # LLM-based commit grouping
 │   │   ├── editor.rs    # Interactive strategy editing
 │   │   └── execute.rs   # Strategy execution (git operations)
-│   └── resolve/         # Merge conflict resolution
+│   ├── release/      # Release workflow (version, changelog, tag)
+│   │   ├── mod.rs       # Main release orchestration
+│   │   ├── version.rs   # Version file detection & updates
+│   │   └── tag.rs       # Git tag operations
+│   └── resolve/      # Merge conflict resolution
 │       ├── mod.rs       # Main resolve logic
 │       ├── parser.rs    # Parse conflict markers
 │       ├── heuristic.rs # Heuristic conflict resolution
@@ -190,8 +196,10 @@ fn test_command_name() {
 
 **New Commands (2024-2025)**
 - `run` — LLM-powered interactive commit execution (groups changes into logical commits)
+- `release` — Guided release workflow (version bump, changelog, commit, tag)
 - `resolve` — AI-assisted merge conflict resolution with heuristics + LLM fallback
-- `split` — Split large working tree diffs into logical commits (may be superseded by `run`)
+- `squash` — Squash multiple commits into one with AI-generated message
+- `rewrite` — Rewrite commit history with AI-generated messages
 - `init` — Initialize ~/.gitar.toml configuration file
 
 **Run Command** (command/run/)
@@ -214,11 +222,18 @@ Architecture:
 - Safety checks: no markers remain, no unmerged files remain
 - Use `--apply` to write + stage, `--yes` to skip confirmation
 
-**Split Command** (command/split/)
-- Analyzes unstaged changes and guides creating a series of focused commits
-- Groups changes by type (docs, tests, config) and semantic intent
-- Requires interactive confirmation before each commit
-- Note: May be superseded by enhanced `run` command with interactive mode
+**Release Command** (command/release/)
+- Analyzes commits since last tag to suggest version bump (major/minor/patch)
+- Generates AI-powered changelog and updates CHANGELOG.md
+- Updates version files (Cargo.toml, package.json, pyproject.toml)
+- Creates release commit with all changes, then annotated tag
+- Dry-run by default, use `--apply` to execute
+
+**Squash Command** (command/squash/)
+- Takes a count (e.g., `3`) or ref (e.g., `v1.0.0`) as target
+- Uses `git reset --soft` to collect changes, then creates single commit
+- Generates unified AI message for the combined changes
+- Undo with: `git reset --hard HEAD@{2}` (see reflog)
 
 ## Common Development Patterns
 
@@ -261,6 +276,7 @@ Architecture:
 - **anyhow**: Error handling with context
 - **regex**: Secret detection patterns
 - **toml**: Config file parsing
+- **dialoguer**: Interactive prompts (select, confirm, input)
 
 ## Code Style
 
