@@ -1,3 +1,17 @@
+## [1.3.0] - 2026-01-24
+
+# Release Notes
+## Features
+- Added auto-apply configuration and dry-run flag to CLI, including lock file group message helpers. ([aed6e58])
+- Added CLI dry-run flag parsing tests for plan and fix commands. ([1f7f551])
+
+## Improvements
+- Documented auto-apply mode and configuration examples in README. ([94b0ef2])
+- Revised README introduction to clarify Gitar purpose and usage overview. ([277d9d0])
+
+## Infrastructure
+- Updated Rust dependencies. ([9c76554])
+
 ## [1.2.0] - 2026-01-24
 
 # Release Notes
