@@ -6,18 +6,23 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Gitar is an AI-powered Git assistant written in Rust that generates commit messages, PR descriptions, changelogs, and explanations from Git diffs and history. It supports multiple LLM providers (OpenAI, Claude, Gemini, Groq, Ollama) and includes advanced features like secret detection, smart diff shaping algorithms, and style presets for different programming languages.
 
-## Conceptual Layers (from README)
+## Product Philosophy
 
-Gitar organizes Git workflows into **four layers**:
+Gitar is an **AI-native interface to Git history** with a small, stable command language:
 
-1. **Plan (Core Product)** — AI-native commit planning engine (`run` command)
-2. **Narrate (Read-only)** — Explain and communicate Git state without modifying history
-3. **Release (Guided Workflow)** — Safe, deterministic release automation
-4. **Resolve (Conflict Resolution)** — Merge conflict resolver with safety rails
+```
+gitar plan      # Create/reshape history (default command)
+gitar explain   # Understand/communicate history (read-only)
+gitar fix       # Repair conflicts
+gitar release   # Ship releases
+```
 
-All layers share a powerful **context optimization engine** with smart diff shaping, secret detection, language presets, and token budget management.
+**Core Principles:**
+- Dry-run by default — nothing mutates without `--apply`
+- Unified scope flags: `--working`, `--staged`, `--history <REF>`
+- No magic behavior or hidden mode switches
 
-For user-facing feature descriptions, see README.md. This document focuses on implementation architecture.
+All commands share a **context optimization engine** with smart diff shaping, secret detection, language presets, and token budget management.
 
 ## Build & Test Commands
 
@@ -76,35 +81,35 @@ src/
 ├── executor.rs       # Execute git commands from plans
 ├── command/          # Command implementations
 │   ├── mod.rs        # Module exports and shared utilities
-│   ├── commit/       # Interactive commit with AI message
-│   ├── changelog/    # Generate release notes
-│   ├── explain/      # Explain changes in plain English
-│   ├── history/      # Describe commit ranges
-│   ├── pr/           # Generate PR descriptions
-│   ├── diff/         # Debug diff algorithms
-│   ├── hook/         # Git hook installation
-│   ├── config/       # Show resolved configuration
-│   ├── init/         # Create/update ~/.gitar.toml
-│   ├── models/       # List available models
-│   ├── squash/       # Squash commits with AI message
-│   ├── rewrite/      # Rewrite commit history with AI messages
-│   ├── run/          # Interactive commit execution (LLM-powered)
-│   │   ├── mod.rs       # Main run logic & command entry
+│   ├── plan/         # Core: multi-commit planning engine (default command)
+│   │   ├── mod.rs       # Main plan logic & command entry
 │   │   ├── analyze.rs   # Repository state analysis
 │   │   ├── group.rs     # LLM-based commit grouping
 │   │   ├── editor.rs    # Interactive strategy editing
 │   │   └── execute.rs   # Strategy execution (git operations)
+│   ├── explain/      # Read-only narration (dispatches to subcommands)
+│   ├── commit/       # explain commit: AI commit message generation
+│   ├── pr/           # explain pr: PR description generation
+│   ├── changelog/    # explain changelog: Release notes generation
+│   ├── history/      # explain history: Commit range description
+│   ├── fix/          # Merge conflict resolution
+│   │   ├── mod.rs       # Main fix logic
+│   │   ├── parser.rs    # Parse conflict markers
+│   │   ├── heuristic.rs # Heuristic conflict resolution
+│   │   ├── llm.rs       # LLM-based resolution
+│   │   ├── diff_preview.rs  # Preview resolution diffs
+│   │   └── git_helper.rs    # Git operations for conflicts
 │   ├── release/      # Release workflow (version, changelog, tag)
 │   │   ├── mod.rs       # Main release orchestration
 │   │   ├── version.rs   # Version file detection & updates
 │   │   └── tag.rs       # Git tag operations
-│   └── resolve/      # Merge conflict resolution
-│       ├── mod.rs       # Main resolve logic
-│       ├── parser.rs    # Parse conflict markers
-│       ├── heuristic.rs # Heuristic conflict resolution
-│       ├── llm.rs       # LLM-based resolution
-│       ├── diff_preview.rs  # Preview resolution diffs
-│       └── git_helper.rs    # Git operations for conflicts
+│   ├── squash/       # Squash commits with AI message
+│   ├── rewrite/      # Rewrite commit history with AI messages
+│   ├── diff/         # Debug diff algorithms
+│   ├── hook/         # Git hook installation
+│   ├── config/       # Show resolved configuration
+│   ├── init/         # Create/update ~/.gitar.toml
+│   └── models/       # List available models
 ├── util/             # Shared utilities
 │   ├── mod.rs        # Module exports
 │   ├── diff.rs       # Smart diff utilities (used by commands)
@@ -219,48 +224,38 @@ fn test_command_name() {
 }
 ```
 
-## Important Recent Additions
+## Command Reference
 
-**New Commands (2024-2025)**
-- `run` — LLM-powered interactive commit execution (groups changes into logical commits)
-- `release` — Guided release workflow (version bump, changelog, commit, tag)
-- `resolve` — AI-assisted merge conflict resolution with heuristics + LLM fallback
-- `squash` — Squash multiple commits into one with AI-generated message
-- `rewrite` — Rewrite commit history with AI-generated messages
-- `init` — Initialize ~/.gitar.toml configuration file
+**Primary Commands (Product Layer)**
 
-**Run Command** (command/run/)
-- **Multi-mode analysis**: Auto-detect changes, or target staged/unstaged/history
-- **LLM-powered grouping**: Groups changes by semantic intent into logical commits
-- **Interactive editing**: Review, reorder, merge, split, or regenerate commit strategies
-- **Safe execution**: Dry-run by default, use `--apply` to execute commits
-- **Legacy --suggest mode**: Simple state inspection without LLM (shows next actions)
+| Command | Purpose | Mutates? |
+|---------|---------|----------|
+| `gitar plan` | Multi-commit planning from changes or history | Only with `--apply` |
+| `gitar explain <sub>` | Read-only narration (commit, pr, changelog, history, report) | No |
+| `gitar fix` | Merge conflict resolution | Only with `--apply` |
+| `gitar release` | Version bump, changelog, tag creation | Only with `--apply` |
 
-Architecture:
-- `analyze.rs`: Detects repository state (AnalysisMode enum: Auto, Staged, WorkingTree, History)
-- `group.rs`: Calls LLM to generate logical commit groups from analyzed files
-- `editor.rs`: Interactive TUI for reviewing and editing the generated strategy
-- `execute.rs`: Executes git operations (add, commit) from approved strategy
-- `mod.rs`: Main command orchestration and entry point
+**Plan Command** (command/plan/) — Default when running `gitar` with no args
+- Scope flags: `--working`, `--staged`, `--history <REF>`
+- `--apply` to execute, `-i` for interactive editing
+- Architecture: analyze.rs → group.rs → editor.rs → execute.rs
 
-**Resolve Command** (command/resolve/)
-- Detects and parses merge/rebase/cherry-pick conflicts
-- Three-tier resolution strategy: heuristics → per-region LLM → full-file LLM
+**Explain Subcommands** (gitar explain <subcommand>)
+- `commit` — Generate AI commit message and commit
+- `pr [BASE]` — Generate PR description
+- `changelog [REF]` — Generate release notes
+- `history [REF]` — Describe commit range
+- `report` — Plain English explanation for stakeholders
+
+**Fix Command** (command/fix/)
+- Three-tier resolution: heuristics → per-region LLM → full-file LLM
 - Safety checks: no markers remain, no unmerged files remain
-- Use `--apply` to write + stage, `--yes` to skip confirmation
 
-**Release Command** (command/release/)
-- Analyzes commits since last tag to suggest version bump (major/minor/patch)
-- Generates AI-powered changelog and updates CHANGELOG.md
-- Updates version files (Cargo.toml, package.json, pyproject.toml)
-- Creates release commit with all changes, then annotated tag
-- Dry-run by default, use `--apply` to execute
-
-**Squash Command** (command/squash/)
-- Takes a count (e.g., `3`) or ref (e.g., `v1.0.0`) as target
-- Uses `git reset --soft` to collect changes, then creates single commit
-- Generates unified AI message for the combined changes
-- Undo with: `git reset --hard HEAD@{2}` (see reflog)
+**Utility Commands**
+- `squash <N|REF>` — Squash commits with AI message
+- `rewrite <N|REF>` — Rewrite commit messages
+- `release` — Version bump + changelog + tag
+- `init`, `config`, `models`, `hook install|uninstall`, `diff`
 
 ## Common Development Patterns
 
@@ -275,7 +270,7 @@ Architecture:
 
 **Command Structure Guidelines**
 - Simple commands: Single `command/<name>/mod.rs` file
-- Complex commands: Multiple submodules (see `run/` and `resolve/` as examples)
+- Complex commands: Multiple submodules (see `plan/` and `fix/` as examples)
   - `mod.rs`: Main command entry point and orchestration
   - Submodules: Logical separation (analyze, execute, editor, etc.)
 - Keep command modules focused and under 500 lines per file

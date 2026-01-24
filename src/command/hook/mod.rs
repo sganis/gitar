@@ -4,16 +4,22 @@ use std::fs;
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
 
-use crate::cli::{HookCommands, HOOK_SCRIPT};
+use crate::cli::HOOK_SCRIPT;
 use crate::git::get_git_dir;
 
-pub fn cmd_hook(command: HookCommands) -> Result<()> {
+#[derive(Clone, Copy)]
+pub enum HookAction {
+    Install,
+    Uninstall,
+}
+
+pub fn cmd_hook(action: HookAction) -> Result<()> {
     let git_dir =
         get_git_dir().context("Could not locate .git directory. Are you in a git repo?")?;
     let hook_path = git_dir.join("hooks").join("prepare-commit-msg");
 
-    match command {
-        HookCommands::Install => {
+    match action {
+        HookAction::Install => {
             if hook_path.exists() {
                 let existing = fs::read_to_string(&hook_path).unwrap_or_default();
                 if existing.contains("gitar-hook") {
@@ -37,7 +43,7 @@ pub fn cmd_hook(command: HookCommands) -> Result<()> {
 
             println!("Universal hook installed at {:?}", hook_path);
         }
-        HookCommands::Uninstall => {
+        HookAction::Uninstall => {
             if !hook_path.exists() {
                 println!("No hook found to uninstall.");
                 return Ok(());

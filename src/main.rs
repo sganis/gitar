@@ -2,7 +2,7 @@
 use anyhow::{bail, Result};
 use clap::Parser;
 
-use gitar::cli::{Cli, Commands, ExplainCommands};
+use gitar::cli::{Cli, Commands};
 use gitar::client::LlmClient;
 use gitar::command::*;
 use gitar::config::{Config, ResolvedConfig};
@@ -20,7 +20,16 @@ async fn main() -> Result<()> {
         match cmd {
             Commands::Init => return cmd_init(&cli, &file_config).await,
             Commands::Config => return cmd_config(),
-            Commands::Hook { command } => return cmd_hook(command.clone()),
+            Commands::Hook { install, uninstall } => {
+                let action = if *install {
+                    HookAction::Install
+                } else if *uninstall {
+                    HookAction::Uninstall
+                } else {
+                    anyhow::bail!("Please specify --install or --uninstall")
+                };
+                return cmd_hook(action);
+            }
             _ => {}
         }
     }
@@ -100,48 +109,59 @@ async fn main() -> Result<()> {
             yes,
             algo,
         } => {
-            // Determine analysis mode from scope flags
-            let analysis_mode = if let Some(ref from_ref) = history {
-                Some(AnalysisMode::History {
-                    from: from_ref.clone(),
-                    to: to.clone(),
-                })
-            } else if staged {
-                Some(AnalysisMode::Staged)
-            } else if working {
-                Some(AnalysisMode::WorkingTree)
-            } else {
-                None // Auto-detect
-            };
-
-            let is_interactive = interactive && !yes;
-
-            cmd_plan(
-                &client,
-                &config,
-                analysis_mode,
-                apply,
-                fix,
-                suggest,
-                is_interactive,
-                algo,
+            dispatch_plan(
+                &client, &config, apply, fix, suggest, working, staged, history, to, interactive,
+                yes, algo,
             )
             .await?
         }
 
-        Commands::Explain { command } => match command {
-            ExplainCommands::Commit {
-                push,
-                all,
-                amend,
-                tag,
-                no_tag,
-                write_to,
-                silent,
-                stream,
-                algo,
-            } => {
-                let do_stream = config.stream || stream;
+        // Alias: run -> plan
+        Commands::Run {
+            apply,
+            fix,
+            suggest,
+            working,
+            staged,
+            history,
+            to,
+            interactive,
+            yes,
+            algo,
+        } => {
+            dispatch_plan(
+                &client, &config, apply, fix, suggest, working, staged, history, to, interactive,
+                yes, algo,
+            )
+            .await?
+        }
+
+        Commands::Explain {
+            commit,
+            pr,
+            changelog,
+            history,
+            report: _,
+            reference,
+            to,
+            staged,
+            since,
+            until,
+            limit,
+            delay,
+            algo,
+            stream,
+            push,
+            all,
+            amend,
+            tag,
+            no_tag,
+            write_to,
+            silent,
+        } => {
+            let do_stream = config.stream || stream;
+
+            if commit {
                 cmd_commit(
                     &client,
                     config.preset,
@@ -157,127 +177,185 @@ async fn main() -> Result<()> {
                     config.secret_action,
                 )
                 .await?
-            }
-
-            ExplainCommands::Staged { algo } => {
-                cmd_staged(
-                    &client,
-                    config.preset,
-                    config.stream,
-                    algo,
-                    config.max_diff_chars,
-                    config.secret_action,
-                )
-                .await?
-            }
-
-            ExplainCommands::Unstaged { algo } => {
-                cmd_unstaged(
-                    &client,
-                    config.preset,
-                    config.stream,
-                    algo,
-                    config.max_diff_chars,
-                    config.secret_action,
-                )
-                .await?
-            }
-
-            ExplainCommands::Pr {
-                base,
-                to,
-                staged,
-                algo,
-            } => {
+            } else if pr {
                 cmd_pr(
                     &client,
-                    base,
+                    reference, // base ref
                     to,
                     &config.base_branch,
                     staged,
-                    config.stream,
+                    do_stream,
+                    algo,
+                    config.max_diff_chars,
+                    config.secret_action,
+                )
+                .await?
+            } else if changelog {
+                cmd_changelog(
+                    &client,
+                    reference, // from ref
+                    to,
+                    since,
+                    until,
+                    limit,
+                    do_stream,
+                    algo,
+                    config.max_diff_chars,
+                    config.secret_action,
+                )
+                .await?
+            } else if history {
+                cmd_history(
+                    &client,
+                    config.preset,
+                    reference, // from ref
+                    to,
+                    since,
+                    until,
+                    limit,
+                    delay,
+                    do_stream,
+                    algo,
+                    config.max_diff_chars,
+                    config.secret_action,
+                )
+                .await?
+            } else {
+                // Default: report
+                cmd_explain(
+                    &client,
+                    reference, // from ref
+                    to,
+                    since,
+                    until,
+                    &config.base_branch,
+                    staged,
+                    do_stream,
                     algo,
                     config.max_diff_chars,
                     config.secret_action,
                 )
                 .await?
             }
+        }
 
-            ExplainCommands::Changelog {
+        // Alias: commit -> explain --commit
+        Commands::Commit {
+            push,
+            all,
+            amend,
+            tag,
+            no_tag,
+            write_to,
+            silent,
+            stream,
+            algo,
+        } => {
+            let do_stream = config.stream || stream;
+            cmd_commit(
+                &client,
+                config.preset,
+                push,
+                all,
+                amend,
+                tag && !no_tag,
+                write_to,
+                silent,
+                do_stream,
+                algo,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
+        }
+
+        // Alias: pr -> explain --pr
+        Commands::Pr {
+            base,
+            to,
+            staged,
+            algo,
+        } => {
+            cmd_pr(
+                &client,
+                base,
+                to,
+                &config.base_branch,
+                staged,
+                config.stream,
+                algo,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
+        }
+
+        // Alias: changelog -> explain --changelog
+        Commands::Changelog {
+            from,
+            to,
+            since,
+            until,
+            limit,
+            algo,
+        } => {
+            cmd_changelog(
+                &client,
                 from,
                 to,
                 since,
                 until,
                 limit,
+                config.stream,
                 algo,
-            } => {
-                cmd_changelog(
-                    &client,
-                    from,
-                    to,
-                    since,
-                    until,
-                    limit,
-                    config.stream,
-                    algo,
-                    config.max_diff_chars,
-                    config.secret_action,
-                )
-                .await?
-            }
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
+        }
 
-            ExplainCommands::History {
+        // Alias: history -> explain --history
+        Commands::History {
+            from,
+            to,
+            since,
+            until,
+            limit,
+            delay,
+            algo,
+        } => {
+            cmd_history(
+                &client,
+                config.preset,
                 from,
                 to,
                 since,
                 until,
                 limit,
                 delay,
+                config.stream,
                 algo,
-            } => {
-                cmd_history(
-                    &client,
-                    config.preset,
-                    from,
-                    to,
-                    since,
-                    until,
-                    limit,
-                    delay,
-                    config.stream,
-                    algo,
-                    config.max_diff_chars,
-                    config.secret_action,
-                )
-                .await?
-            }
-
-            ExplainCommands::Report {
-                from,
-                to,
-                since,
-                until,
-                staged,
-                algo,
-            } => {
-                cmd_explain(
-                    &client,
-                    from,
-                    to,
-                    since,
-                    until,
-                    &config.base_branch,
-                    staged,
-                    config.stream,
-                    algo,
-                    config.max_diff_chars,
-                    config.secret_action,
-                )
-                .await?
-            }
-        },
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
+        }
 
         Commands::Fix { apply, yes, stream } => {
+            let do_stream = config.stream || stream;
+            cmd_fix(
+                &client,
+                apply,
+                yes,
+                do_stream,
+                config.max_diff_chars,
+                config.secret_action,
+            )
+            .await?
+        }
+
+        // Alias: resolve -> fix
+        Commands::Resolve { apply, yes, stream } => {
             let do_stream = config.stream || stream;
             cmd_fix(
                 &client,
@@ -347,10 +425,53 @@ async fn main() -> Result<()> {
         Commands::Models => cmd_models(&client).await?,
 
         // Already handled above
-        Commands::Init | Commands::Config | Commands::Hook { .. } | Commands::Diff { .. } => {
-            unreachable!()
-        }
+        Commands::Init
+        | Commands::Config
+        | Commands::Hook { .. }
+        | Commands::Diff { .. } => unreachable!()
     }
 
     Ok(())
+}
+
+async fn dispatch_plan(
+    client: &LlmClient,
+    config: &ResolvedConfig,
+    apply: bool,
+    fix: bool,
+    suggest: bool,
+    working: bool,
+    staged: bool,
+    history: Option<String>,
+    to: Option<String>,
+    interactive: bool,
+    yes: bool,
+    algo: u8,
+) -> Result<()> {
+    let analysis_mode = if let Some(ref from_ref) = history {
+        Some(AnalysisMode::History {
+            from: from_ref.clone(),
+            to: to.clone(),
+        })
+    } else if staged {
+        Some(AnalysisMode::Staged)
+    } else if working {
+        Some(AnalysisMode::WorkingTree)
+    } else {
+        None // Auto-detect
+    };
+
+    let is_interactive = interactive && !yes;
+
+    cmd_plan(
+        client,
+        config,
+        analysis_mode,
+        apply,
+        fix,
+        suggest,
+        is_interactive,
+        algo,
+    )
+    .await
 }

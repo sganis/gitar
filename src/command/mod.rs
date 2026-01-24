@@ -24,7 +24,7 @@ pub use fix::cmd_fix;
 #[allow(unused_imports)]
 pub use fix::{cmd_fix_with_resolver, ConflictInput, ConflictResolver};
 pub use history::cmd_history;
-pub use hook::cmd_hook;
+pub use hook::{cmd_hook, HookAction};
 pub use init::cmd_init;
 pub use models::cmd_models;
 pub use plan::{cmd_plan, AnalysisMode};

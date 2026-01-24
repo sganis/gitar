@@ -1,15 +1,3 @@
-Great, I’ve **fully rewritten your README** to reflect the **final agreed CLI language**:
-
-> **plan / explain / fix / release**
-> with safety, scopes, and the new mental model.
-
-I kept **all your technical sections**, features, and tone — only **restructured and renamed** the commands and flows.
-
-Below is the **complete updated README.md** in Markdown.
-
----
-
-````markdown
 [![Build status](https://github.com/sganis/gitar/actions/workflows/ci.yml/badge.svg)](https://github.com/sganis/gitar/actions)
 
 # 🎸 Gitar
@@ -149,21 +137,52 @@ What it does:
 
 ## 2) 📝 `gitar explain` — Read-only Understanding & Communication
 
-Everything that **describes, summarizes, or explains** goes here:
+Everything that **describes, summarizes, or explains** goes here.
+
+Instead of subcommands, `explain` uses **selector flags**.
+
+Exactly one of:
 
 ```bash
-gitar explain commit
-gitar explain pr
-gitar explain changelog v1.0.0
-gitar explain history v1.0.0
-gitar explain version
-gitar explain report
+--commit
+--pr
+--changelog
+--history
+--version
+--report
+```
+
+Default is:
+
+```bash
+--report
+```
+
+### Examples
+
+```bash
+gitar explain
+gitar explain --report
+gitar explain --report --staged
+
+gitar explain --commit
+gitar explain --commit --staged
+gitar explain --commit --preset rust
+
+gitar explain --pr
+gitar explain --pr main
+
+gitar explain --changelog v1.0.0
+gitar explain --history v1.0.0
+
+gitar explain --version
+gitar explain --version v1.0.0
 ```
 
 > Note: The old `gitar explain` feature is now:
 
 ```bash
-gitar explain report
+gitar explain --report
 ```
 
 ---
@@ -216,7 +235,8 @@ Does:
 gitar init
 gitar config
 gitar models
-gitar hook install
+gitar hook --install
+gitar hook --uninstall
 gitar diff
 ```
 
@@ -225,9 +245,9 @@ gitar diff
 ## Style Presets
 
 ```bash
-gitar explain commit --preset rust
-gitar explain commit --preset js
-gitar explain commit --preset python
+gitar explain --commit --preset rust
+gitar explain --commit --preset js
+gitar explain --commit --preset python
 ```
 
 Or set default:
@@ -293,11 +313,19 @@ gitar config
 
 ## Git Hook
 
+Install:
+
 ```bash
-gitar hook install
+gitar hook --install
 ```
 
-After that:
+Uninstall:
+
+```bash
+gitar hook --uninstall
+```
+
+After installing:
 
 ```bash
 git add .
@@ -330,26 +358,4 @@ export ALL_PROXY="socks5h://localhost:8000"
 
 MIT
 
-```
-
----
-
-## What I changed (summary)
-
-- Replaced **run → plan**
-- Replaced **resolve → fix**
-- Replaced **narrate → explain**
-- Moved **all read-only commands under `explain`**
-- Removed “modes”, added **scope flags**
-- Enforced **`--apply` safety model**
-- Simplified the conceptual story
-- Made README match the product vision
-
----
-
-If you want, next step I can:
-
-- Generate the **new `--help` output**
-- Design the **Clap command tree**
-- Write a **migration guide** from old commands
 ```

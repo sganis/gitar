@@ -12,11 +12,12 @@ use clap::{Parser, Subcommand};
     gitar plan --apply              # Execute the plan
     gitar plan --history v1.0.0     # Plan from history
 
-    gitar explain commit            # Create commit with AI message
-    gitar explain pr                # Generate PR description
-    gitar explain changelog v1.0.0  # Release notes since tag
-    gitar explain history v1.0.0    # Describe commits since tag
-    gitar explain report            # Plain English explanation
+    gitar explain                   # Plain English report (default)
+    gitar explain --commit          # Generate commit message
+    gitar explain --pr              # Generate PR description
+    gitar explain --pr main         # PR description against main
+    gitar explain --changelog v1.0  # Release notes since tag
+    gitar explain --history v1.0    # Describe commits since tag
 
     gitar fix                       # Preview conflict resolution
     gitar fix --apply               # Apply conflict fixes
@@ -24,8 +25,8 @@ use clap::{Parser, Subcommand};
     gitar release                   # Preview release (version, changelog, tag)
     gitar release --apply           # Execute release
 
-    gitar hook install              # Install git hook for auto-commit messages
-    gitar hook uninstall            # Remove gitar git hook
+    gitar hook --install            # Install git hook for auto-commit messages
+    gitar hook --uninstall          # Remove gitar git hook
 
 SCOPE FLAGS (available on plan command):
     --working                       # Analyze working tree changes
@@ -135,11 +136,97 @@ pub enum Commands {
 
     /// Explain, describe, and communicate Git changes (read-only)
     ///
-    /// All read-only narration commands: commit messages, PR descriptions,
-    /// changelogs, history descriptions, and plain English reports.
+    /// Use selector flags to choose output type:
+    ///   --commit     Generate AI commit message
+    ///   --pr         Generate PR description
+    ///   --changelog  Generate release notes
+    ///   --history    Describe commit range
+    ///   --report     Plain English explanation (default)
     Explain {
-        #[command(subcommand)]
-        command: ExplainCommands,
+        /// Generate a commit message (and optionally commit)
+        #[arg(long, group = "selector")]
+        commit: bool,
+
+        /// Generate a PR description
+        #[arg(long, group = "selector")]
+        pr: bool,
+
+        /// Generate release notes (changelog)
+        #[arg(long, group = "selector")]
+        changelog: bool,
+
+        /// Describe a range of commits
+        #[arg(long, group = "selector")]
+        history: bool,
+
+        /// Plain English explanation for stakeholders (default)
+        #[arg(long, group = "selector")]
+        report: bool,
+
+        /// Reference (tag, commit, branch) - meaning depends on selector
+        #[arg(value_name = "REF")]
+        reference: Option<String>,
+
+        /// Ending ref (default: HEAD)
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Use staged changes only
+        #[arg(long)]
+        staged: bool,
+
+        /// Only include commits after this date
+        #[arg(long)]
+        since: Option<String>,
+
+        /// Only include commits before this date
+        #[arg(long)]
+        until: Option<String>,
+
+        /// Maximum number of commits to include
+        #[arg(short = 'n', long)]
+        limit: Option<usize>,
+
+        /// Delay between API calls in ms (for --history)
+        #[arg(long, default_value = "500")]
+        delay: u64,
+
+        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
+        algo: u8,
+
+        /// Stream output
+        #[arg(long, default_value_t = false)]
+        stream: bool,
+
+        // Commit-specific flags
+        /// Push after committing (--commit only)
+        #[arg(short = 'p', long)]
+        push: bool,
+
+        /// Stage all changes before committing (--commit only)
+        #[arg(short = 'a', long)]
+        all: bool,
+
+        /// Amend the last commit (--commit only)
+        #[arg(long)]
+        amend: bool,
+
+        /// Add AI model/provider tag to the commit message (--commit only)
+        #[arg(long, default_value = "true")]
+        tag: bool,
+
+        /// Do not add AI model/provider tag (--commit only)
+        #[arg(long = "no-tag")]
+        no_tag: bool,
+
+        /// Write commit message to file instead of committing (internal)
+        #[arg(long, hide = true)]
+        write_to: Option<String>,
+
+        /// Suppress interactive prompts (internal)
+        #[arg(long, hide = true)]
+        silent: bool,
     },
 
     /// Fix merge/rebase/cherry-pick conflicts (semantic synthesis)
@@ -198,9 +285,17 @@ pub enum Commands {
     },
 
     /// Manage git hooks for automatic commit message generation
+    ///
+    /// Use --install to add the prepare-commit-msg hook.
+    /// Use --uninstall to remove it.
     Hook {
-        #[command(subcommand)]
-        command: HookCommands,
+        /// Install the prepare-commit-msg hook
+        #[arg(long)]
+        install: bool,
+
+        /// Uninstall the prepare-commit-msg hook
+        #[arg(long)]
+        uninstall: bool,
     },
 
     /// Create or update `~/.gitar.toml` with provider/model defaults
@@ -267,189 +362,117 @@ pub enum Commands {
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         algo: u8,
     },
-}
 
-#[derive(Subcommand, Clone)]
-pub enum ExplainCommands {
-    /// Create a commit with an AI-generated message
-    ///
-    /// By default this will generate a message from staged changes, then run `git commit`.
-    /// Use `-a` to stage all changes first, and `-p` to push after committing.
-    /// Use `--amend` to regenerate the message for the last commit.
+    // === Compatibility Aliases ===
+    // These are thin wrappers for migration / muscle memory
+
+    /// [Alias] Same as `gitar plan`
+    #[command(hide = true)]
+    Run {
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+        #[arg(long, default_value_t = false)]
+        fix: bool,
+        #[arg(long, default_value_t = false)]
+        suggest: bool,
+        #[arg(long)]
+        working: bool,
+        #[arg(long)]
+        staged: bool,
+        #[arg(long, value_name = "REF")]
+        history: Option<String>,
+        #[arg(long)]
+        to: Option<String>,
+        #[arg(long, short = 'i', default_value_t = true)]
+        interactive: bool,
+        #[arg(long, conflicts_with = "interactive")]
+        yes: bool,
+        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
+        algo: u8,
+    },
+
+    /// [Alias] Same as `gitar fix`
+    #[command(hide = true)]
+    Resolve {
+        #[arg(long, default_value_t = false)]
+        apply: bool,
+        #[arg(long, default_value_t = false)]
+        yes: bool,
+        #[arg(long, default_value_t = false)]
+        stream: bool,
+    },
+
+    /// [Alias] Same as `gitar explain --commit`
+    #[command(hide = true)]
     Commit {
-        /// Push after committing
         #[arg(short = 'p', long)]
         push: bool,
-
-        /// Stage all changes before committing (`git add -A`)
         #[arg(short = 'a', long)]
         all: bool,
-
-        /// Amend the last commit with a new AI-generated message
         #[arg(long)]
         amend: bool,
-
-        /// Add AI model/provider tag to the commit message (default: true)
         #[arg(long, default_value = "true")]
         tag: bool,
-
-        /// Do not add AI model/provider tag to the commit message
         #[arg(long = "no-tag")]
         no_tag: bool,
-
-        /// Write commit message to file instead of committing (used by git hooks)
         #[arg(long, hide = true)]
         write_to: Option<String>,
-
-        /// Suppress interactive prompts (used by git hooks)
         #[arg(long, hide = true)]
         silent: bool,
-
-        /// Stream (per-command override). If set, enables streaming for this command.
-        /// Global --stream also enables streaming.
         #[arg(long, default_value = "false")]
         stream: bool,
-
-        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         algo: u8,
     },
 
-    /// Generate an AI commit message for currently staged changes (no commit)
-    Staged {
-        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
-        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        algo: u8,
-    },
-
-    /// Generate an AI commit message for unstaged working tree changes (no commit)
-    Unstaged {
-        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
-        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        algo: u8,
-    },
-
-    /// Generate a pull request description from branch changes
-    ///
-    /// Compares your current HEAD against BASE (or configured base branch).
-    /// Use `--staged` to generate from staged changes only.
+    /// [Alias] Same as `gitar explain --pr`
+    #[command(hide = true)]
     Pr {
-        /// Base ref to compare against (default: configured base branch, e.g. main)
         #[arg(value_name = "REF")]
         base: Option<String>,
-
-        /// Ending ref (default: HEAD)
         #[arg(long)]
         to: Option<String>,
-
-        /// Use staged changes only instead of comparing refs
         #[arg(long)]
         staged: bool,
-
-        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         algo: u8,
     },
 
-    /// Generate release notes (changelog) from a commit range
-    ///
-    /// Useful for GitHub Releases. Outputs markdown-ready text.
+    /// [Alias] Same as `gitar explain --changelog`
+    #[command(hide = true)]
     Changelog {
-        /// Starting ref (tag, commit, branch)
         #[arg(value_name = "REF")]
         from: Option<String>,
-
-        /// Ending ref (default: HEAD)
         #[arg(long)]
         to: Option<String>,
-
-        /// Only include commits after this date (git date formats supported)
         #[arg(long)]
         since: Option<String>,
-
-        /// Only include commits before this date (git date formats supported)
         #[arg(long)]
         until: Option<String>,
-
-        /// Maximum number of commits to include
         #[arg(short = 'n', long)]
         limit: Option<usize>,
-
-        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         algo: u8,
     },
 
-    /// Describe a range of commits in plain English (does not modify history)
-    ///
-    /// Useful for understanding what happened between two refs or within a time window.
-    /// Note: this command does NOT rewrite commits or create new commits.
+    /// [Alias] Same as `gitar explain --history`
+    #[command(hide = true)]
     History {
-        /// Starting ref (tag, commit, branch). If omitted, defaults to recent commits.
         #[arg(value_name = "REF")]
         from: Option<String>,
-
-        /// Ending ref (default: HEAD)
         #[arg(long)]
         to: Option<String>,
-
-        /// Only include commits after this date (git date formats supported)
         #[arg(long)]
         since: Option<String>,
-
-        /// Only include commits before this date (git date formats supported)
         #[arg(long)]
         until: Option<String>,
-
-        /// Maximum number of commits to process (default: 50 when no FROM ref is given)
         #[arg(short = 'n', long)]
         limit: Option<usize>,
-
-        /// Delay between API calls in milliseconds (useful to avoid rate limits)
         #[arg(long, default_value = "500")]
         delay: u64,
-
-        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
         #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
         algo: u8,
     },
-
-    /// Explain changes in plain English for non-technical stakeholders
-    ///
-    /// Can explain a commit range or staged changes (`--staged`).
-    Report {
-        /// Starting ref (tag, commit, branch)
-        #[arg(value_name = "REF")]
-        from: Option<String>,
-
-        /// Ending ref (default: HEAD)
-        #[arg(long)]
-        to: Option<String>,
-
-        /// Only include commits after this date (git date formats supported)
-        #[arg(long)]
-        since: Option<String>,
-
-        /// Only include commits before this date (git date formats supported)
-        #[arg(long)]
-        until: Option<String>,
-
-        /// Explain staged changes only (ignores ref range)
-        #[arg(long)]
-        staged: bool,
-
-        /// Diff algorithm: 1=full, 2=files, 3=hunks, 4=semantic (default)
-        #[arg(long, default_value = "4", value_parser = clap::value_parser!(u8).range(1..=4))]
-        algo: u8,
-    },
-}
-
-#[derive(Subcommand, Clone)]
-pub enum HookCommands {
-    /// Install the prepare-commit-msg hook
-    Install,
-    /// Uninstall the prepare-commit-msg hook
-    Uninstall,
 }
 
 pub const HOOK_SCRIPT: &str = r#"#!/bin/sh
@@ -470,5 +493,5 @@ if [ -n "$COMMIT_SOURCE" ]; then
 fi
 
 # Run gitar to generate the message into the git commit file
-gitar explain commit --write-to "$COMMIT_MSG_FILE" --silent
+gitar explain --commit --write-to "$COMMIT_MSG_FILE" --silent
 "#;
