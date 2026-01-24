@@ -9,6 +9,10 @@ description = "AI-powered Git assistant for commit messages, PRs, changelogs, an
 keywords = ["git", "ai", "cli", "commit-message", "developer-tools"]
 categories = ["command-line-utilities", "development-tools"]
 
+[[bin]]
+name = "gitar"
+path = "src/main.rs"
+
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive", "env"] }
