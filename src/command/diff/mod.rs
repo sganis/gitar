@@ -1,9 +1,9 @@
 // src/command/diff/mod.rs
 use anyhow::Result;
 
-use crate::git::{get_diff, get_diff_stats};
 use crate::context::algo::DiffAlg;
 use crate::context::diff::get_llm_diff_preview;
+use crate::git::{get_diff, get_diff_stats};
 
 pub fn cmd_diff(
     target: Option<String>,

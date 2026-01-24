@@ -114,11 +114,7 @@ pub fn group_by_heuristics<T: Groupable + Clone>(files: &[T]) -> Vec<Vec<T>> {
     }
 
     // Group 4: Renames
-    let renames: Vec<T> = files
-        .iter()
-        .filter(|c| c.is_rename())
-        .cloned()
-        .collect();
+    let renames: Vec<T> = files.iter().filter(|c| c.is_rename()).cloned().collect();
     if !renames.is_empty() {
         groups.push(renames);
     }

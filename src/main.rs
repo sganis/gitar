@@ -248,11 +248,7 @@ async fn main() -> Result<()> {
             .await?
         }
 
-        Commands::Resolve {
-            apply,
-            yes,
-            stream,
-        } => {
+        Commands::Resolve { apply, yes, stream } => {
             let do_stream = config.stream || stream;
             cmd_resolve(
                 &client,
@@ -307,9 +303,9 @@ async fn main() -> Result<()> {
                 Some("working") => Some(AnalysisMode::WorkingTree),
                 Some("staged") => Some(AnalysisMode::Staged),
                 Some("history") => {
-                    let from_ref = from.as_ref().ok_or_else(|| {
-                        anyhow::anyhow!("--from is required for history mode")
-                    })?;
+                    let from_ref = from
+                        .as_ref()
+                        .ok_or_else(|| anyhow::anyhow!("--from is required for history mode"))?;
                     Some(AnalysisMode::History {
                         from: from_ref.clone(),
                         to: to.clone(),
@@ -337,10 +333,9 @@ async fn main() -> Result<()> {
         Commands::Models => cmd_models(&client).await?,
 
         // Already handled above
-        Commands::Init
-        | Commands::Config
-        | Commands::Hook { .. }
-        | Commands::Diff { .. } => unreachable!(),
+        Commands::Init | Commands::Config | Commands::Hook { .. } | Commands::Diff { .. } => {
+            unreachable!()
+        }
     }
 
     Ok(())

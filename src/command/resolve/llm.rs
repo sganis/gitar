@@ -7,7 +7,11 @@ use super::diff_preview;
 use super::heuristic;
 use super::parser::{has_conflict_markers, ConflictInput, ConflictRegion};
 
-pub async fn resolve_with_llm_full_file(client: &LlmClient, stream: bool, input: &ConflictInput) -> Result<String> {
+pub async fn resolve_with_llm_full_file(
+    client: &LlmClient,
+    stream: bool,
+    input: &ConflictInput,
+) -> Result<String> {
     let system = "You are a merge conflict resolver.\n\
 Return ONLY the full resolved file content.\n\
 Rules:\n\
@@ -54,7 +58,12 @@ Rules:\n\
 
     user.push_str("=== CONFLICT REGIONS (for reference) ===\n");
     for (idx, r) in input.regions.iter().enumerate() {
-        user.push_str(&format!("REGION {}: lines {}-{}\n", idx + 1, r.start_line, r.end_line));
+        user.push_str(&format!(
+            "REGION {}: lines {}-{}\n",
+            idx + 1,
+            r.start_line,
+            r.end_line
+        ));
         if let Some(l) = &r.ours_label {
             user.push_str(&format!("OURS LABEL: {}\n", l));
         }
@@ -228,7 +237,9 @@ Rules:\n\
     user.push_str(&format!("REGION: {}\n\n", region_idx_0 + 1));
 
     if let Some(base) = &input.base {
-        if let Some(sn) = extract_anchor_snippet(base, &region.context_before, &region.context_after) {
+        if let Some(sn) =
+            extract_anchor_snippet(base, &region.context_before, &region.context_after)
+        {
             user.push_str("=== BASE SNIPPET (best-effort) ===\n");
             user.push_str(&sn);
             if !sn.ends_with('\n') {
@@ -328,13 +339,17 @@ pub async fn resolve_working_per_region_with_fallback(
             if let Some(chosen) = heuristic::choose_region_heuristic(&ours, &theirs) {
                 out.push_str(&chosen);
             } else {
-                let resolved_block = match resolve_region_with_llm(client, stream, input, region_idx, region, None).await {
-                    Ok(b) => b,
-                    Err(_) => {
-                        let fallback = resolve_with_llm_full_file(client, stream, input).await?;
-                        return Ok(fallback);
-                    }
-                };
+                let resolved_block =
+                    match resolve_region_with_llm(client, stream, input, region_idx, region, None)
+                        .await
+                    {
+                        Ok(b) => b,
+                        Err(_) => {
+                            let fallback =
+                                resolve_with_llm_full_file(client, stream, input).await?;
+                            return Ok(fallback);
+                        }
+                    };
 
                 if has_conflict_markers(&resolved_block) {
                     let fallback = resolve_with_llm_full_file(client, stream, input).await?;
@@ -447,7 +462,10 @@ pub async fn resolve_working_per_region_interactive(
                     }
                     'r' => {
                         if attempt >= max_retries {
-                            eprintln!("  Region {}: max retries reached; falling back to full-file LLM.", region_idx + 1);
+                            eprintln!(
+                                "  Region {}: max retries reached; falling back to full-file LLM.",
+                                region_idx + 1
+                            );
                             return resolve_with_llm_full_file(client, stream, input).await;
                         }
                         prev = Some(resolved);

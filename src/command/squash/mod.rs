@@ -3,11 +3,11 @@ use anyhow::{bail, Context, Result};
 
 use crate::client::LlmClient;
 use crate::color::success;
-use crate::git::{run_git, run_git_status};
 use crate::context::preset::Preset;
+use crate::context::repo::load_all_context;
 use crate::context::secret::SecretAction;
 use crate::context::template::{commit_system_with_context, COMMIT_USER};
-use crate::context::repo::load_all_context;
+use crate::git::{run_git, run_git_status};
 use crate::prompt;
 
 use super::{apply_smart_diff_with_context, AnalysisContext};
@@ -65,11 +65,7 @@ pub async fn cmd_squash(
     )?;
 
     let (project_ctx, user_ctx) = load_all_context();
-    let system = commit_system_with_context(
-        preset,
-        project_ctx.as_deref(),
-        user_ctx.as_deref(),
-    );
+    let system = commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
 
     let prompt = COMMIT_USER.replace("{diff}", &diff);
     let suggested_message = client.chat(&system, &prompt, stream).await?;
@@ -103,7 +99,10 @@ pub async fn cmd_squash(
         bail!("Squash commit failed. Your changes are staged. Use 'git reset --soft HEAD@{{1}}' to undo the reset.");
     }
 
-    success(format!("Successfully squashed {} commits into one", num_commits));
+    success(format!(
+        "Successfully squashed {} commits into one",
+        num_commits
+    ));
     println!("{}{}", out, err);
 
     Ok(())
@@ -132,7 +131,9 @@ fn parse_target(target: &str) -> Result<(String, usize)> {
         let count_output = run_git(&["rev-list", "--count", &format!("{}..HEAD", target)])
             .context("Failed to count commits. Check if the ref exists.")?;
 
-        let num = count_output.trim().parse::<usize>()
+        let num = count_output
+            .trim()
+            .parse::<usize>()
             .context("Failed to parse commit count")?;
 
         if num == 0 {
@@ -144,11 +145,7 @@ fn parse_target(target: &str) -> Result<(String, usize)> {
 }
 
 fn get_commits_to_squash(base_ref: &str, _num: usize) -> Result<Vec<CommitInfo>> {
-    let output = run_git(&[
-        "log",
-        &format!("{}..HEAD", base_ref),
-        "--format=%H %s",
-    ])?;
+    let output = run_git(&["log", &format!("{}..HEAD", base_ref), "--format=%H %s"])?;
 
     let commits: Vec<CommitInfo> = output
         .lines()

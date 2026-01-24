@@ -72,7 +72,11 @@ pub(crate) fn alg_hunks(raw_diff: &str, diff_stat: Option<&str>, max_chars: usiz
     }
 }
 
-pub(crate) fn extract_hunks(file_diff: &str, file_path: &str, file_priority: i32) -> Vec<ScoredHunk> {
+pub(crate) fn extract_hunks(
+    file_diff: &str,
+    file_path: &str,
+    file_priority: i32,
+) -> Vec<ScoredHunk> {
     let mut hunks = Vec::new();
     let mut current = String::new();
     let mut in_hunk = false;

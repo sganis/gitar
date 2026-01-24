@@ -21,9 +21,15 @@ pub enum EditResult {
 enum Action {
     Accept,
     Regenerate,
-    MoveFile { file: String, from: usize, to: usize },
+    MoveFile {
+        file: String,
+        from: usize,
+        to: usize,
+    },
     ExcludeFile(String),
-    EditMessage { group_id: usize },
+    EditMessage {
+        group_id: usize,
+    },
     Quit,
 }
 
@@ -105,12 +111,18 @@ impl PlanEditor {
                 }
                 Action::Regenerate => {
                     println!("\nRegenerating plan...");
-                    self.regenerate(client, analysis, preset, algo, max_chars, secret_action).await?;
+                    self.regenerate(client, analysis, preset, algo, max_chars, secret_action)
+                        .await?;
                     println!("Plan regenerated.");
                 }
                 Action::MoveFile { file, from, to } => {
                     self.move_file(&file, from, to)?;
-                    println!("Moved {} from commit {} to commit {}", file, from + 1, to + 1);
+                    println!(
+                        "Moved {} from commit {} to commit {}",
+                        file,
+                        from + 1,
+                        to + 1
+                    );
                 }
                 Action::ExcludeFile(file) => {
                     self.exclude_file(&file)?;
@@ -279,15 +291,8 @@ impl PlanEditor {
         max_chars: usize,
         secret_action: SecretAction,
     ) -> Result<()> {
-        let new_groups = create_groups(
-            analysis,
-            client,
-            preset,
-            algo,
-            max_chars,
-            secret_action,
-        )
-        .await?;
+        let new_groups =
+            create_groups(analysis, client, preset, algo, max_chars, secret_action).await?;
 
         if new_groups.is_empty() {
             bail!("Failed to regenerate plan");
@@ -332,13 +337,19 @@ mod tests {
         let editor = create_test_editor();
         assert!(matches!(editor.parse_action("").unwrap(), Action::Accept));
         assert!(matches!(editor.parse_action("y").unwrap(), Action::Accept));
-        assert!(matches!(editor.parse_action("yes").unwrap(), Action::Accept));
+        assert!(matches!(
+            editor.parse_action("yes").unwrap(),
+            Action::Accept
+        ));
     }
 
     #[test]
     fn parse_action_regenerate() {
         let editor = create_test_editor();
-        assert!(matches!(editor.parse_action("r").unwrap(), Action::Regenerate));
+        assert!(matches!(
+            editor.parse_action("r").unwrap(),
+            Action::Regenerate
+        ));
     }
 
     #[test]

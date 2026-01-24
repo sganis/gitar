@@ -2,8 +2,8 @@
 use anyhow::Result;
 
 use crate::config::{Config, DEFAULT_MAX_DIFF_CHARS};
-use crate::git;
 use crate::context::preset::Preset;
+use crate::git;
 use std::path::PathBuf;
 
 pub fn cmd_config() -> Result<()> {
@@ -70,7 +70,10 @@ pub fn cmd_config() -> Result<()> {
                     .map(|k| format!("{}...", &k[..8.min(k.len())]))
                     .unwrap_or_else(|| format!("(env: {})", env_var))
             );
-            println!("  model:       {}", p.model.as_deref().unwrap_or("(default)"));
+            println!(
+                "  model:       {}",
+                p.model.as_deref().unwrap_or("(default)")
+            );
             println!(
                 "  max_tokens:  {}",
                 p.max_tokens

@@ -1,16 +1,16 @@
 // src/command/run/mod.rs
 
 pub mod analyze;
-pub mod group;
 pub mod editor;
 pub mod execute;
+pub mod group;
 
-use anyhow::{bail, Result};
 use crate::client::LlmClient;
 use crate::color::success;
+use crate::command::cmd_resolve;
 use crate::config::ResolvedConfig;
 use crate::git;
-use crate::command::cmd_resolve;
+use anyhow::{bail, Result};
 
 // Re-export public API
 pub use analyze::AnalysisMode;

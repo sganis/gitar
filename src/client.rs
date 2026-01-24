@@ -22,7 +22,10 @@ impl LlmClient {
 
         // TLS verification: secure by default
         if config.insecure_tls {
-            eprintln!("{} TLS certificate verification disabled (insecure)", styled("[WARN]", warning_style()));
+            eprintln!(
+                "{} TLS certificate verification disabled (insecure)",
+                styled("[WARN]", warning_style())
+            );
             builder = builder.danger_accept_invalid_certs(true);
         }
 

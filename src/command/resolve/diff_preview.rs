@@ -16,7 +16,11 @@ fn sanitize_path(p: &str) -> String {
         .collect()
 }
 
-fn write_tmp_pair(label: &str, before: &str, after: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+fn write_tmp_pair(
+    label: &str,
+    before: &str,
+    after: &str,
+) -> (std::path::PathBuf, std::path::PathBuf) {
     let tmpdir = std::env::temp_dir();
     let stamp = nanos_now();
     let label = sanitize_path(label);
@@ -30,7 +34,10 @@ fn write_tmp_pair(label: &str, before: &str, after: &str) -> (std::path::PathBuf
     (before_path, after_path)
 }
 
-fn run_git_diff_no_index(before_path: &std::path::Path, after_path: &std::path::Path) -> Result<()> {
+fn run_git_diff_no_index(
+    before_path: &std::path::Path,
+    after_path: &std::path::Path,
+) -> Result<()> {
     let out = Command::new("git")
         .args([
             "diff",

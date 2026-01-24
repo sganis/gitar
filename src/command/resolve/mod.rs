@@ -3,8 +3,8 @@ use anyhow::{bail, Context, Result};
 use std::fs;
 
 use crate::client::LlmClient;
-use crate::git;
 use crate::context::secret::SecretAction;
+use crate::git;
 use crate::prompt;
 
 mod diff_preview;
@@ -66,8 +66,8 @@ pub async fn cmd_resolve_with_resolver<R: ConflictResolver>(
         let ours = git::read_index_stage(2, &path)?;
         let theirs = git::read_index_stage(3, &path)?;
 
-        let working =
-            fs::read_to_string(&path).with_context(|| format!("Failed reading working file: {}", path))?;
+        let working = fs::read_to_string(&path)
+            .with_context(|| format!("Failed reading working file: {}", path))?;
 
         if !has_conflict_markers(&working) {
             eprintln!("- {}  (no markers found; skipping)", path);
@@ -100,7 +100,10 @@ pub async fn cmd_resolve_with_resolver<R: ConflictResolver>(
             .with_context(|| format!("Resolver failed for {}", path))?;
 
         if has_conflict_markers(&proposed) {
-            bail!("Resolver output still contains conflict markers for {}", path);
+            bail!(
+                "Resolver output still contains conflict markers for {}",
+                path
+            );
         }
 
         if !yes {
@@ -123,7 +126,10 @@ pub async fn cmd_resolve_with_resolver<R: ConflictResolver>(
 
         let after = fs::read_to_string(&path).unwrap_or_default();
         if has_conflict_markers(&after) {
-            bail!("Resolved file still contains conflict markers after write: {}", path);
+            bail!(
+                "Resolved file still contains conflict markers after write: {}",
+                path
+            );
         }
 
         git_helper::git_add(&path)?;
@@ -177,8 +183,8 @@ pub async fn cmd_resolve(
         let ours = git::read_index_stage(2, &path)?;
         let theirs = git::read_index_stage(3, &path)?;
 
-        let working =
-            fs::read_to_string(&path).with_context(|| format!("Failed reading working file: {}", path))?;
+        let working = fs::read_to_string(&path)
+            .with_context(|| format!("Failed reading working file: {}", path))?;
 
         let marker_count = working.matches("<<<<<<<").count();
         eprintln!(
@@ -241,20 +247,22 @@ pub async fn cmd_resolve(
                     heuristic_all
                 } else {
                     // Step 2: per-region LLM with fallback to full-file
-                eprintln!("  Needs LLM: trying per-region resolution...");
+                    eprintln!("  Needs LLM: trying per-region resolution...");
                     let resolved = if yes {
                         llm::resolve_working_per_region_with_fallback(client, stream, &input).await
                     } else {
                         llm::resolve_working_per_region_interactive(client, stream, &input).await
                     };
                     resolved.with_context(|| format!("LLM resolution failed for {}", path))?
-    
                 }
             }
         };
 
         if has_conflict_markers(&proposed) {
-            bail!("Proposed output still contains conflict markers for {}", path);
+            bail!(
+                "Proposed output still contains conflict markers for {}",
+                path
+            );
         }
 
         if !yes {
@@ -278,7 +286,10 @@ pub async fn cmd_resolve(
 
         let after = fs::read_to_string(&path).unwrap_or_default();
         if has_conflict_markers(&after) {
-            bail!("Resolved file still contains conflict markers after write: {}", path);
+            bail!(
+                "Resolved file still contains conflict markers after write: {}",
+                path
+            );
         }
 
         git_helper::git_add(&path)?;
@@ -289,9 +300,11 @@ pub async fn cmd_resolve(
         }
 
         if git_helper::git_has_unmerged_entries(&path)? {
-            bail!("File still has unmerged index entries after git add: {}", path);
+            bail!(
+                "File still has unmerged index entries after git add: {}",
+                path
+            );
         }
-
 
         eprintln!("  Resolved and staged: {}", path);
     }

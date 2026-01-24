@@ -6,9 +6,9 @@
 pub mod algo;
 pub mod diff;
 pub mod preset;
+pub mod repo;
 pub mod secret;
 pub mod template;
-pub mod repo;
 
 // Re-export for backward compatibility with existing code
 #[allow(unused_imports)]

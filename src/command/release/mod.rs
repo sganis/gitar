@@ -1,7 +1,7 @@
 // src/command/release/mod.rs - Release command orchestration
 
-mod version;
 mod tag;
+mod version;
 
 use anyhow::{bail, Context, Result};
 use std::fs;
@@ -10,14 +10,16 @@ use std::path::Path;
 
 use crate::client::LlmClient;
 use crate::color::{arrow, success, warning};
-use crate::git::{self, build_diff_target, get_current_version, get_diff};
+use crate::command::{apply_smart_diff, SHORT_HASH_LEN};
 use crate::context::load_all_context;
 use crate::context::secret::SecretAction;
-use crate::context::template::{changelog_system_with_context, version_system_with_context, CHANGELOG_USER, VERSION_USER};
-use crate::command::{apply_smart_diff, SHORT_HASH_LEN};
+use crate::context::template::{
+    changelog_system_with_context, version_system_with_context, CHANGELOG_USER, VERSION_USER,
+};
+use crate::git::{self, build_diff_target, get_current_version, get_diff};
 
-use version::{detect_version_files, update_version_file, VersionFile};
 use tag::{create_tag, get_commits_since, get_latest_tag, tag_exists};
+use version::{detect_version_files, update_version_file, VersionFile};
 
 // Re-exports for external use
 pub use self::tag::CommitInfo;
@@ -109,7 +111,11 @@ pub async fn cmd_release(
     } else {
         println!("\nDetected version files:");
         for file in &version_files {
-            println!("  {} (current: {})", file.path.display(), file.current_version);
+            println!(
+                "  {} (current: {})",
+                file.path.display(),
+                file.current_version
+            );
         }
     }
 
@@ -143,7 +149,10 @@ pub async fn cmd_release(
     // Step 6: Check if tag already exists
     let tag_name = format!("v{}", new_version);
     if tag_exists(&tag_name)? {
-        bail!("Tag {} already exists. Use a different version or delete the existing tag.", tag_name);
+        bail!(
+            "Tag {} already exists. Use a different version or delete the existing tag.",
+            tag_name
+        );
     }
 
     // Step 7: Generate changelog
@@ -152,7 +161,17 @@ pub async fn cmd_release(
         format!("Release {}", new_version)
     } else {
         println!("\nGenerating changelog...");
-        generate_changelog_content(&commits, &from_ref, &new_version, client, stream, algo, max_diff_chars, secret_action).await?
+        generate_changelog_content(
+            &commits,
+            &from_ref,
+            &new_version,
+            client,
+            stream,
+            algo,
+            max_diff_chars,
+            secret_action,
+        )
+        .await?
     };
 
     // Step 8: Display release plan
@@ -166,7 +185,13 @@ pub async fn cmd_release(
     if !version_files.is_empty() || changelog_path.is_some() {
         println!("Files to update:");
         for file in &version_files {
-            println!("  {} : {} {} {}", file.path.display(), file.current_version, arrow(), new_version);
+            println!(
+                "  {} : {} {} {}",
+                file.path.display(),
+                file.current_version,
+                arrow(),
+                new_version
+            );
         }
         if let Some(ref path) = changelog_path {
             let status = if path.exists() { "prepend" } else { "create" };
@@ -195,7 +220,14 @@ pub async fn cmd_release(
     }
 
     // Step 11: Execute release
-    execute_release(&version_files, &new_version, &tag_name, &changelog, changelog_path.as_deref(), !apply)?;
+    execute_release(
+        &version_files,
+        &new_version,
+        &tag_name,
+        &changelog,
+        changelog_path.as_deref(),
+        !apply,
+    )?;
 
     println!("\n===========================================================");
     success(format!("Release {} completed successfully!", new_version));
@@ -216,7 +248,10 @@ pub async fn cmd_release(
 fn validate_bump_strategy(bump: &str) -> Result<()> {
     match bump {
         "auto" | "major" | "minor" | "patch" => Ok(()),
-        _ => bail!("Invalid bump strategy: {}. Must be one of: auto, major, minor, patch", bump),
+        _ => bail!(
+            "Invalid bump strategy: {}. Must be one of: auto, major, minor, patch",
+            bump
+        ),
     }
 }
 
@@ -273,15 +308,20 @@ fn parse_version_bump_from_response(response: &str) -> Result<String> {
     let lower = response.to_lowercase();
 
     // Look for explicit mentions of version bump types
-    if lower.contains("major") && (lower.contains("breaking") || lower.contains("recommend major")) {
+    if lower.contains("major") && (lower.contains("breaking") || lower.contains("recommend major"))
+    {
         Ok("major".to_string())
-    } else if lower.contains("minor") && (lower.contains("feature") || lower.contains("recommend minor")) {
+    } else if lower.contains("minor")
+        && (lower.contains("feature") || lower.contains("recommend minor"))
+    {
         Ok("minor".to_string())
     } else if lower.contains("patch") {
         Ok("patch".to_string())
     } else {
         // Default to patch if unclear
-        eprintln!("Warning: Could not parse version bump from LLM response. Defaulting to 'patch'.");
+        eprintln!(
+            "Warning: Could not parse version bump from LLM response. Defaulting to 'patch'."
+        );
         eprintln!("LLM response: {}", response);
         Ok("patch".to_string())
     }
@@ -334,7 +374,12 @@ fn compute_new_version(current: &str, bump: &str) -> Result<String> {
 /// Format a changelog entry with version header and date
 fn format_changelog_entry(version: &str, changelog_content: &str) -> String {
     let date = chrono::Local::now().format("%Y-%m-%d");
-    format!("## [{}] - {}\n\n{}\n\n", version, date, changelog_content.trim())
+    format!(
+        "## [{}] - {}\n\n{}\n\n",
+        version,
+        date,
+        changelog_content.trim()
+    )
 }
 
 /// Find the position after the changelog header
@@ -350,7 +395,8 @@ fn find_header_end(content: &str) -> Option<usize> {
     let first_line = lines[0].trim().to_lowercase();
     if !first_line.starts_with("# changelog")
         && !first_line.starts_with("# change log")
-        && !first_line.starts_with("# history") {
+        && !first_line.starts_with("# history")
+    {
         return None;
     }
 
@@ -373,19 +419,14 @@ fn find_header_end(content: &str) -> Option<usize> {
 /// - Creates file if it doesn't exist (with header "# Changelog\n\n")
 /// - Preserves existing header (lines starting with "# Changelog" or similar)
 /// - Inserts new entry after header, before existing entries
-fn prepend_to_changelog_file(
-    path: &Path,
-    entry: &str,
-    dry_run: bool,
-) -> Result<()> {
+fn prepend_to_changelog_file(path: &Path, entry: &str, dry_run: bool) -> Result<()> {
     if dry_run {
         println!("Would update {} with new changelog entry", path.display());
         return Ok(());
     }
 
     let content = if path.exists() {
-        fs::read_to_string(path)
-            .with_context(|| format!("Failed to read {}", path.display()))?
+        fs::read_to_string(path).with_context(|| format!("Failed to read {}", path.display()))?
     } else {
         String::new()
     };
@@ -395,14 +436,18 @@ fn prepend_to_changelog_file(
         format!("# Changelog\n\n{}", entry)
     } else if let Some(header_end) = find_header_end(&content) {
         // Insert after header
-        format!("{}{}{}", &content[..header_end], entry, &content[header_end..])
+        format!(
+            "{}{}{}",
+            &content[..header_end],
+            entry,
+            &content[header_end..]
+        )
     } else {
         // No recognizable header, prepend directly
         format!("{}{}", entry, content)
     };
 
-    fs::write(path, new_content)
-        .with_context(|| format!("Failed to write {}", path.display()))?;
+    fs::write(path, new_content).with_context(|| format!("Failed to write {}", path.display()))?;
     success(format!("Updated {}", path.display()));
     Ok(())
 }

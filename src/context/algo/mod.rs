@@ -9,13 +9,13 @@
 // 3 - Hunks:    Selective hunks by importance
 // 4 - Semantic: JSON IR (token-efficient)
 
-mod full;
 mod file;
+mod full;
 mod hunk;
 mod semantic;
 
-pub(crate) use full::alg_full;
 pub(crate) use file::alg_files;
+pub(crate) use full::alg_full;
 pub(crate) use hunk::alg_hunks;
 pub(crate) use semantic::alg_semantic;
 

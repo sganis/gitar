@@ -1,9 +1,9 @@
 // src/command/plan/analyze.rs
-use anyhow::Result;
-use crate::git;
 use crate::context::algo::{DiffAlg, DiffStats};
-use crate::util::{categorize_file, Groupable};
+use crate::git;
 pub use crate::util::FileCategory;
+use crate::util::{categorize_file, Groupable};
+use anyhow::Result;
 
 // =============================================================================
 // ANALYSIS MODE & RESULT
@@ -11,10 +11,11 @@ pub use crate::util::FileCategory;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AnalysisMode {
-    Auto,           // Detect best mode from repo state
-    WorkingTree,    // Unstaged + untracked
-    Staged,         // Only staged changes
-    History {       // Commit range
+    Auto,        // Detect best mode from repo state
+    WorkingTree, // Unstaged + untracked
+    Staged,      // Only staged changes
+    History {
+        // Commit range
         from: String,
         to: Option<String>,
     },
@@ -24,10 +25,10 @@ pub enum AnalysisMode {
 pub struct AnalysisResult {
     pub mode: AnalysisMode,
     #[allow(dead_code)]
-    pub diff: String,           // Raw diff
+    pub diff: String, // Raw diff
     pub files: Vec<FileChange>, // Parsed changes
     #[allow(dead_code)]
-    pub stats: DiffStats,       // From diff algorithm (populated later)
+    pub stats: DiffStats, // From diff algorithm (populated later)
 }
 
 // =============================================================================
@@ -412,7 +413,10 @@ mod tests {
     fn categorize_file_documentation() {
         assert_eq!(categorize_file("README.md"), FileCategory::Documentation);
         assert_eq!(categorize_file("CHANGELOG.md"), FileCategory::Documentation);
-        assert_eq!(categorize_file("docs/guide.md"), FileCategory::Documentation);
+        assert_eq!(
+            categorize_file("docs/guide.md"),
+            FileCategory::Documentation
+        );
         assert_eq!(categorize_file("notes.txt"), FileCategory::Documentation);
     }
 
@@ -431,7 +435,10 @@ mod tests {
         assert_eq!(categorize_file("config.yaml"), FileCategory::Config);
         assert_eq!(categorize_file("package.json"), FileCategory::Config);
         assert_eq!(categorize_file("Dockerfile"), FileCategory::Config);
-        assert_eq!(categorize_file(".github/workflows/ci.yml"), FileCategory::Config);
+        assert_eq!(
+            categorize_file(".github/workflows/ci.yml"),
+            FileCategory::Config
+        );
     }
 
     #[test]

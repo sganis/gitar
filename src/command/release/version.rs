@@ -19,7 +19,7 @@ pub struct VersionFile {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum VersionFileType {
-    Cargo,      // Cargo.toml
+    Cargo,       // Cargo.toml
     PackageJson, // package.json
     PyProject,   // pyproject.toml
 }
@@ -160,17 +160,33 @@ pub fn update_version_file(file: &VersionFile, new_version: &str, dry_run: bool)
         .context(format!("Failed to read {}", file.path.display()))?;
 
     let updated = match file.file_type {
-        VersionFileType::Cargo => update_cargo_version(&content, &file.current_version, new_version)?,
-        VersionFileType::PackageJson => update_package_json_version(&content, &file.current_version, new_version)?,
-        VersionFileType::PyProject => update_pyproject_version(&content, &file.current_version, new_version)?,
+        VersionFileType::Cargo => {
+            update_cargo_version(&content, &file.current_version, new_version)?
+        }
+        VersionFileType::PackageJson => {
+            update_package_json_version(&content, &file.current_version, new_version)?
+        }
+        VersionFileType::PyProject => {
+            update_pyproject_version(&content, &file.current_version, new_version)?
+        }
     };
 
     if dry_run {
-        println!("Would update {} from {} to {}", file.path.display(), file.current_version, new_version);
+        println!(
+            "Would update {} from {} to {}",
+            file.path.display(),
+            file.current_version,
+            new_version
+        );
     } else {
         fs::write(&file.path, updated)
             .context(format!("Failed to write {}", file.path.display()))?;
-        success(format!("Updated {} from {} to {}", file.path.display(), file.current_version, new_version));
+        success(format!(
+            "Updated {} from {} to {}",
+            file.path.display(),
+            file.current_version,
+            new_version
+        ));
     }
 
     Ok(())
@@ -187,7 +203,11 @@ fn update_cargo_version(content: &str, old_version: &str, new_version: &str) -> 
     Ok(content.replace(&old_line, &new_line))
 }
 
-fn update_package_json_version(content: &str, old_version: &str, new_version: &str) -> Result<String> {
+fn update_package_json_version(
+    content: &str,
+    old_version: &str,
+    new_version: &str,
+) -> Result<String> {
     let old_line = format!("\"version\": \"{}\"", old_version);
     let new_line = format!("\"version\": \"{}\"", new_version);
 

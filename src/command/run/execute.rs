@@ -157,7 +157,11 @@ fn execute_history_mode(
         println!("\n===========================================================");
         println!("History Mode Execution (Dry Run)");
         println!("===========================================================\n");
-        println!("Would rewrite commits from {} to {}", from, to.unwrap_or("HEAD"));
+        println!(
+            "Would rewrite commits from {} to {}",
+            from,
+            to.unwrap_or("HEAD")
+        );
         println!("\nProposed commit reorganization:");
         for (idx, group) in groups.iter().enumerate() {
             println!("\n{}. {}", idx + 1, group.title);
@@ -196,8 +200,7 @@ fn execute_history_mode(
 
     // Create temporary rebase todo file
     let todo_path = ".git/gitar-rebase-todo";
-    fs::write(todo_path, &todo_script)
-        .context("Failed to write rebase todo script")?;
+    fs::write(todo_path, &todo_script).context("Failed to write rebase todo script")?;
 
     println!("\nStarting interactive rebase...");
     println!("Generated rebase script:\n{}\n", todo_script);

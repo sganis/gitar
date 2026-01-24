@@ -131,11 +131,16 @@ fn ensure_context_files() -> Result<()> {
                 match write_file_if_missing(&project_ctx, PROJECT_CONTEXT_TEMPLATE) {
                     Ok(true) => println!("Created project context: {}", project_ctx.display()),
                     Ok(false) => {}
-                    Err(e) => println!("Warning: could not create {}: {}", project_ctx.display(), e),
+                    Err(e) => {
+                        println!("Warning: could not create {}: {}", project_ctx.display(), e)
+                    }
                 }
             }
             Err(e) => {
-                println!("Warning: could not detect repo root; skipping .gitar/gitar.md ({})", e);
+                println!(
+                    "Warning: could not detect repo root; skipping .gitar/gitar.md ({})",
+                    e
+                );
             }
         }
     }
@@ -181,7 +186,11 @@ fn select_provider(current: Option<&str>) -> Result<Option<String>> {
     }
 }
 
-async fn select_model(provider: &str, api_key: &str, current_model: Option<&str>) -> Result<Option<String>> {
+async fn select_model(
+    provider: &str,
+    api_key: &str,
+    current_model: Option<&str>,
+) -> Result<Option<String>> {
     println!("\nFetching available models from {}...", provider);
 
     // Create a temporary config with the provider settings
@@ -237,7 +246,11 @@ async fn select_model(provider: &str, api_key: &str, current_model: Option<&str>
         0
     };
 
-    let idx = prompt::select("Select model (use arrow keys to scroll)", &display_models, default_idx)?;
+    let idx = prompt::select(
+        "Select model (use arrow keys to scroll)",
+        &display_models,
+        default_idx,
+    )?;
 
     if idx == display_models.len() - 1 {
         // Cancel
@@ -313,7 +326,11 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
             println!("\n[INFO] {} doesn't require an API key", selected_provider);
             String::new()
         } else if let Some(ref key) = current_key {
-            let masked = format!("{}...{}", &key[..4.min(key.len())], &key[key.len().saturating_sub(4)..]);
+            let masked = format!(
+                "{}...{}",
+                &key[..4.min(key.len())],
+                &key[key.len().saturating_sub(4)..]
+            );
             let input = prompt::input(&format!("API key (current: {})", masked), Some(""))?;
             if input.is_empty() {
                 key.clone()
@@ -343,7 +360,10 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
                         prompt::input("Enter API key", None)?
                     }
                 } else {
-                    prompt::input(&format!("Enter API key (or set ${} env var)", env_var), None)?
+                    prompt::input(
+                        &format!("Enter API key (or set ${} env var)", env_var),
+                        None,
+                    )?
                 }
             } else {
                 prompt::input("Enter API key", None)?
@@ -352,12 +372,16 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
 
         // Validate API key for providers that need it
         if api_key.is_empty() && needs_api_key {
-            bail!("API key cannot be empty for provider: {}", selected_provider);
+            bail!(
+                "API key cannot be empty for provider: {}",
+                selected_provider
+            );
         }
 
         // Step 3: Select model (query API)
         let current_model = provider_config.model.as_deref();
-        let selected_model = match select_model(&selected_provider, &api_key, current_model).await? {
+        let selected_model = match select_model(&selected_provider, &api_key, current_model).await?
+        {
             Some(m) => Some(m),
             None => {
                 println!("Configuration cancelled.");
@@ -407,7 +431,10 @@ pub async fn cmd_init(cli: &Cli, file: &Config) -> Result<()> {
         println!("Configuration saved successfully!");
         println!("==========================================================");
         println!("\nProvider: {}", selected_provider);
-        if let Some(model) = config.get_provider(&selected_provider).and_then(|p| p.model.as_ref()) {
+        if let Some(model) = config
+            .get_provider(&selected_provider)
+            .and_then(|p| p.model.as_ref())
+        {
             println!("Model: {}", model);
         }
         println!("Preset: {}", preset);

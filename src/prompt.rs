@@ -7,9 +7,9 @@
 use anyhow::Result;
 use std::io::{self, IsTerminal, Write};
 
-pub use dialoguer::{Confirm, Input, Select};
-use dialoguer::theme::Theme;
 use dialoguer::console::style;
+use dialoguer::theme::Theme;
+pub use dialoguer::{Confirm, Input, Select};
 
 /// Custom theme with ASCII characters and cyan highlighting for selected items
 pub struct GitarTheme;
@@ -86,7 +86,11 @@ impl Theme for GitarTheme {
         write!(f, "{}: {}", prompt, style(sel).cyan())
     }
 
-    fn format_multi_select_prompt(&self, f: &mut dyn std::fmt::Write, prompt: &str) -> std::fmt::Result {
+    fn format_multi_select_prompt(
+        &self,
+        f: &mut dyn std::fmt::Write,
+        prompt: &str,
+    ) -> std::fmt::Result {
         write!(f, "{}", style(prompt).cyan().bold())
     }
 
@@ -113,7 +117,12 @@ impl Theme for GitarTheme {
         active: bool,
     ) -> std::fmt::Result {
         if active {
-            write!(f, "{} {}", style(">").cyan().bold(), style(text).cyan().bold())
+            write!(
+                f,
+                "{} {}",
+                style(">").cyan().bold(),
+                style(text).cyan().bold()
+            )
         } else {
             write!(f, "  {}", text)
         }
@@ -153,7 +162,12 @@ impl Theme for GitarTheme {
         if picked {
             write!(f, "  [{}] {}", style("x").dim(), style(text).dim())
         } else if active {
-            write!(f, "{} [ ] {}", style(">").cyan().bold(), style(text).cyan().bold())
+            write!(
+                f,
+                "{} [ ] {}",
+                style(">").cyan().bold(),
+                style(text).cyan().bold()
+            )
         } else {
             write!(f, "  [ ] {}", text)
         }
@@ -169,7 +183,11 @@ pub fn is_interactive() -> bool {
 ///
 /// In TTY: Arrow keys + Enter to select (ASCII-only with cyan highlighting)
 /// Non-TTY: Numbered list with text input
-pub fn select<T: ToString + std::fmt::Display>(prompt: &str, items: &[T], default: usize) -> Result<usize> {
+pub fn select<T: ToString + std::fmt::Display>(
+    prompt: &str,
+    items: &[T],
+    default: usize,
+) -> Result<usize> {
     if is_interactive() {
         let theme = GitarTheme;
         Ok(Select::with_theme(&theme)
@@ -224,7 +242,11 @@ fn fallback_select<T: ToString>(prompt: &str, items: &[T], default: usize) -> Re
     for (i, item) in items.iter().enumerate() {
         eprintln!("  {}. {}", i + 1, item.to_string());
     }
-    eprint!("Enter choice [1-{}] (default: {}): ", items.len(), default + 1);
+    eprint!(
+        "Enter choice [1-{}] (default: {}): ",
+        items.len(),
+        default + 1
+    );
     io::stderr().flush()?;
 
     let mut input = String::new();
@@ -261,7 +283,10 @@ fn fallback_confirm(prompt: &str, default: bool) -> Result<bool> {
         "y" | "yes" => Ok(true),
         "n" | "no" => Ok(false),
         _ => {
-            eprintln!("Invalid input. Using default: {}", if default { "yes" } else { "no" });
+            eprintln!(
+                "Invalid input. Using default: {}",
+                if default { "yes" } else { "no" }
+            );
             Ok(default)
         }
     }

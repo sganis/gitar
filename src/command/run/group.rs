@@ -4,10 +4,10 @@ use anyhow::Result;
 use crate::client::LlmClient;
 use crate::command::apply_smart_diff;
 use crate::context::load_all_context;
-use crate::git;
 use crate::context::secret::SecretAction;
 use crate::context::template::{commit_system_with_context, COMMIT_USER};
 use crate::context::Preset;
+use crate::git;
 
 use super::analyze::AnalysisResult;
 use crate::util::group_by_heuristics;
@@ -20,9 +20,9 @@ use crate::util::group_by_heuristics;
 pub struct CommitGroup {
     #[allow(dead_code)]
     pub id: usize,
-    pub title: String,        // Short label
-    pub message: String,      // Full commit message
-    pub files: Vec<String>,   // File paths
+    pub title: String,      // Short label
+    pub message: String,    // Full commit message
+    pub files: Vec<String>, // File paths
     #[allow(dead_code)]
     pub estimated_tokens: usize,
 }
@@ -70,7 +70,8 @@ pub async fn create_groups(
         )?;
 
         // Use LLM to generate commit message
-        let system_prompt = commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
+        let system_prompt =
+            commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
         let user_prompt = COMMIT_USER.replace("{diff}", &shaped_diff);
 
         let message = match client.chat(&system_prompt, &user_prompt, false).await {
@@ -106,8 +107,8 @@ pub async fn create_groups(
 // DIFF HELPERS
 // =============================================================================
 
+use super::analyze::{ChangeStatus, FileChange};
 use super::AnalysisMode;
-use super::analyze::{FileChange, ChangeStatus};
 use std::fs;
 
 /// Get comprehensive diff for a group of files, handling all file states
@@ -146,8 +147,7 @@ fn get_diff_for_group(group: &[FileChange], mode: &AnalysisMode) -> Result<Strin
 /// Get diff for an added/untracked file
 fn get_added_file_diff(path: &str) -> Result<String> {
     // Read file contents
-    let content = fs::read_to_string(path)
-        .unwrap_or_else(|_| String::from("(binary file)"));
+    let content = fs::read_to_string(path).unwrap_or_else(|_| String::from("(binary file)"));
 
     // Format as git diff (all additions)
     let mut diff = String::new();
@@ -254,7 +254,7 @@ fn get_renamed_file_diff(from: &str, to: &str, mode: &AnalysisMode) -> Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::run::analyze::{FileChange, ChangeStatus, FileCategory};
+    use crate::command::run::analyze::{ChangeStatus, FileCategory, FileChange};
 
     #[test]
     fn group_by_heuristics_separates_categories() {

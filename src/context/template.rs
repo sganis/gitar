@@ -82,7 +82,6 @@ pgsql
 Copy code
 Respond with ONLY the commit message. (single-line)"#;
 
-
 pub fn commit_system_with_context(
     preset: Preset,
     project_context: Option<&str>,
@@ -135,7 +134,6 @@ Following lines: describe what and why (1-5 lines depending on complexity)
 makefile
 Copy code
 Respond with ONLY the commit message."#;
-
 
 pub fn history_system_with_context(
     preset: Preset,
@@ -262,7 +260,10 @@ pub const EXPLAIN_USER: &str = r#"Explain for non-technical person.
 
 "#;
 
-pub fn explain_system_with_context(project_context: Option<&str>, user_context: Option<&str>) -> String {
+pub fn explain_system_with_context(
+    project_context: Option<&str>,
+    user_context: Option<&str>,
+) -> String {
     let ctx = format_context(project_context, user_context);
     format!("{}{}", EXPLAIN_SYSTEM, ctx)
 }
@@ -290,7 +291,10 @@ pub const VERSION_USER: &str = r#"Recommend version bump.
 
 "#;
 
-pub fn version_system_with_context(project_context: Option<&str>, user_context: Option<&str>) -> String {
+pub fn version_system_with_context(
+    project_context: Option<&str>,
+    user_context: Option<&str>,
+) -> String {
     let ctx = format_context(project_context, user_context);
     format!("{}{}", VERSION_SYSTEM, ctx)
 }
@@ -355,11 +359,7 @@ mod tests {
 
     #[test]
     fn context_is_optional_and_delimited() {
-        let p = commit_system_with_context(
-            Preset::Rust,
-            Some("Repo rules"),
-            Some("User prefs"),
-        );
+        let p = commit_system_with_context(Preset::Rust, Some("Repo rules"), Some("User prefs"));
         assert!(p.contains("Project Context"));
         assert!(p.contains("User Context"));
 

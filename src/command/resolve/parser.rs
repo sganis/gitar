@@ -107,7 +107,12 @@ pub fn parse_conflict_regions_raw(
     Ok(regions)
 }
 
-fn lines_slice_context(lines: &[&str], start_line_1: usize, end_line_1: usize, ctx: usize) -> (String, String) {
+fn lines_slice_context(
+    lines: &[&str],
+    start_line_1: usize,
+    end_line_1: usize,
+    ctx: usize,
+) -> (String, String) {
     // lines are split_inclusive('\n'), 1-based line indices.
     let total = lines.len();
     let start_idx = start_line_1.saturating_sub(1);

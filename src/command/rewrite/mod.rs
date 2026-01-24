@@ -3,11 +3,11 @@ use anyhow::{bail, Context, Result};
 
 use crate::client::LlmClient;
 use crate::color::{success, warning};
-use crate::git::run_git;
 use crate::context::preset::Preset;
+use crate::context::repo::load_all_context;
 use crate::context::secret::SecretAction;
 use crate::context::template::{commit_system_with_context, COMMIT_USER};
-use crate::context::repo::load_all_context;
+use crate::git::run_git;
 use crate::prompt;
 
 use super::{apply_smart_diff_with_context, AnalysisContext};
@@ -89,11 +89,8 @@ pub async fn cmd_rewrite(
             )?;
 
             let (project_ctx, user_ctx) = load_all_context();
-            let system = commit_system_with_context(
-                preset,
-                project_ctx.as_deref(),
-                user_ctx.as_deref(),
-            );
+            let system =
+                commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
 
             let prompt = COMMIT_USER.replace("{diff}", &shaped_diff);
             let msg = client.chat(&system, &prompt, stream).await?;
@@ -106,7 +103,13 @@ pub async fn cmd_rewrite(
 
             println!("{}", "=".repeat(50));
 
-            let options = ["Accept", "Keep original", "Regenerate", "Edit message", "Skip all remaining"];
+            let options = [
+                "Accept",
+                "Keep original",
+                "Regenerate",
+                "Edit message",
+                "Skip all remaining",
+            ];
             match prompt::select("Action", &options, 0)? {
                 0 => break msg.trim().to_string(), // Accept
                 1 => {
@@ -221,11 +224,7 @@ fn get_commit_diff(commit_hash: &str) -> Result<String> {
     run_git(&["show", "--format=", commit_hash])
 }
 
-fn execute_rewrite(
-    base_ref: &str,
-    commits: &[CommitInfo],
-    new_messages: &[String],
-) -> Result<()> {
+fn execute_rewrite(base_ref: &str, commits: &[CommitInfo], new_messages: &[String]) -> Result<()> {
     if commits.len() != new_messages.len() {
         bail!(
             "Mismatch: {} commits but {} messages",
@@ -248,7 +247,10 @@ fn execute_rewrite(
     // For now, let's use git commit --amend in a loop with reset
 
     // This is complex - using reset --soft + commit repeatedly
-    println!("Using git reset/commit to rewrite {} commits...", commits.len());
+    println!(
+        "Using git reset/commit to rewrite {} commits...",
+        commits.len()
+    );
 
     // Reset to base
     run_git(&["reset", "--soft", base_ref])?;
@@ -256,7 +258,13 @@ fn execute_rewrite(
     // Re-commit with new messages
     for (idx, (commit, new_msg)) in commits.iter().zip(new_messages.iter()).enumerate() {
         // Get the files from the original commit
-        let files = run_git(&["diff-tree", "--no-commit-id", "--name-only", "-r", &commit.hash])?;
+        let files = run_git(&[
+            "diff-tree",
+            "--no-commit-id",
+            "--name-only",
+            "-r",
+            &commit.hash,
+        ])?;
 
         // Stage all the files
         for file in files.lines() {

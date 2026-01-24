@@ -46,7 +46,13 @@ pub struct Styled<T> {
 
 impl<T: fmt::Display> fmt::Display for Styled<T> {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}{}{}", self.style.render(), self.text, self.style.render_reset())
+        write!(
+            f,
+            "{}{}{}",
+            self.style.render(),
+            self.text,
+            self.style.render_reset()
+        )
     }
 }
 

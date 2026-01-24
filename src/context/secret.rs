@@ -115,7 +115,11 @@ impl SecretScanResult {
         );
 
         if self.high_count > 0 {
-            msg.push_str(&format!("   {} {} HIGH\n", bullet(), styled(self.high_count, error_style())));
+            msg.push_str(&format!(
+                "   {} {} HIGH\n",
+                bullet(),
+                styled(self.high_count, error_style())
+            ));
         }
         if self.medium_count > 0 {
             msg.push_str(&format!(
@@ -125,15 +129,28 @@ impl SecretScanResult {
             ));
         }
         if self.low_count > 0 {
-            msg.push_str(&format!("   {} {} LOW\n", bullet(), styled(self.low_count, dim_style())));
+            msg.push_str(&format!(
+                "   {} {} LOW\n",
+                bullet(),
+                styled(self.low_count, dim_style())
+            ));
         }
 
         msg.push('\n');
         for (i, m) in self.matches.iter().take(5).enumerate() {
             let styled_location = match m.severity {
-                Severity::High => styled(format!("{}:L{}", m.pattern_name, m.line_number), error_style()),
-                Severity::Medium => styled(format!("{}:L{}", m.pattern_name, m.line_number), warning_style()),
-                Severity::Low => styled(format!("{}:L{}", m.pattern_name, m.line_number), dim_style()),
+                Severity::High => styled(
+                    format!("{}:L{}", m.pattern_name, m.line_number),
+                    error_style(),
+                ),
+                Severity::Medium => styled(
+                    format!("{}:L{}", m.pattern_name, m.line_number),
+                    warning_style(),
+                ),
+                Severity::Low => styled(
+                    format!("{}:L{}", m.pattern_name, m.line_number),
+                    dim_style(),
+                ),
             };
             msg.push_str(&format!(
                 "   {}. [{}] {}\n",
@@ -299,7 +316,10 @@ pub fn process_secrets(text: &str, action: SecretAction) -> Result<Cow<'_, str>,
         }
         SecretAction::Redact => {
             eprintln!("{}", result.format_warning());
-            eprintln!("{} Secrets redacted before sending to LLM\n", styled("[OK]", success_style()));
+            eprintln!(
+                "{} Secrets redacted before sending to LLM\n",
+                styled("[OK]", success_style())
+            );
             Ok(redact(text))
         }
     }

@@ -3,10 +3,10 @@ use anyhow::Result;
 
 use crate::client::LlmClient;
 use crate::context::load_all_context;
-use crate::git::{get_commit_diff, get_commit_logs};
 use crate::context::preset::Preset;
 use crate::context::secret::SecretAction;
 use crate::context::template::{history_system_with_context, HISTORY_USER};
+use crate::git::{get_commit_diff, get_commit_logs};
 
 use super::{apply_smart_diff, SHORT_HASH_LEN};
 
