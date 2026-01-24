@@ -64,7 +64,7 @@ irm https://raw.githubusercontent.com/sganis/gitar/main/install/install.ps1 | ie
 #### Windows CMD
 
 ```cmd
-curl -fsSL https://raw.githubusercontent.com/sganis/gitar/main/install/install.cmd -o install.cmd && install.cmd && del install.cmd
+curl -fsSL https://raw.githubusercontent.com/sganis/gitar/main/install/install.cmd -o "%TEMP%\gitar-install.cmd" && "%TEMP%\gitar-install.cmd"
 ```
 
 ---
