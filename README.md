@@ -94,12 +94,20 @@ gitar          # == gitar plan (dry-run)
 gitar --apply  # execute the plan
 ```
 
+For power users who want commands to execute by default:
+
+```bash
+gitar init --auto-apply true
+gitar          # now executes immediately
+gitar --dry-run  # use this to preview
+```
+
 ---
 
 ## Global Rules
 
-* **Dry-run by default**
-* **Nothing mutates without `--apply`**
+* **Dry-run by default** (unless `auto_apply` is enabled)
+* **Nothing mutates without `--apply`** (or use `--dry-run` to override `auto_apply`)
 * Same scope flags everywhere:
 
 ```bash
@@ -113,6 +121,34 @@ Inference:
 * If `--history` → history
 * Else if staged exists → staged
 * Else → working
+
+### Auto-Apply Mode
+
+For confident users who prefer commands to execute by default:
+
+```bash
+gitar init --auto-apply true   # Enable
+gitar init --auto-apply false  # Disable
+```
+
+Or set in `~/.gitar.toml`:
+
+```toml
+auto_apply = true
+```
+
+When enabled:
+- `gitar plan` executes immediately (like `gitar plan --apply`)
+- `gitar fix` applies resolutions (like `gitar fix --apply`)
+- `gitar release` executes the release (like `gitar release --apply`)
+
+Use `--dry-run` to preview without executing when `auto_apply` is enabled:
+
+```bash
+gitar plan --dry-run    # Preview only
+gitar fix --dry-run     # Preview only
+gitar release --dry-run # Preview only
+```
 
 ---
 
@@ -317,7 +353,20 @@ Stored in:
 ~/.gitar.toml
 ```
 
-View:
+Example configuration:
+
+```toml
+default_provider = "claude"
+base_branch = "main"
+preset = "rust"
+auto_apply = false        # Set to true to execute by default
+secret_action = "redact"  # or "warn" or "block"
+
+[claude]
+model = "claude-sonnet-4-5-20250514"
+```
+
+View resolved configuration:
 
 ```bash
 gitar init --show
