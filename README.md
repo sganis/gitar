@@ -2,7 +2,7 @@
 
 # 🎸 Gitar
 
-**Gitar** is an AI-native Git interface to **plan, explain, fix, and release** your history.
+**Gitar** is an AI-native Git interface to **plan, tell, fix, and release** your history.
 
 Instead of memorizing Git commands and manually staging, splitting, and rewriting commits, you ask Gitar to **analyze, propose a plan, and safely execute it**.
 
@@ -31,12 +31,14 @@ The name combines **Git** + **AI** + **Rust** (and sounds like *guitar*).
 
 Gitar manages Git history through **four actions**:
 
-> **plan** — create or reshape history  
-> **explain** — understand and communicate history  
-> **fix** — repair broken history (conflicts)  
-> **release** — ship history  
+> **plan** (`p`) — create or reshape history
+> **tell** (`t`) — understand and communicate history
+> **fix** (`f`) — repair broken history (conflicts)
+> **release** (`r`) — ship history
 
-All operations are **dry-run by default**.  
+Single-letter shortcuts: `gitar p`, `gitar t`, `gitar f`, `gitar r`
+
+All operations are **dry-run by default**.
 **Nothing mutates without `--apply`.**
 
 ---
@@ -135,11 +137,11 @@ What it does:
 
 ---
 
-## 2) 📝 `gitar explain` — Read-only Understanding & Communication
+## 2) 📝 `gitar tell` — Read-only Understanding & Communication
 
 Everything that **describes, summarizes, or explains** goes here.
 
-Instead of subcommands, `explain` uses **selector flags**.
+Instead of subcommands, `tell` uses **selector flags**.
 
 Exactly one of:
 
@@ -149,41 +151,36 @@ Exactly one of:
 --changelog
 --history
 --version
---report
+--explain
 ```
 
 Default is:
 
 ```bash
---report
+--explain
 ```
 
 ### Examples
 
 ```bash
-gitar explain
-gitar explain --report
-gitar explain --report --staged
+gitar tell
+gitar tell --explain
+gitar tell --explain --staged
 
-gitar explain --commit
-gitar explain --commit --staged
-gitar explain --commit --preset rust
+gitar tell --commit
+gitar tell --commit --staged
+gitar tell --commit --preset rust
 
-gitar explain --pr
-gitar explain --pr main
+gitar tell --pr
+gitar tell --pr main
 
-gitar explain --changelog v1.0.0
-gitar explain --history v1.0.0
+gitar tell --changelog v1.0.0
+gitar tell --history v1.0.0
 
-gitar explain --version
-gitar explain --version v1.0.0
+gitar tell --version
+gitar tell --version v1.0.0
 ```
 
-> Note: The old `gitar explain` feature is now:
-
-```bash
-gitar explain --report
-```
 
 ---
 
@@ -245,9 +242,9 @@ gitar diff
 ## Style Presets
 
 ```bash
-gitar explain --commit --preset rust
-gitar explain --commit --preset js
-gitar explain --commit --preset python
+gitar tell --commit --preset rust
+gitar tell --commit --preset js
+gitar tell --commit --preset python
 ```
 
 Or set default:

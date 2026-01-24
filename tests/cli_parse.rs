@@ -18,13 +18,13 @@ fn cli_parses_all_commands() {
         vec!["gitar", "plan"],
         vec!["gitar", "fix"],
         vec!["gitar", "release"],
-        // Explain with flags
-        vec!["gitar", "explain", "--commit"],
-        vec!["gitar", "explain", "--pr", "main"],
-        vec!["gitar", "explain", "--changelog"],
-        vec!["gitar", "explain", "--history"],
-        vec!["gitar", "explain", "--report"],
-        vec!["gitar", "explain"], // defaults to report
+        // Tell with flags
+        vec!["gitar", "tell", "--commit"],
+        vec!["gitar", "tell", "--pr", "main"],
+        vec!["gitar", "tell", "--changelog"],
+        vec!["gitar", "tell", "--history"],
+        vec!["gitar", "tell", "--explain"],
+        vec!["gitar", "tell"], // defaults to explain
         // Utilities
         vec!["gitar", "init"],
         vec!["gitar", "config"],
@@ -65,13 +65,13 @@ fn cli_parses_algo_flag() {
     for algo_val in 1..=4 {
         let cli = Cli::try_parse_from([
             "gitar",
-            "explain",
+            "tell",
             "--commit",
             "--algo",
             &algo_val.to_string(),
         ])
         .unwrap();
-        if let Some(Commands::Explain { algo, commit, .. }) = cli.command {
+        if let Some(Commands::Tell { algo, commit, .. }) = cli.command {
             assert!(commit);
             assert_eq!(algo, algo_val);
         }
@@ -80,16 +80,16 @@ fn cli_parses_algo_flag() {
 
 #[test]
 fn cli_algo_defaults_to_4() {
-    let cli = Cli::try_parse_from(["gitar", "explain", "--commit"]).unwrap();
-    if let Some(Commands::Explain { algo, .. }) = cli.command {
+    let cli = Cli::try_parse_from(["gitar", "tell", "--commit"]).unwrap();
+    if let Some(Commands::Tell { algo, .. }) = cli.command {
         assert_eq!(algo, 4);
     }
 }
 
 #[test]
 fn cli_rejects_invalid_algo() {
-    assert!(Cli::try_parse_from(["gitar", "explain", "--commit", "--algo", "0"]).is_err());
-    assert!(Cli::try_parse_from(["gitar", "explain", "--commit", "--algo", "5"]).is_err());
+    assert!(Cli::try_parse_from(["gitar", "tell", "--commit", "--algo", "0"]).is_err());
+    assert!(Cli::try_parse_from(["gitar", "tell", "--commit", "--algo", "5"]).is_err());
 }
 
 // ==========================================================================
@@ -103,7 +103,7 @@ fn cli_parses_valid_providers() {
     ];
     for provider in providers {
         let cli =
-            Cli::try_parse_from(["gitar", "--provider", provider, "explain", "--staged"]).unwrap();
+            Cli::try_parse_from(["gitar", "--provider", provider, "tell", "--staged"]).unwrap();
         assert_eq!(cli.provider, Some(provider.into()));
     }
 }
@@ -111,7 +111,7 @@ fn cli_parses_valid_providers() {
 #[test]
 fn cli_rejects_invalid_provider() {
     assert!(
-        Cli::try_parse_from(["gitar", "--provider", "invalid", "explain", "--staged"]).is_err()
+        Cli::try_parse_from(["gitar", "--provider", "invalid", "tell", "--staged"]).is_err()
     );
 }
 
@@ -133,14 +133,14 @@ fn cli_parses_valid_presets() {
     ];
     for preset in presets {
         let cli =
-            Cli::try_parse_from(["gitar", "--preset", preset, "explain", "--staged"]).unwrap();
+            Cli::try_parse_from(["gitar", "--preset", preset, "tell", "--staged"]).unwrap();
         assert_eq!(cli.preset, Some(preset.into()));
     }
 }
 
 #[test]
 fn cli_rejects_invalid_preset() {
-    assert!(Cli::try_parse_from(["gitar", "--preset", "invalid", "explain", "--staged"]).is_err());
+    assert!(Cli::try_parse_from(["gitar", "--preset", "invalid", "tell", "--staged"]).is_err());
 }
 
 // ==========================================================================
@@ -158,7 +158,7 @@ fn cli_parses_global_options() {
         "--temperature",
         "0.5",
         "--stream",
-        "explain",
+        "tell",
         "--staged",
     ])
     .unwrap();
@@ -169,14 +169,14 @@ fn cli_parses_global_options() {
 }
 
 // ==========================================================================
-// Commit-specific flags tests (via explain --commit)
+// Commit-specific flags tests (via tell --commit)
 // ==========================================================================
 
 #[test]
 fn cli_parses_commit_flags() {
     let cli =
-        Cli::try_parse_from(["gitar", "explain", "--commit", "-p", "-a", "--no-tag"]).unwrap();
-    if let Some(Commands::Explain {
+        Cli::try_parse_from(["gitar", "tell", "--commit", "-p", "-a", "--no-tag"]).unwrap();
+    if let Some(Commands::Tell {
         commit,
         push,
         all,
@@ -189,18 +189,18 @@ fn cli_parses_commit_flags() {
         assert!(all);
         assert!(no_tag);
     } else {
-        panic!("Expected Explain command with --commit flag");
+        panic!("Expected Tell command with --commit flag");
     }
 }
 
 #[test]
 fn cli_parses_commit_amend() {
-    let cli = Cli::try_parse_from(["gitar", "explain", "--commit", "--amend"]).unwrap();
-    if let Some(Commands::Explain { commit, amend, .. }) = cli.command {
+    let cli = Cli::try_parse_from(["gitar", "tell", "--commit", "--amend"]).unwrap();
+    if let Some(Commands::Tell { commit, amend, .. }) = cli.command {
         assert!(commit);
         assert!(amend);
     } else {
-        panic!("Expected Explain command with --commit flag");
+        panic!("Expected Tell command with --commit flag");
     }
 }
 
@@ -370,14 +370,14 @@ fn cli_parses_rewrite_target() {
 }
 
 // ==========================================================================
-// History flag tests (via explain --history)
+// History flag tests (via tell --history)
 // ==========================================================================
 
 #[test]
 fn cli_parses_history_options() {
     let cli = Cli::try_parse_from([
         "gitar",
-        "explain",
+        "tell",
         "--history",
         "v1.0.0",
         "--to",
@@ -388,7 +388,7 @@ fn cli_parses_history_options() {
         "1000",
     ])
     .unwrap();
-    if let Some(Commands::Explain {
+    if let Some(Commands::Tell {
         history,
         reference,
         to,
@@ -403,36 +403,36 @@ fn cli_parses_history_options() {
         assert_eq!(limit, Some(10));
         assert_eq!(delay, 1000);
     } else {
-        panic!("Expected Explain command with --history flag");
+        panic!("Expected Tell command with --history flag");
     }
 }
 
 // ==========================================================================
-// Explain report tests (renamed from explain)
+// Tell explain tests
 // ==========================================================================
 
 #[test]
-fn cli_parses_explain_report() {
-    let cli = Cli::try_parse_from(["gitar", "explain", "--report", "--staged"]).unwrap();
-    if let Some(Commands::Explain {
-        report, staged, ..
+fn cli_parses_tell_explain() {
+    let cli = Cli::try_parse_from(["gitar", "tell", "--explain", "--staged"]).unwrap();
+    if let Some(Commands::Tell {
+        explain, staged, ..
     }) = cli.command
     {
-        assert!(report);
+        assert!(explain);
         assert!(staged);
     } else {
-        panic!("Expected Explain command with --report flag");
+        panic!("Expected Tell command with --explain flag");
     }
 }
 
 #[test]
-fn cli_explain_defaults_to_report() {
-    // Just "gitar explain" should work (defaults to report behavior)
-    let cli = Cli::try_parse_from(["gitar", "explain"]).unwrap();
-    if let Some(Commands::Explain { .. }) = cli.command {
+fn cli_tell_defaults_to_explain() {
+    // Just "gitar tell" should work (defaults to explain behavior)
+    let cli = Cli::try_parse_from(["gitar", "tell"]).unwrap();
+    if let Some(Commands::Tell { .. }) = cli.command {
         // Success - no selector flag required
     } else {
-        panic!("Expected Explain command");
+        panic!("Expected Tell command");
     }
 }
 
@@ -443,8 +443,8 @@ fn cli_explain_defaults_to_report() {
 #[test]
 fn cli_rejects_multiple_selectors() {
     // Cannot use --commit and --pr together
-    assert!(Cli::try_parse_from(["gitar", "explain", "--commit", "--pr"]).is_err());
-    assert!(Cli::try_parse_from(["gitar", "explain", "--changelog", "--history"]).is_err());
+    assert!(Cli::try_parse_from(["gitar", "tell", "--commit", "--pr"]).is_err());
+    assert!(Cli::try_parse_from(["gitar", "tell", "--changelog", "--history"]).is_err());
 }
 
 // ==========================================================================
@@ -536,10 +536,54 @@ fn hook_script_is_valid_shell() {
 }
 
 #[test]
-fn hook_script_uses_new_command() {
-    // Hook script should use "gitar explain --commit" now
+fn hook_script_uses_tell_command() {
+    // Hook script should use "gitar tell --commit"
     assert!(
-        HOOK_SCRIPT.contains("gitar explain --commit"),
-        "Hook should use new explain --commit command"
+        HOOK_SCRIPT.contains("gitar tell --commit"),
+        "Hook should use tell --commit command"
     );
+}
+
+// ==========================================================================
+// Single-letter alias tests
+// ==========================================================================
+
+#[test]
+fn cli_parses_plan_alias_p() {
+    let cli = Cli::try_parse_from(["gitar", "p", "--apply"]).unwrap();
+    if let Some(Commands::Plan { apply, .. }) = cli.command {
+        assert!(apply);
+    } else {
+        panic!("Expected Plan command via 'p' alias");
+    }
+}
+
+#[test]
+fn cli_parses_tell_alias_t() {
+    let cli = Cli::try_parse_from(["gitar", "t", "--commit"]).unwrap();
+    if let Some(Commands::Tell { commit, .. }) = cli.command {
+        assert!(commit);
+    } else {
+        panic!("Expected Tell command via 't' alias");
+    }
+}
+
+#[test]
+fn cli_parses_fix_alias_f() {
+    let cli = Cli::try_parse_from(["gitar", "f", "--apply"]).unwrap();
+    if let Some(Commands::Fix { apply, .. }) = cli.command {
+        assert!(apply);
+    } else {
+        panic!("Expected Fix command via 'f' alias");
+    }
+}
+
+#[test]
+fn cli_parses_release_alias_r() {
+    let cli = Cli::try_parse_from(["gitar", "r", "--apply"]).unwrap();
+    if let Some(Commands::Release { apply, .. }) = cli.command {
+        assert!(apply);
+    } else {
+        panic!("Expected Release command via 'r' alias");
+    }
 }

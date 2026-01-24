@@ -16,6 +16,16 @@ pub const PROVIDER_GEMINI: &str = "https://generativelanguage.googleapis.com";
 pub const PROVIDER_GROQ: &str = "https://api.groq.com/openai/v1";
 pub const PROVIDER_OLLAMA: &str = "http://localhost:11434/v1";
 
+// =============================================================================
+// DEFAULT MODELS - Edit these to change defaults for each provider
+// =============================================================================
+
+pub const DEFAULT_MODEL_OPENAI: &str = "gpt-4.1-2025-04-14";
+pub const DEFAULT_MODEL_CLAUDE: &str = "claude-sonnet-4-5-20250514";
+pub const DEFAULT_MODEL_GEMINI: &str = "gemini-2.5-flash";
+pub const DEFAULT_MODEL_GROQ: &str = "llama-3.3-70b-versatile";
+pub const DEFAULT_MODEL_OLLAMA: &str = "llama3.2:latest";
+
 pub fn provider_to_url(provider: &str) -> Option<&'static str> {
     match provider.to_lowercase().as_str() {
         "openai" => Some(PROVIDER_OPENAI),
@@ -43,11 +53,11 @@ pub fn normalize_provider(provider: &str) -> &'static str {
 
 fn default_model_for_provider(provider: &str) -> &'static str {
     match provider {
-        "openai" => "gpt-5-chat-latest",
-        "claude" => "claude-sonnet-4-5-20250929",
-        "gemini" => "gemini-2.5-flash",
-        "groq" => "llama-3.3-70b-versatile",
-        "ollama" => "llama3.2:latest",
+        "openai" => DEFAULT_MODEL_OPENAI,
+        "claude" => DEFAULT_MODEL_CLAUDE,
+        "gemini" => DEFAULT_MODEL_GEMINI,
+        "groq" => DEFAULT_MODEL_GROQ,
+        "ollama" => DEFAULT_MODEL_OLLAMA,
         _ => "",
     }
 }

@@ -19,6 +19,7 @@ pub fn execute_plan(
     mode: &AnalysisMode,
     dry_run: bool,
     interactive: bool,
+    model: &str,
 ) -> Result<()> {
     if groups.is_empty() {
         println!("No commits to execute.");
@@ -72,7 +73,8 @@ pub fn execute_plan(
                 0 => {
                     // Commit
                     if !dry_run {
-                        git::run_git(&["commit", "-m", &group.message])?;
+                        let msg = format!("{} [AI:{}]", group.message, model);
+                        git::run_git(&["commit", "-m", &msg])?;
                         success("Committed");
                     } else {
                         println!("(Dry run - would commit)");
@@ -83,7 +85,8 @@ pub fn execute_plan(
                     let new_message = prompt::input("Enter new message", Some(&group.message))?;
                     if !new_message.is_empty() {
                         if !dry_run {
-                            git::run_git(&["commit", "-m", &new_message])?;
+                            let msg = format!("{} [AI:{}]", new_message, model);
+                            git::run_git(&["commit", "-m", &msg])?;
                             success("Committed with edited message");
                         } else {
                             println!("(Dry run - would commit with edited message)");
@@ -120,7 +123,8 @@ pub fn execute_plan(
         } else {
             // Non-interactive: just commit
             if !dry_run {
-                git::run_git(&["commit", "-m", &group.message])?;
+                let msg = format!("{} [AI:{}]", group.message, model);
+                git::run_git(&["commit", "-m", &msg])?;
                 success("Committed");
             } else {
                 println!("(Dry run - would commit)");
@@ -294,7 +298,7 @@ mod tests {
     fn execute_plan_empty_groups() {
         let groups: Vec<CommitGroup> = vec![];
         let mode = AnalysisMode::WorkingTree;
-        let result = execute_plan(&groups, &mode, true, false);
+        let result = execute_plan(&groups, &mode, true, false, "test-model");
         assert!(result.is_ok());
     }
 
@@ -310,7 +314,7 @@ mod tests {
 
         let mode = AnalysisMode::WorkingTree;
         // Dry run should not fail even if files don't exist
-        let result = execute_plan(&groups, &mode, true, false);
+        let result = execute_plan(&groups, &mode, true, false, "gpt-4");
         assert!(result.is_ok());
     }
 

@@ -122,7 +122,13 @@ pub async fn cmd_plan(
 
     // Step 4: Execute strategy (if apply flag is set)
     if apply {
-        execute::execute_plan(&approved_groups, &analysis.mode, false, interactive)?;
+        execute::execute_plan(
+            &approved_groups,
+            &analysis.mode,
+            false,
+            interactive,
+            client.model(),
+        )?;
         success("Commits executed successfully");
     } else {
         println!("Dry run complete. Use --apply to execute commits.");

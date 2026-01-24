@@ -136,12 +136,12 @@ async fn main() -> Result<()> {
             .await?
         }
 
-        Commands::Explain {
+        Commands::Tell {
             commit,
             pr,
             changelog,
             history,
-            report: _,
+            explain: _,
             reference,
             to,
             staged,

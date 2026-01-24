@@ -49,12 +49,12 @@ pub fn styled_after_help() -> String {
     {cmd3}             {cmt3}
     {cmd4}    {cmt4}
 
-    {cmd5}                  {cmt5}
-    {cmd6}         {cmt6}
-    {cmd7}             {cmt7}
-    {cmd8}        {cmt8}
-    {cmd9} {cmt9}
-    {cmd10}   {cmt10}
+    {cmd5}                     {cmt5}
+    {cmd6}            {cmt6}
+    {cmd7}                {cmt7}
+    {cmd8}           {cmt8}
+    {cmd9}    {cmt9}
+    {cmd10}      {cmt10}
 
     {cmd11}                      {cmt11}
     {cmd12}              {cmt12}
@@ -90,17 +90,17 @@ pub fn styled_after_help() -> String {
         cmt3 = g("# Execute the plan"),
         cmd4 = c("gitar plan --history v1.0.0"),
         cmt4 = g("# Plan from history"),
-        cmd5 = c("gitar explain"),
-        cmt5 = g("# Plain English report (default)"),
-        cmd6 = c("gitar explain --commit"),
+        cmd5 = c("gitar tell"),
+        cmt5 = g("# Plain English business value explanation (default)"),
+        cmd6 = c("gitar tell --commit"),
         cmt6 = g("# Generate commit message"),
-        cmd7 = c("gitar explain --pr"),
+        cmd7 = c("gitar tell --pr"),
         cmt7 = g("# Generate PR description"),
-        cmd8 = c("gitar explain --pr main"),
+        cmd8 = c("gitar tell --pr main"),
         cmt8 = g("# PR description against main"),
-        cmd9 = c("gitar explain --changelog v1.0"),
+        cmd9 = c("gitar tell --changelog v1.0"),
         cmt9 = g("# Release notes since tag"),
-        cmd10 = c("gitar explain --history v1.0"),
+        cmd10 = c("gitar tell --history v1.0"),
         cmt10 = g("# Describe commits since tag"),
         cmd11 = c("gitar fix"),
         cmt11 = g("# Preview conflict resolution"),
@@ -197,6 +197,7 @@ pub enum Commands {
     /// The plan command analyzes your changes and proposes an optimal commit structure.
     /// You can review and refine the plan interactively before execution.
     /// This is the default command when running `gitar` without arguments.
+    #[command(visible_alias = "p")]
     Plan {
         /// Execute the plan after approval
         #[arg(long, default_value_t = false)]
@@ -239,15 +240,16 @@ pub enum Commands {
         algo: u8,
     },
 
-    /// Explain, describe, and communicate Git changes (read-only)
+    /// Tell, describe, and communicate Git changes (read-only)
     ///
     /// Use selector flags to choose output type:
     ///   --commit     Generate AI commit message
     ///   --pr         Generate PR description
     ///   --changelog  Generate release notes
     ///   --history    Describe commit range
-    ///   --report     Plain English explanation (default)
-    Explain {
+    ///   --explain    Plain English business value explanation  (default)
+    #[command(visible_alias = "t")]
+    Tell {
         /// Generate a commit message (and optionally commit)
         #[arg(long, group = "selector")]
         commit: bool,
@@ -264,9 +266,9 @@ pub enum Commands {
         #[arg(long, group = "selector")]
         history: bool,
 
-        /// Plain English explanation for stakeholders (default)
+        /// Plain English business value explanation (default)
         #[arg(long, group = "selector")]
-        report: bool,
+        explain: bool,
 
         /// Reference (tag, commit, branch) - meaning depends on selector
         #[arg(value_name = "REF")]
@@ -337,6 +339,7 @@ pub enum Commands {
     /// Fix merge/rebase/cherry-pick conflicts (semantic synthesis)
     ///
     /// Default: inspect and propose. Use --apply to write + stage.
+    #[command(visible_alias = "f")]
     Fix {
         /// Apply suggested resolutions (writes files + stages them)
         #[arg(long, default_value_t = false)]
@@ -355,6 +358,7 @@ pub enum Commands {
     ///
     /// Analyzes commits since the last tag, suggests a version bump,
     /// updates version files, generates a changelog, and creates a git tag.
+    #[command(visible_alias = "r")]
     Release {
         /// Execute the release (default: dry-run)
         #[arg(long, default_value_t = false)]
@@ -507,7 +511,7 @@ pub enum Commands {
         stream: bool,
     },
 
-    /// [Alias] Same as `gitar explain --commit`
+    /// [Alias] Same as `gitar tell --commit`
     #[command(hide = true)]
     Commit {
         #[arg(short = 'p', long)]
@@ -530,7 +534,7 @@ pub enum Commands {
         algo: u8,
     },
 
-    /// [Alias] Same as `gitar explain --pr`
+    /// [Alias] Same as `gitar tell --pr`
     #[command(hide = true)]
     Pr {
         #[arg(value_name = "REF")]
@@ -543,7 +547,7 @@ pub enum Commands {
         algo: u8,
     },
 
-    /// [Alias] Same as `gitar explain --changelog`
+    /// [Alias] Same as `gitar tell --changelog`
     #[command(hide = true)]
     Changelog {
         #[arg(value_name = "REF")]
@@ -560,7 +564,7 @@ pub enum Commands {
         algo: u8,
     },
 
-    /// [Alias] Same as `gitar explain --history`
+    /// [Alias] Same as `gitar tell --history`
     #[command(hide = true)]
     History {
         #[arg(value_name = "REF")]
@@ -598,5 +602,5 @@ if [ -n "$COMMIT_SOURCE" ]; then
 fi
 
 # Run gitar to generate the message into the git commit file
-gitar explain --commit --write-to "$COMMIT_MSG_FILE" --silent
+gitar tell --commit --write-to "$COMMIT_MSG_FILE" --silent
 "#;

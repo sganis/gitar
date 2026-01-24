@@ -47,11 +47,11 @@ fn commit_file(repo: &Path, rel: &str, content: &str, msg: &str) {
 }
 
 // =============================================================================
-// EXPLAIN STAGED/REPORT TESTS (require git repo, no LLM)
+// TELL STAGED/REPORT TESTS (require git repo, no LLM)
 // =============================================================================
 
 #[test]
-fn explain_staged_requires_git_repo() {
+fn tell_staged_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -59,7 +59,7 @@ fn explain_staged_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.args(["explain", "--staged"])
+    cmd.args(["tell", "--staged"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
@@ -291,11 +291,11 @@ fn models_requires_git_repo() {
 }
 
 // =============================================================================
-// EXPLAIN FLAG TESTS
+// TELL FLAG TESTS
 // =============================================================================
 
 #[test]
-fn explain_report_requires_git_repo() {
+fn tell_explain_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -303,14 +303,14 @@ fn explain_report_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.args(["explain", "--report"])
+    cmd.args(["tell", "--explain"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
 #[test]
-fn explain_commit_requires_git_repo() {
+fn tell_commit_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -318,14 +318,14 @@ fn explain_commit_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.args(["explain", "--commit"])
+    cmd.args(["tell", "--commit"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
 #[test]
-fn explain_pr_requires_git_repo() {
+fn tell_pr_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -333,14 +333,14 @@ fn explain_pr_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.args(["explain", "--pr"])
+    cmd.args(["tell", "--pr"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
 #[test]
-fn explain_changelog_requires_git_repo() {
+fn tell_changelog_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -348,14 +348,14 @@ fn explain_changelog_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.args(["explain", "--changelog"])
+    cmd.args(["tell", "--changelog"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
 #[test]
-fn explain_history_requires_git_repo() {
+fn tell_history_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -363,14 +363,14 @@ fn explain_history_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    cmd.args(["explain", "--history"])
+    cmd.args(["tell", "--history"])
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
 #[test]
-fn explain_default_requires_git_repo() {
+fn tell_default_requires_git_repo() {
     let home = tempfile::tempdir().unwrap();
     let tmp = tempfile::tempdir().unwrap();
 
@@ -378,8 +378,8 @@ fn explain_default_requires_git_repo() {
     with_isolated_home(&mut cmd, home.path());
     cmd.current_dir(tmp.path());
 
-    // Just "explain" should also require git repo
-    cmd.arg("explain")
+    // Just "tell" should also require git repo
+    cmd.arg("tell")
         .assert()
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));

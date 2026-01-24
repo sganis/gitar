@@ -12,10 +12,12 @@ Gitar is an **AI-native interface to Git history** with a small, stable command 
 
 ```
 gitar plan      # Create/reshape history (default command)
-gitar explain   # Understand/communicate history (read-only)
+gitar tell      # Understand/communicate history (read-only)
 gitar fix       # Repair conflicts
 gitar release   # Ship releases
 ```
+
+**Single-letter shortcuts:** `p`, `t`, `f`, `r` (e.g., `gitar t --commit`)
 
 **Core Principles:**
 - Dry-run by default — nothing mutates without `--apply`
@@ -87,11 +89,11 @@ src/
 │   │   ├── group.rs     # LLM-based commit grouping
 │   │   ├── editor.rs    # Interactive strategy editing
 │   │   └── execute.rs   # Strategy execution (git operations)
-│   ├── explain/      # Read-only narration (dispatches to subcommands)
-│   ├── commit/       # explain commit: AI commit message generation
-│   ├── pr/           # explain pr: PR description generation
-│   ├── changelog/    # explain changelog: Release notes generation
-│   ├── history/      # explain history: Commit range description
+│   ├── explain/      # Read-only narration (dispatches to subcommands) - CLI: "tell"
+│   ├── commit/       # tell --commit: AI commit message generation
+│   ├── pr/           # tell --pr: PR description generation
+│   ├── changelog/    # tell --changelog: Release notes generation
+│   ├── history/      # tell --history: Commit range description
 │   ├── fix/          # Merge conflict resolution
 │   │   ├── mod.rs       # Main fix logic
 │   │   ├── parser.rs    # Parse conflict markers
@@ -228,24 +230,24 @@ fn test_command_name() {
 
 **Primary Commands (Product Layer)**
 
-| Command | Purpose | Mutates? |
-|---------|---------|----------|
-| `gitar plan` | Multi-commit planning from changes or history | Only with `--apply` |
-| `gitar explain <sub>` | Read-only narration (commit, pr, changelog, history, report) | No |
-| `gitar fix` | Merge conflict resolution | Only with `--apply` |
-| `gitar release` | Version bump, changelog, tag creation | Only with `--apply` |
+| Command | Alias | Purpose | Mutates? |
+|---------|-------|---------|----------|
+| `gitar plan` | `p` | Multi-commit planning from changes or history | Only with `--apply` |
+| `gitar tell` | `t` | Read-only narration (commit, pr, changelog, history, explain) | No |
+| `gitar fix` | `f` | Merge conflict resolution | Only with `--apply` |
+| `gitar release` | `r` | Version bump, changelog, tag creation | Only with `--apply` |
 
 **Plan Command** (command/plan/) — Default when running `gitar` with no args
 - Scope flags: `--working`, `--staged`, `--history <REF>`
 - `--apply` to execute, `-i` for interactive editing
 - Architecture: analyze.rs → group.rs → editor.rs → execute.rs
 
-**Explain Subcommands** (gitar explain <subcommand>)
-- `commit` — Generate AI commit message and commit
-- `pr [BASE]` — Generate PR description
-- `changelog [REF]` — Generate release notes
-- `history [REF]` — Describe commit range
-- `report` — Plain English explanation for stakeholders
+**Tell Subcommands** (gitar tell --<selector>)
+- `--commit` — Generate AI commit message and commit
+- `--pr [BASE]` — Generate PR description
+- `--changelog [REF]` — Generate release notes
+- `--history [REF]` — Describe commit range
+- `--explain` — Plain English explanation for stakeholders (default)
 
 **Fix Command** (command/fix/)
 - Three-tier resolution: heuristics → per-region LLM → full-file LLM
