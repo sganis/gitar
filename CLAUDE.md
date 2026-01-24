@@ -60,9 +60,9 @@ cargo run -- <command>
 ## Development Build Targets
 
 The project supports cross-compilation for multiple platforms (see .github/workflows/ci.yml):
-- Linux: x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl, aarch64-unknown-linux-gnu
+- Linux: x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl
 - macOS: aarch64-apple-darwin
-- Windows: x86_64-pc-windows-msvc, aarch64-pc-windows-msvc
+- Windows: x86_64-pc-windows-msvc
 
 ## Architecture
 
@@ -138,6 +138,10 @@ src/
 
 ### Key Design Patterns
 
+**Skill-First Architecture**
+- Most operations are implemented as deterministic, reusable **skills** — structured pipelines that take diffs, files, or commit ranges, call the LLM only when needed, and validate results
+- For higher-level tasks requiring planning and multi-step reasoning, lightweight **agents** orchestrate multiple skills in a controlled, auditable way
+
 **1. Command Flow**
 - CLI parsing (clap) → Config resolution → Git operations → Diff shaping → Secret scanning → LLM call → Output
 - Most commands follow this pipeline: `cmd_<name>` in `command/` module
@@ -210,8 +214,8 @@ src/
 
 Tests are in `tests/` directory:
 - `cli.rs`: Core integration tests using assert_cmd
-- `commands.rs`: Command-specific integration tests
 - `cli_parse.rs`: CLI argument parsing tests
+- `commands.rs`: Command-specific integration tests
 - `diff.rs`: Unit tests for diff shaping algorithms
 - `resolve.rs`: Integration tests for conflict resolution
 

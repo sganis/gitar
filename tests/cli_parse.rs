@@ -27,7 +27,7 @@ fn cli_parses_all_commands() {
         vec!["gitar", "tell"], // defaults to explain
         // Utilities
         vec!["gitar", "init"],
-        vec!["gitar", "config"],
+        vec!["gitar", "init", "--show"],
         vec!["gitar", "models"],
         vec!["gitar", "diff"],
         vec!["gitar", "squash", "3"],
