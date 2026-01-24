@@ -9,9 +9,9 @@ set -euo pipefail
 #   curl -fsSL https://raw.githubusercontent.com/sganis/gitar/main/install.sh | bash -s -- v1.2.3
 # -----------------------------------------------------------------------------
 
-TARGET="${1:-}" # optional: latest|stable|vX.Y.Z
-if [[ -n "$TARGET" ]] && [[ ! "$TARGET" =~ ^(stable|latest|v[0-9]+\.[0-9]+\.[0-9]+(-[^[:space:]]+)?)$ ]]; then
-  echo "Usage: $0 [stable|latest|vX.Y.Z]" >&2
+TARGET="${1:-}" # optional: latest|stable|X.Y.Z
+if [[ -n "$TARGET" ]] && [[ ! "$TARGET" =~ ^(stable|latest|[0-9]+\.[0-9]+\.[0-9]+(-[^[:space:]]+)?)$ ]]; then
+  echo "Usage: $0 [stable|latest|X.Y.Z]" >&2
   exit 1
 fi
 
@@ -71,7 +71,7 @@ detect_arch() {
   esac
 }
 
-# Extract first "tag_name":"vX.Y.Z" from GitHub API JSON without jq
+# Extract first "tag_name":"X.Y.Z" from GitHub API JSON without jq
 extract_tag_name() {
   local json="$1"
   json="$(echo "$json" | tr -d '\n\r\t')"
@@ -96,14 +96,24 @@ resolve_version() {
   fi
 }
 
+# Strip 'v' prefix from version for artifact name (tags are v1.2.3, artifacts are gitar-1.2.3-...)
+strip_v_prefix() {
+  local ver="$1"
+  echo "${ver#v}"
+}
+
 artifact_url() {
-  local version="$1" os="$2" arch="$3"
-  echo "https://github.com/$GITAR_REPO/releases/download/$version/gitar-${version}-${os}-${arch}.tar.gz"
+  local tag="$1" os="$2" arch="$3"
+  local ver
+  ver="$(strip_v_prefix "$tag")"
+  echo "https://github.com/$GITAR_REPO/releases/download/$tag/gitar-${ver}-${os}-${arch}.tar.gz"
 }
 
 artifact_sha_url() {
-  local version="$1" os="$2" arch="$3"
-  echo "https://github.com/$GITAR_REPO/releases/download/$version/gitar-${version}-${os}-${arch}.tar.gz.sha256"
+  local tag="$1" os="$2" arch="$3"
+  local ver
+  ver="$(strip_v_prefix "$tag")"
+  echo "https://github.com/$GITAR_REPO/releases/download/$tag/gitar-${ver}-${os}-${arch}.tar.gz.sha256"
 }
 
 sha256_file_hash() {

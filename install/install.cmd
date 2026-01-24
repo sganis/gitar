@@ -59,8 +59,13 @@ if errorlevel 1 exit /b 1
 REM -------------------------
 REM Build URLs
 REM -------------------------
+REM Strip 'v' prefix from VERSION for artifact name (tags are v1.2.3, artifacts are gitar-1.2.3-...)
+set "VER=%VERSION%"
+if "%VER:~0,1%"=="v" set "VER=%VER:~1%"
+if "%VER:~0,1%"=="V" set "VER=%VER:~1%"
+
 set "OS=windows"
-set "ASSET=gitar-%VERSION%-%OS%-%ARCH%.zip"
+set "ASSET=gitar-%VER%-%OS%-%ARCH%.zip"
 set "URL=https://github.com/%GITAR_REPO%/releases/download/%VERSION%/%ASSET%"
 set "SHA_URL=%URL%.sha256"
 

@@ -65,13 +65,23 @@ function Resolve-Version([string]$t) {
   return $t
 }
 
-function Artifact-Url([string]$version, [string]$arch) {
-  # Windows uses zip for easy extraction
-  return "https://github.com/$GITAR_REPO/releases/download/$version/gitar-$version-windows-$arch.zip"
+# Strip 'v' prefix from version for artifact name (tags are v1.2.3, artifacts are gitar-1.2.3-...)
+function Strip-VPrefix([string]$ver) {
+  if ($ver.StartsWith("v") -or $ver.StartsWith("V")) {
+    return $ver.Substring(1)
+  }
+  return $ver
 }
 
-function Artifact-ShaUrl([string]$version, [string]$arch) {
-  return "https://github.com/$GITAR_REPO/releases/download/$version/gitar-$version-windows-$arch.zip.sha256"
+function Artifact-Url([string]$tag, [string]$arch) {
+  # Windows uses zip for easy extraction
+  $ver = Strip-VPrefix $tag
+  return "https://github.com/$GITAR_REPO/releases/download/$tag/gitar-$ver-windows-$arch.zip"
+}
+
+function Artifact-ShaUrl([string]$tag, [string]$arch) {
+  $ver = Strip-VPrefix $tag
+  return "https://github.com/$GITAR_REPO/releases/download/$tag/gitar-$ver-windows-$arch.zip.sha256"
 }
 
 function Try-Download([string]$url, [string]$outFile) {
