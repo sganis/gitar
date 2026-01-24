@@ -1,3 +1,22 @@
+## [1.1.3] - 2026-01-24
+
+# Release Notes
+## Features
+- Integrated AnalysisContext into command modules and replaced apply_smart_diff with a context-aware variant.
+- Added logging and auto-staging to the release command.
+
+## Fixes
+- Added integration and CLI parsing tests for commands and resolve module, improving reliability.
+
+## Improvements
+- Reformatted command modules and cleaned up CLI tests for consistent module organization.
+- Updated dependencies.
+- Expanded CLAUDE.md with new release, squash, and rewrite command specifications.
+
+## Infrastructure
+- Removed outdated PLAN.md file.
+- Bumped version to 1.1.2.
+
 ## [1.1.2] - 2026-01-23
 
 # Release Notes
