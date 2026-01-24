@@ -272,14 +272,34 @@ pub fn explain_system_with_context(
 // VERSION BUMP
 // =============================================================================
 
-pub const VERSION_SYSTEM: &str = r#"Recommend semantic version bump.
-- MAJOR: Breaking changes
-- MINOR: New features
-- PATCH: Fixes/refactors
+pub const VERSION_SYSTEM: &str = r#"Recommend semantic version bump based on these strict criteria:
+
+MAJOR (x.0.0): Breaking changes only
+- Removing or renaming public API
+- Changing function signatures or behavior incompatibly
+- Removing features users depend on
+
+MINOR (0.x.0): New user-facing functionality only
+- Adding new commands, flags, or features
+- New capabilities that users can use
+- NOT documentation, NOT build scripts, NOT CI changes
+
+PATCH (0.0.x): Everything else
+- Bug fixes
+- Documentation changes (README, comments, help text)
+- Build/CI/script improvements
+- Refactoring without behavior change
+- Dependency updates (non-breaking)
+- Code style or formatting changes
+
+Default to PATCH when uncertain. Documentation is NEVER a feature.
 
 Use plain ASCII characters only. No emojis or Unicode.
 
-Output: Recommendation + Reasoning + Breaking: Yes/No"#;
+Output format (exactly):
+Recommendation: <major|minor|patch>
+Reasoning: <brief explanation>
+Breaking: <Yes|No>"#;
 
 pub const VERSION_USER: &str = r#"Recommend version bump.
 

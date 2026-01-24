@@ -318,24 +318,49 @@ async fn suggest_version_bump_llm(
 fn parse_version_bump_from_response(response: &str) -> Result<String> {
     let lower = response.to_lowercase();
 
-    // Look for explicit mentions of version bump types
-    if lower.contains("major") && (lower.contains("breaking") || lower.contains("recommend major"))
-    {
-        Ok("major".to_string())
-    } else if lower.contains("minor")
-        && (lower.contains("feature") || lower.contains("recommend minor"))
-    {
-        Ok("minor".to_string())
-    } else if lower.contains("patch") {
-        Ok("patch".to_string())
-    } else {
-        // Default to patch if unclear
-        eprintln!(
-            "Warning: Could not parse version bump from LLM response. Defaulting to 'patch'."
-        );
-        eprintln!("LLM response: {}", response);
-        Ok("patch".to_string())
+    // First, look for structured "Recommendation: <type>" format
+    for line in lower.lines() {
+        let line = line.trim();
+        if line.starts_with("recommendation:") {
+            let value = line.trim_start_matches("recommendation:").trim();
+            if value.starts_with("major") {
+                return Ok("major".to_string());
+            } else if value.starts_with("minor") {
+                return Ok("minor".to_string());
+            } else if value.starts_with("patch") {
+                return Ok("patch".to_string());
+            }
+        }
     }
+
+    // Fallback: look for "recommend <type>" pattern
+    if lower.contains("recommend major") || lower.contains("recommending major") {
+        return Ok("major".to_string());
+    }
+    if lower.contains("recommend minor") || lower.contains("recommending minor") {
+        return Ok("minor".to_string());
+    }
+    if lower.contains("recommend patch") || lower.contains("recommending patch") {
+        return Ok("patch".to_string());
+    }
+
+    // Last resort: check for breaking changes indicator
+    for line in lower.lines() {
+        let line = line.trim();
+        if line.starts_with("breaking:") {
+            let value = line.trim_start_matches("breaking:").trim();
+            if value.starts_with("yes") {
+                return Ok("major".to_string());
+            }
+        }
+    }
+
+    // Default to patch (safest choice)
+    eprintln!(
+        "Warning: Could not parse version bump from LLM response. Defaulting to 'patch'."
+    );
+    eprintln!("LLM response: {}", response);
+    Ok("patch".to_string())
 }
 
 #[allow(dead_code)]
