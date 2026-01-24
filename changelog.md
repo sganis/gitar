@@ -1,3 +1,12 @@
+## [1.3.3] - 2026-01-24
+
+# Release Notes
+## Features
+- Use repository root for absolute path handling across fix, plan, and release commands ([fc109d9])
+
+## Improvements
+- Update Cargo manifest with revised description, keywords, and reordered dependencies ([e2aa0fd])
+
 ## [1.3.2] - 2026-01-24
 
 # Release Notes
