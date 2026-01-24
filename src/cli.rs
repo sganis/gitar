@@ -408,10 +408,11 @@ pub enum Commands {
     },
 
     /// Create or update `~/.gitar.toml` with provider/model defaults
-    Init,
-
-    /// Show the resolved configuration and where each value comes from
-    Config,
+    Init {
+        /// Show the resolved configuration instead of running setup
+        #[arg(long)]
+        show: bool,
+    },
 
     /// List available models (when the provider exposes a models endpoint)
     Models,

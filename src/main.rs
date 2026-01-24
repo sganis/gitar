@@ -18,8 +18,7 @@ async fn main() -> Result<()> {
     // Handle commands that don't need git or LLM client
     if let Some(ref cmd) = cli.command {
         match cmd {
-            Commands::Init => return cmd_init(&cli, &file_config).await,
-            Commands::Config => return cmd_config(),
+            Commands::Init { show } => return cmd_init(&cli, &file_config, *show).await,
             Commands::Hook { install, uninstall } => {
                 let action = if *install {
                     HookAction::Install
@@ -425,8 +424,7 @@ async fn main() -> Result<()> {
         Commands::Models => cmd_models(&client).await?,
 
         // Already handled above
-        Commands::Init
-        | Commands::Config
+        Commands::Init { .. }
         | Commands::Hook { .. }
         | Commands::Diff { .. } => unreachable!()
     }

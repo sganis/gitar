@@ -141,46 +141,61 @@ What it does:
 
 Everything that **describes, summarizes, or explains** goes here.
 
-Instead of subcommands, `tell` uses **selector flags**.
+Instead of subcommands, `tell` uses **selector flags** (exactly one):
 
-Exactly one of:
+| Flag | Description |
+|------|-------------|
+| `--explain` | Plain English explanation for stakeholders (default) |
+| `--commit` | Generate AI commit message |
+| `--pr` | Generate PR description |
+| `--changelog` | Generate release notes |
+| `--history` | Describe a range of commits |
 
-```bash
---commit
---pr
---changelog
---history
---version
---explain
-```
+### Default Scope
 
-Default is:
-
-```bash
---explain
-```
+When no reference is provided, commands default to:
+1. **Latest tag to HEAD** (if a tag exists)
+2. **Last 50 commits** (if no tags)
+3. **Working tree** (for `--explain` without tags)
 
 ### Examples
 
 ```bash
+# Explain changes (defaults to latest tag..HEAD or working tree)
 gitar tell
 gitar tell --explain
 gitar tell --explain --staged
+gitar tell --explain v1.0.0        # From specific ref
 
+# Generate commit message
 gitar tell --commit
-gitar tell --commit --staged
-gitar tell --commit --preset rust
+gitar tell --commit -a             # Stage all first
+gitar tell --commit --no-ai-author # Without [AI:model] tag
 
+# PR description
 gitar tell --pr
-gitar tell --pr main
+gitar tell --pr main               # Against specific base
 
-gitar tell --changelog v1.0.0
-gitar tell --history v1.0.0
+# Changelog / release notes
+gitar tell --changelog             # From latest tag
+gitar tell --changelog v1.0.0      # From specific ref
+gitar tell --changelog -n 20       # Last 20 commits
 
-gitar tell --version
-gitar tell --version v1.0.0
+# History (rewrite commit messages)
+gitar tell --history               # From latest tag
+gitar tell --history v1.0.0        # From specific ref
+gitar tell --history -n 10         # Last 10 commits
 ```
 
+### Commit-specific Flags
+
+| Flag | Description |
+|------|-------------|
+| `-a, --all` | Stage all changes before committing |
+| `-p, --push` | Push after committing |
+| `--amend` | Amend the last commit |
+| `--ai-author` | Add `[AI:model]` tag to message (default: true) |
+| `--no-ai-author` | Omit the AI tag |
 
 ---
 
@@ -354,5 +369,3 @@ export ALL_PROXY="socks5h://localhost:8000"
 ## License
 
 MIT
-
-```
