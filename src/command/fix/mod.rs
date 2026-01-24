@@ -1,6 +1,7 @@
 // src/command/fix/mod.rs
 use anyhow::{bail, Context, Result};
 use std::fs;
+use std::path::PathBuf;
 
 use crate::client::LlmClient;
 use crate::context::secret::SecretAction;
@@ -53,14 +54,18 @@ pub async fn cmd_fix_with_resolver<R: ConflictResolver>(
         bail!("No conflicted files detected");
     }
 
+    // Get repo root for resolving file paths (works from any subdirectory)
+    let repo_root = PathBuf::from(git::get_repo_root()?);
+
     eprintln!("Conflicts detected: {}", files.len());
 
     for path in files {
+        let abs_path = repo_root.join(&path);
         let base = git::read_index_stage(1, &path)?;
         let ours = git::read_index_stage(2, &path)?;
         let theirs = git::read_index_stage(3, &path)?;
 
-        let working = fs::read_to_string(&path)
+        let working = fs::read_to_string(&abs_path)
             .with_context(|| format!("Failed reading working file: {}", path))?;
 
         if !has_conflict_markers(&working) {
@@ -115,10 +120,10 @@ pub async fn cmd_fix_with_resolver<R: ConflictResolver>(
             continue;
         }
 
-        fs::write(&path, proposed.as_bytes())
+        fs::write(&abs_path, proposed.as_bytes())
             .with_context(|| format!("Failed writing resolved file: {}", path))?;
 
-        let after = fs::read_to_string(&path).unwrap_or_default();
+        let after = fs::read_to_string(&abs_path).unwrap_or_default();
         if has_conflict_markers(&after) {
             bail!(
                 "Resolved file still contains conflict markers after write: {}",
@@ -170,14 +175,18 @@ pub async fn cmd_fix(
         bail!("No conflicted files detected");
     }
 
+    // Get repo root for resolving file paths (works from any subdirectory)
+    let repo_root = PathBuf::from(git::get_repo_root()?);
+
     eprintln!("Conflicts detected: {}", files.len());
 
     for path in files {
+        let abs_path = repo_root.join(&path);
         let base = git::read_index_stage(1, &path)?;
         let ours = git::read_index_stage(2, &path)?;
         let theirs = git::read_index_stage(3, &path)?;
 
-        let working = fs::read_to_string(&path)
+        let working = fs::read_to_string(&abs_path)
             .with_context(|| format!("Failed reading working file: {}", path))?;
 
         let marker_count = working.matches("<<<<<<<").count();
@@ -275,10 +284,10 @@ pub async fn cmd_fix(
             continue;
         }
 
-        fs::write(&path, proposed.as_bytes())
+        fs::write(&abs_path, proposed.as_bytes())
             .with_context(|| format!("Failed writing resolved file: {}", path))?;
 
-        let after = fs::read_to_string(&path).unwrap_or_default();
+        let after = fs::read_to_string(&abs_path).unwrap_or_default();
         if has_conflict_markers(&after) {
             bail!(
                 "Resolved file still contains conflict markers after write: {}",

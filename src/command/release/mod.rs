@@ -6,7 +6,7 @@ mod version;
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::io::{self, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::client::LlmClient;
 use crate::color::{arrow, success, warning};
@@ -101,8 +101,11 @@ pub async fn cmd_release(
     };
     println!("Suggested version bump: {}", version_bump);
 
+    // Get repo root for all path operations (works from any subdirectory)
+    let repo_root = PathBuf::from(git::get_repo_root()?);
+
     // Step 4: Detect version files
-    let version_files = detect_version_files()?;
+    let version_files = detect_version_files(&repo_root)?;
 
     if version_files.is_empty() {
         println!();
@@ -123,9 +126,7 @@ pub async fn cmd_release(
     let changelog_path = if skip_changelog_file || skip_changelog {
         None
     } else {
-        let repo_root = git::get_repo_root()?;
-        let path = std::path::PathBuf::from(&repo_root).join(&changelog_file);
-        Some(path)
+        Some(repo_root.join(&changelog_file))
     };
 
     // Step 5: Determine new version

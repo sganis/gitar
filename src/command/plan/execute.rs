@@ -1,6 +1,7 @@
 // src/command/plan/execute.rs
 use anyhow::{bail, Context, Result};
 use std::fs;
+use std::path::PathBuf;
 
 use crate::color::{success, warning};
 use crate::git;
@@ -202,25 +203,27 @@ fn execute_history_mode(
         bail!("Working directory must be clean before rebase. Commit or stash changes first.");
     }
 
-    // Create temporary rebase todo file
-    let todo_path = ".git/gitar-rebase-todo";
-    fs::write(todo_path, &todo_script).context("Failed to write rebase todo script")?;
+    // Create temporary rebase todo file (use repo root for path)
+    let repo_root = PathBuf::from(git::get_repo_root()?);
+    let todo_path = repo_root.join(".git/gitar-rebase-todo");
+    fs::write(&todo_path, &todo_script).context("Failed to write rebase todo script")?;
 
     println!("\nStarting interactive rebase...");
     println!("Generated rebase script:\n{}\n", todo_script);
 
     // Execute rebase using GIT_SEQUENCE_EDITOR to inject our script
     let rebase_target = format!("{}^", from);
+    let todo_path_str = todo_path.to_string_lossy();
     let result = git::run_git_status(&[
         "-c",
-        &format!("sequence.editor=cp {} ", todo_path),
+        &format!("sequence.editor=cp {} ", todo_path_str),
         "rebase",
         "-i",
         &rebase_target,
     ]);
 
     // Clean up todo file
-    let _ = fs::remove_file(todo_path);
+    let _ = fs::remove_file(&todo_path);
 
     match result {
         (_, _, true) => {
