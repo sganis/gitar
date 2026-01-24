@@ -35,32 +35,32 @@ impl VersionFileType {
     }
 }
 
-/// Detect version files in the current directory
-pub fn detect_version_files() -> Result<Vec<VersionFile>> {
+/// Detect version files in the repository root
+pub fn detect_version_files(root: &Path) -> Result<Vec<VersionFile>> {
     let mut files = Vec::new();
 
     // Check for Cargo.toml
-    if let Some(cargo_version) = detect_cargo_version()? {
+    if let Some(cargo_version) = detect_cargo_version(root)? {
         files.push(VersionFile {
-            path: PathBuf::from("Cargo.toml"),
+            path: root.join("Cargo.toml"),
             file_type: VersionFileType::Cargo,
             current_version: cargo_version,
         });
     }
 
     // Check for package.json
-    if let Some(pkg_version) = detect_package_json_version()? {
+    if let Some(pkg_version) = detect_package_json_version(root)? {
         files.push(VersionFile {
-            path: PathBuf::from("package.json"),
+            path: root.join("package.json"),
             file_type: VersionFileType::PackageJson,
             current_version: pkg_version,
         });
     }
 
     // Check for pyproject.toml
-    if let Some(py_version) = detect_pyproject_version()? {
+    if let Some(py_version) = detect_pyproject_version(root)? {
         files.push(VersionFile {
-            path: PathBuf::from("pyproject.toml"),
+            path: root.join("pyproject.toml"),
             file_type: VersionFileType::PyProject,
             current_version: py_version,
         });
@@ -73,13 +73,13 @@ pub fn detect_version_files() -> Result<Vec<VersionFile>> {
 // VERSION EXTRACTION
 // =============================================================================
 
-fn detect_cargo_version() -> Result<Option<String>> {
-    let path = Path::new("Cargo.toml");
+fn detect_cargo_version(root: &Path) -> Result<Option<String>> {
+    let path = root.join("Cargo.toml");
     if !path.exists() {
         return Ok(None);
     }
 
-    let content = fs::read_to_string(path)?;
+    let content = fs::read_to_string(&path)?;
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("version") && trimmed.contains('=') {
@@ -92,13 +92,13 @@ fn detect_cargo_version() -> Result<Option<String>> {
     Ok(None)
 }
 
-fn detect_package_json_version() -> Result<Option<String>> {
-    let path = Path::new("package.json");
+fn detect_package_json_version(root: &Path) -> Result<Option<String>> {
+    let path = root.join("package.json");
     if !path.exists() {
         return Ok(None);
     }
 
-    let content = fs::read_to_string(path)?;
+    let content = fs::read_to_string(&path)?;
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with("\"version\"") {
@@ -111,13 +111,13 @@ fn detect_package_json_version() -> Result<Option<String>> {
     Ok(None)
 }
 
-fn detect_pyproject_version() -> Result<Option<String>> {
-    let path = Path::new("pyproject.toml");
+fn detect_pyproject_version(root: &Path) -> Result<Option<String>> {
+    let path = root.join("pyproject.toml");
     if !path.exists() {
         return Ok(None);
     }
 
-    let content = fs::read_to_string(path)?;
+    let content = fs::read_to_string(&path)?;
     let mut in_project_section = false;
 
     for line in content.lines() {

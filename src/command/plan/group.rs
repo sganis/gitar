@@ -1,5 +1,6 @@
 // src/command/plan/group.rs
 use anyhow::Result;
+use std::path::PathBuf;
 
 use crate::client::LlmClient;
 use crate::command::{apply_smart_diff_with_context, AnalysisContext};
@@ -172,13 +173,16 @@ use std::fs;
 
 /// Get comprehensive diff for a group of files, handling all file states
 fn get_diff_for_group(group: &[FileChange], mode: &AnalysisMode) -> Result<String> {
+    // Get repo root for resolving file paths (works from any subdirectory)
+    let repo_root = PathBuf::from(git::get_repo_root()?);
+
     let mut full_diff = String::new();
 
     for file_change in group {
         let file_diff = match &file_change.status {
             ChangeStatus::Added => {
                 // Untracked file - show full content as addition
-                get_added_file_diff(&file_change.path)?
+                get_added_file_diff(&file_change.path, &repo_root)?
             }
             ChangeStatus::Deleted => {
                 // Deleted file - show as deletion
@@ -204,9 +208,10 @@ fn get_diff_for_group(group: &[FileChange], mode: &AnalysisMode) -> Result<Strin
 }
 
 /// Get diff for an added/untracked file
-fn get_added_file_diff(path: &str) -> Result<String> {
-    // Read file contents
-    let content = fs::read_to_string(path).unwrap_or_else(|_| String::from("(binary file)"));
+fn get_added_file_diff(path: &str, repo_root: &PathBuf) -> Result<String> {
+    // Read file contents using absolute path from repo root
+    let abs_path = repo_root.join(path);
+    let content = fs::read_to_string(&abs_path).unwrap_or_else(|_| String::from("(binary file)"));
 
     // Format as git diff (all additions)
     let mut diff = String::new();
