@@ -51,6 +51,12 @@ if errorlevel 1 (
 )
 
 REM -------------------------
+REM Temp dir (needed by resolve_version for API calls)
+REM -------------------------
+set "TMPROOT=%TEMP%\gitar-install-%RANDOM%%RANDOM%%RANDOM%"
+mkdir "%TMPROOT%" >nul 2>&1 || (call :err "failed to create temp dir: %TMPROOT%" & exit /b 1)
+
+REM -------------------------
 REM Resolve version
 REM -------------------------
 call :resolve_version "%TARGET%"
@@ -70,14 +76,12 @@ set "URL=https://github.com/%GITAR_REPO%/releases/download/%VERSION%/%ASSET%"
 set "SHA_URL=%URL%.sha256"
 
 REM -------------------------
-REM Temp dir
+REM Temp paths
 REM -------------------------
-set "TMPROOT=%TEMP%\gitar-install-%RANDOM%%RANDOM%%RANDOM%"
 set "ZIP=%TMPROOT%\gitar.zip"
 set "SHAFILE=%TMPROOT%\gitar.zip.sha256"
 set "EXTRACT=%TMPROOT%\extract"
 
-mkdir "%TMPROOT%" >nul 2>&1 || (call :err "failed to create temp dir: %TMPROOT%" & exit /b 1)
 mkdir "%EXTRACT%" >nul 2>&1 || (call :err "failed to create temp dir: %EXTRACT%" & exit /b 1)
 
 call :say "Installing gitar (%VERSION%) for %OS%/%ARCH%"
@@ -101,10 +105,10 @@ REM Optional checksum verify
 REM -------------------------
 set "EXPECTED="
 call :download_file_quiet "%SHA_URL%" "%SHAFILE%"
-if errorlevel 0 (
+if not errorlevel 1 (
   for /f "usebackq tokens=1" %%a in ("%SHAFILE%") do set "EXPECTED=%%a"
   call :is_sha256 "%EXPECTED%"
-  if errorlevel 0 (
+  if not errorlevel 1 (
     call :sha256_file "%ZIP%" ACTUAL
     if errorlevel 1 (
       call :cleanup
@@ -190,7 +194,7 @@ if errorlevel 1 (
 )
 
 where gitar >nul 2>&1
-if errorlevel 0 (
+if not errorlevel 1 (
   for /f "delims=" %%w in ('where gitar') do (
     call :say "✅ gitar is on PATH: %%w"
     goto :path_done
