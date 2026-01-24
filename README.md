@@ -1,10 +1,12 @@
 [![Build status](https://github.com/sganis/gitar/actions/workflows/ci.yml/badge.svg)](https://github.com/sganis/gitar/actions)
 
-# 🎸 Gitar
+# 🎸 Gitar — The Git AI Agent
 
-**Gitar** is an AI-native Git interface to **plan, tell, fix, and release** your history.
+Plan, understand, fix, and release your Git history — safely.
 
-Instead of memorizing Git commands and manually staging, splitting, and rewriting commits, you ask Gitar to **analyze, propose a plan, and safely execute it**.
+Gitar is an AI-native Git interface that turns high-level intent into planned, auditable Git operations.
+
+Instead of memorizing Git commands and manually staging, splitting, and rewriting commits, you ask Gitar to analyze your changes, propose a plan, and execute it safely — with previews and dry-runs by default.
 
 Under the hood, Gitar is built around a **skill-first architecture**: most operations are implemented as deterministic, reusable **skills**—structured pipelines that take diffs, files, or commit ranges, call the LLM only when needed, and validate and post-process the results to produce reliable outputs (commit messages, changelogs, explanations, conflict resolutions, etc.). For higher-level tasks that require planning and multi-step reasoning, Gitar uses lightweight **agents** as orchestrators that coordinate multiple skills in a controlled, auditable way.
 
