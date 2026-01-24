@@ -69,6 +69,79 @@ curl -fsSL https://raw.githubusercontent.com/sganis/gitar/main/install/install.c
 
 ---
 
+## Manual Installation
+
+### Option 1 — Download Prebuilt Binary
+
+1. Go to the **Releases** page on GitHub.
+2. Download the archive matching your platform:
+
+* **Linux (glibc):** `gitar-<version>-linux-x86_64.tar.gz`
+* **Linux (musl, static):** `gitar-<version>-linux-x86_64-musl.tar.gz`
+* **macOS (Apple Silicon):** `gitar-<version>-macos-aarch64.tar.gz`
+* **Windows:** `gitar-<version>-windows-x86_64.zip`
+
+3. Extract the archive.
+4. Put `gitar` (or `gitar.exe`) somewhere in your `PATH`.
+
+Verify:
+
+```bash
+gitar --version
+```
+
+---
+
+### Option 2 — Build From Source (Rust)
+
+Requirements:
+
+* Rust 1.75+ (install from [https://rustup.rs](https://rustup.rs))
+
+```bash
+git clone https://github.com/sganis/gitar.git
+cd gitar
+cargo build --release
+```
+
+Binary will be at:
+
+```bash
+target/release/gitar
+```
+
+You can either:
+
+```bash
+cargo install --path .
+```
+
+or manually copy it to your PATH:
+
+```bash
+# Linux / macOS
+cp target/release/gitar /usr/local/bin/
+
+# Windows (PowerShell, admin)
+copy target\release\gitar.exe C:\Windows\System32\
+```
+
+Verify:
+
+```bash
+gitar --version
+```
+
+---
+
+### Option 3 — Cargo Install (Advanced)
+
+```bash
+cargo install --git https://github.com/sganis/gitar.git
+```
+
+---
+
 ## Quick Start
 
 First-time setup:
