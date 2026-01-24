@@ -10,7 +10,7 @@ use std::path::Path;
 
 use crate::client::LlmClient;
 use crate::color::{arrow, success, warning};
-use crate::command::{apply_smart_diff, SHORT_HASH_LEN};
+use crate::command::{apply_smart_diff_with_context, AnalysisContext, SHORT_HASH_LEN};
 use crate::context::load_all_context;
 use crate::context::secret::SecretAction;
 use crate::context::template::{
@@ -283,8 +283,12 @@ async fn suggest_version_bump_llm(
         return Ok("patch".to_string());
     }
 
+    let context = AnalysisContext::new()
+        .with_provider(client.provider())
+        .with_model(client.model());
+
     // Apply smart diff shaping
-    let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, algo, secret_action)?;
+    let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, algo, Some(&context), secret_action)?;
 
     // Build prompt
     let prompt = VERSION_USER
@@ -479,12 +483,16 @@ async fn generate_changelog_content(
         .collect::<Vec<_>>()
         .join("\n");
 
+    let context = AnalysisContext::new()
+        .with_provider(client.provider())
+        .with_model(client.model());
+
     // Get combined diff for the range
     let raw_diff = get_diff(Some(&format!("{}..{}", from_ref, end)), false, usize::MAX)?;
     let diff = if raw_diff.trim().is_empty() {
         String::new()
     } else {
-        apply_smart_diff(&raw_diff, max_diff_chars, false, algo, secret_action)?
+        apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, algo, Some(&context), secret_action)?
     };
 
     // Build the prompt using the same template as cmd_changelog

@@ -2,7 +2,7 @@
 use anyhow::Result;
 
 use crate::client::LlmClient;
-use crate::command::apply_smart_diff;
+use crate::command::{apply_smart_diff_with_context, AnalysisContext};
 use crate::context::load_all_context;
 use crate::context::secret::SecretAction;
 use crate::context::template::{commit_system_with_context, COMMIT_USER};
@@ -53,6 +53,10 @@ pub async fn create_groups(
     // Step 2: Generate commit message for each group using LLM
     let mut commit_groups = Vec::new();
 
+    let context = AnalysisContext::new()
+        .with_provider(client.provider())
+        .with_model(client.model());
+
     for (idx, group) in initial_groups.into_iter().enumerate() {
         // Build comprehensive diff including all file states
         let diff_output = get_diff_for_group(&group, &analysis.mode)?;
@@ -61,11 +65,12 @@ pub async fn create_groups(
         let files: Vec<String> = group.iter().map(|c| c.path.clone()).collect();
 
         // Apply diff algorithm + secret detection
-        let shaped_diff = apply_smart_diff(
+        let shaped_diff = apply_smart_diff_with_context(
             &diff_output,
             max_chars,
-            true, // silent
+            false, // show context
             algo,
+            Some(&context),
             secret_action,
         )?;
 

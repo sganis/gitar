@@ -8,7 +8,7 @@ use crate::context::secret::SecretAction;
 use crate::context::template::{history_system_with_context, HISTORY_USER};
 use crate::git::{get_commit_diff, get_commit_logs};
 
-use super::{apply_smart_diff, SHORT_HASH_LEN};
+use super::{apply_smart_diff_with_context, AnalysisContext, SHORT_HASH_LEN};
 
 const MAX_AUTHOR_LEN: usize = 15;
 const MAX_MESSAGE_PREVIEW_LEN: usize = 40;
@@ -54,6 +54,10 @@ pub async fn cmd_history(
 
     println!("Processing {} commits...\n", commits.len());
 
+    let context = AnalysisContext::new()
+        .with_provider(client.provider())
+        .with_model(client.model());
+
     let (project_ctx, user_ctx) = load_all_context();
     let system = history_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
 
@@ -90,7 +94,7 @@ pub async fn cmd_history(
             }
         };
 
-        let diff = apply_smart_diff(&raw_diff, max_diff_chars, true, alg, secret_action)?;
+        let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, true, alg, Some(&context), secret_action)?;
 
         let prompt = HISTORY_USER
             .replace("{original_message}", &c.message)

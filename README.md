@@ -154,7 +154,6 @@ gitar run                       # Analyze changes and create multi-commit strate
 gitar run --apply               # Execute the strategy
 
 # Traditional workflow: generate commit messages
-git add .
 gitar commit                    # Create commit with AI-generated message
 ```
 

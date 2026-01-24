@@ -7,7 +7,7 @@ use crate::context::secret::SecretAction;
 use crate::context::template::{explain_system_with_context, EXPLAIN_USER};
 use crate::git::{build_diff_target, get_commit_logs, get_diff, get_diff_stats};
 
-use super::apply_smart_diff;
+use super::{apply_smart_diff_with_context, AnalysisContext};
 
 pub async fn cmd_explain(
     client: &LlmClient,
@@ -32,12 +32,16 @@ pub async fn cmd_explain(
         (None, None, None, None) => "working tree vs HEAD".into(),
     };
 
+    let context = AnalysisContext::new()
+        .with_provider(client.provider())
+        .with_model(client.model());
+
     let mut commit_count: Option<usize> = None;
 
     let (diff, stats) = if staged {
         println!("Explaining staged changes...\n");
         let raw_diff = get_diff(None, true, usize::MAX)?;
-        let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg, secret_action)?;
+        let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?;
         (diff, get_diff_stats(None, true)?)
     } else {
         let effective_from = match (&from, &since, &until) {
@@ -63,7 +67,7 @@ pub async fn cmd_explain(
         };
 
         let raw_diff = get_diff(diff_target_ref, false, usize::MAX)?;
-        let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg, secret_action)?;
+        let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?;
         (diff, get_diff_stats(diff_target_ref, false)?)
     };
 

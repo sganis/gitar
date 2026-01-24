@@ -7,7 +7,7 @@ use crate::context::secret::SecretAction;
 use crate::context::template::{changelog_system_with_context, CHANGELOG_USER};
 use crate::git::{get_commit_logs, get_diff};
 
-use super::{apply_smart_diff, SHORT_HASH_LEN};
+use super::{apply_smart_diff_with_context, AnalysisContext, SHORT_HASH_LEN};
 
 pub async fn cmd_changelog(
     client: &LlmClient,
@@ -50,6 +50,10 @@ pub async fn cmd_changelog(
 
     println!("Found {} commits.\n", commits.len());
 
+    let context = AnalysisContext::new()
+        .with_provider(client.provider())
+        .with_model(client.model());
+
     // Build commit list with messages
     let ct = commits
         .iter()
@@ -69,7 +73,7 @@ pub async fn cmd_changelog(
         if raw_diff.trim().is_empty() {
             String::new()
         } else {
-            apply_smart_diff(&raw_diff, max_diff_chars, false, alg, secret_action)?
+            apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?
         }
     } else if let Some(first_commit) = commits.last() {
         // Use oldest commit's parent as base
@@ -82,7 +86,7 @@ pub async fn cmd_changelog(
         if raw_diff.trim().is_empty() {
             String::new()
         } else {
-            apply_smart_diff(&raw_diff, max_diff_chars, false, alg, secret_action)?
+            apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?
         }
     } else {
         String::new()

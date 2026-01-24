@@ -9,7 +9,7 @@ use crate::git::{
     build_diff_target, build_range, get_commit_logs, get_current_branch, get_diff, get_diff_stats,
 };
 
-use super::apply_smart_diff;
+use super::{apply_smart_diff_with_context, AnalysisContext};
 
 pub async fn cmd_pr(
     client: &LlmClient,
@@ -27,9 +27,13 @@ pub async fn cmd_pr(
 
     println!("PR: {} -> {}\n", branch, target_base);
 
+    let context = AnalysisContext::new()
+        .with_provider(client.provider())
+        .with_model(client.model());
+
     let (diff, stats, commits_text) = if staged {
         let raw_diff = get_diff(None, true, usize::MAX)?;
-        let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg, secret_action)?;
+        let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?;
         (diff, get_diff_stats(None, true)?, "(staged changes)".into())
     } else {
         let diff_target = build_diff_target(base.as_deref(), to.as_deref(), base_branch);
@@ -49,7 +53,7 @@ pub async fn cmd_pr(
         };
 
         let raw_diff = get_diff(diff_target_ref, false, usize::MAX)?;
-        let diff = apply_smart_diff(&raw_diff, max_diff_chars, false, alg, secret_action)?;
+        let diff = apply_smart_diff_with_context(&raw_diff, max_diff_chars, false, alg, Some(&context), secret_action)?;
 
         (
             diff,

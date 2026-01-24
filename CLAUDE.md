@@ -6,6 +6,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Gitar is an AI-powered Git assistant written in Rust that generates commit messages, PR descriptions, changelogs, and explanations from Git diffs and history. It supports multiple LLM providers (OpenAI, Claude, Gemini, Groq, Ollama) and includes advanced features like secret detection, smart diff shaping algorithms, and style presets for different programming languages.
 
+## Conceptual Layers (from README)
+
+Gitar organizes Git workflows into **four layers**:
+
+1. **Plan (Core Product)** — AI-native commit planning engine (`run` command)
+2. **Narrate (Read-only)** — Explain and communicate Git state without modifying history
+3. **Release (Guided Workflow)** — Safe, deterministic release automation
+4. **Resolve (Conflict Resolution)** — Merge conflict resolver with safety rails
+
+All layers share a powerful **context optimization engine** with smart diff shaping, secret detection, language presets, and token budget management.
+
+For user-facing feature descriptions, see README.md. This document focuses on implementation architecture.
+
 ## Build & Test Commands
 
 ```bash
@@ -94,10 +107,16 @@ src/
 │       └── git_helper.rs    # Git operations for conflicts
 ├── util/             # Shared utilities
 │   ├── mod.rs        # Module exports
-│   └── diff.rs       # Smart diff utilities (used by commands)
+│   ├── diff.rs       # Smart diff utilities (used by commands)
+│   └── file.rs       # File system utilities (path handling, read/write)
 ├── context/          # Context management (LLM & repository)
 │   ├── mod.rs        # Module exports
-│   ├── algo.rs       # Diff shaping algorithms (1-4)
+│   ├── algo/         # Diff shaping algorithms (1-4)
+│   │   ├── mod.rs       # Algorithm dispatch and coordination
+│   │   ├── full.rs      # Algorithm 1: Full diff
+│   │   ├── file.rs      # Algorithm 2: Selective files
+│   │   ├── hunk.rs      # Algorithm 3: Selective hunks
+│   │   └── semantic.rs  # Algorithm 4: Semantic JSON (default)
 │   ├── diff.rs       # Diff processing and context building
 │   ├── secret.rs     # Secret detection and redaction
 │   ├── preset.rs     # Language-specific commit styles
@@ -125,11 +144,11 @@ src/
 - Provider-specific implementations in provider/ handle API differences
 - Automatic retry with exponential backoff (retry.rs) for transient failures
 
-**4. Diff Shaping Algorithms** (context/algo.rs)
-- Algorithm 1: Full diff (truncate only)
-- Algorithm 2: Selective files by priority
-- Algorithm 3: Selective hunks by importance score
-- Algorithm 4: Semantic JSON (default, most token-efficient)
+**4. Diff Shaping Algorithms** (context/algo/)
+- Algorithm 1: Full diff (truncate only) — full.rs
+- Algorithm 2: Selective files by priority — file.rs
+- Algorithm 3: Selective hunks by importance score — hunk.rs
+- Algorithm 4: Semantic JSON (default, most token-efficient) — semantic.rs
 - All algorithms are pure functions: raw diff in, shaped diff out
 
 **5. Secret Detection** (context/secret.rs)
@@ -175,11 +194,19 @@ src/
 - Supports HTTP and SOCKS5 proxies (socks5h:// for DNS through proxy)
 - Useful for corporate/air-gapped environments via SSH tunnel
 
+**Windows Path Handling**
+- Git on Windows returns paths with forward slashes (/), not backslashes (\)
+- Always normalize paths when comparing or matching file patterns
+- Use Path::new() and to_string_lossy() for cross-platform compatibility
+
 ## Testing
 
 Tests are in `tests/` directory:
-- `cli.rs`: Integration tests using assert_cmd
+- `cli.rs`: Core integration tests using assert_cmd
+- `commands.rs`: Command-specific integration tests
+- `cli_parse.rs`: CLI argument parsing tests
 - `diff.rs`: Unit tests for diff shaping algorithms
+- `resolve.rs`: Integration tests for conflict resolution
 
 When adding new commands, add corresponding tests in tests/cli.rs using the pattern:
 ```rust
@@ -262,9 +289,10 @@ Architecture:
 5. Update normalize_provider() and default_model_for_provider()
 
 **Modifying Diff Algorithms**
-- All algorithm logic in context/algo.rs
+- Each algorithm has its own module in context/algo/
+- Algorithm dispatch in context/algo/mod.rs
 - Keep algorithms pure (no I/O, no git calls)
-- Update shape_diff() function for new algorithm
+- Add new algorithm module and update dispatch in shape_diff()
 - Add comparison logic to compare_algorithms() for --compare flag
 
 ## Key Dependencies

@@ -35,5 +35,5 @@ pub use squash::cmd_squash;
 
 // Re-export utilities from util module for backward compatibility
 pub(crate) use crate::util::{
-    apply_smart_diff, apply_smart_diff_with_context, AnalysisContext, SHORT_HASH_LEN,
+    apply_smart_diff_with_context, AnalysisContext, SHORT_HASH_LEN,
 };

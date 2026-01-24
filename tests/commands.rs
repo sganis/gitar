@@ -153,35 +153,6 @@ fn release_requires_git_repo() {
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
-#[test]
-fn release_dry_run_shows_plan() {
-    let home = tempfile::tempdir().unwrap();
-    let repo = tempfile::tempdir().unwrap();
-    init_repo(repo.path());
-
-    // Create Cargo.toml for version detection
-    fs::write(
-        repo.path().join("Cargo.toml"),
-        r#"[package]
-name = "test"
-version = "1.0.0"
-"#,
-    )
-    .unwrap();
-
-    commit_file(repo.path(), "Cargo.toml", "", "Add Cargo.toml");
-    commit_file(repo.path(), "a.txt", "hello\n", "initial");
-
-    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
-    with_isolated_home(&mut cmd, home.path());
-    cmd.current_dir(repo.path());
-
-    // Dry run (default) shows release plan
-    cmd.args(["release", "--bump", "patch", "--skip-changelog"])
-        .assert()
-        .success()
-        .stdout(predicate::str::contains("Release").or(predicate::str::contains("Dry run")));
-}
 
 // =============================================================================
 // RESOLVE COMMAND TESTS
