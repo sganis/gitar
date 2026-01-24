@@ -1,3 +1,31 @@
+## [1.2.0] - 2026-01-24
+
+# Release Notes
+## Features
+- Added `--show` flag to `init` command to display resolved configuration.  
+- Introduced `HookAction` enum and CLI flag handling for hook install/uninstall.  
+- Added Cargo-style CLI color styling for improved terminal output.  
+
+## Fixes
+- Updated CLI tests to reflect new subcommands (`plan`, `fix`, `tell`) and flag changes.  
+- Corrected documentation and examples for renamed and removed commands.  
+
+## Improvements
+- Rewrote README and planning documentation for final CLI naming and syntax.  
+- Updated architecture notes and documentation for new command structure.  
+- Simplified changelog module call formatting for clarity.  
+
+## Breaking Changes
+- Removed `config` command; use `init --show` instead.  
+- Renamed `explain` command to `tell` (alias supported).  
+- Replaced `run` command with `plan` and `resolve` with `fix`.  
+- Replaced `tag`/`no-tag` flags with `ai_author`/`no_ai_author`.  
+- Renamed `insecure_tls` flag to `insecure`.  
+
+## Infrastructure
+- Removed deprecated CLI redesign plan document.  
+- Internal cleanup of unused or redundant test and documentation references.
+
 ## [1.1.3] - 2026-01-24
 
 # Release Notes
