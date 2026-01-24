@@ -134,13 +134,11 @@ pub fn execute_plan(
         println!();
     }
 
-    println!("===========================================================");
     if dry_run {
+        println!("===========================================================");
         println!("Dry run complete. Use --apply to execute.");
-    } else {
-        success("All commits executed successfully");
+        println!("===========================================================\n");
     }
-    println!("===========================================================\n");
 
     // Post-execution validation
     if !dry_run {
