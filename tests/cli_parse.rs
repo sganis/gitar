@@ -236,7 +236,7 @@ fn cli_parses_diff_staged() {
 #[test]
 fn cli_parses_fix_flags() {
     let cli = Cli::try_parse_from(["gitar", "fix", "--apply", "--yes", "--stream"]).unwrap();
-    if let Some(Commands::Fix { apply, yes, stream }) = cli.command {
+    if let Some(Commands::Fix { apply, yes, stream, .. }) = cli.command {
         assert!(apply);
         assert!(yes);
         assert!(stream);
@@ -585,5 +585,79 @@ fn cli_parses_release_alias_r() {
         assert!(apply);
     } else {
         panic!("Expected Release command via 'r' alias");
+    }
+}
+
+// ==========================================================================
+// Dry-run flag tests
+// ==========================================================================
+
+#[test]
+fn cli_parses_plan_dry_run() {
+    let cli = Cli::try_parse_from(["gitar", "plan", "--dry-run"]).unwrap();
+    if let Some(Commands::Plan { dry_run, apply, .. }) = cli.command {
+        assert!(dry_run);
+        assert!(!apply);
+    } else {
+        panic!("Expected Plan command");
+    }
+}
+
+#[test]
+fn cli_parses_fix_dry_run() {
+    let cli = Cli::try_parse_from(["gitar", "fix", "--dry-run"]).unwrap();
+    if let Some(Commands::Fix { dry_run, apply, .. }) = cli.command {
+        assert!(dry_run);
+        assert!(!apply);
+    } else {
+        panic!("Expected Fix command");
+    }
+}
+
+#[test]
+fn cli_parses_release_dry_run() {
+    let cli = Cli::try_parse_from(["gitar", "release", "--dry-run"]).unwrap();
+    if let Some(Commands::Release { dry_run, apply, .. }) = cli.command {
+        assert!(dry_run);
+        assert!(!apply);
+    } else {
+        panic!("Expected Release command");
+    }
+}
+
+// ==========================================================================
+// Init command tests
+// ==========================================================================
+
+#[test]
+fn cli_parses_init_auto_apply_true() {
+    let cli = Cli::try_parse_from(["gitar", "init", "--auto-apply", "true"]).unwrap();
+    if let Some(Commands::Init { auto_apply, show }) = cli.command {
+        assert_eq!(auto_apply, Some(true));
+        assert!(!show);
+    } else {
+        panic!("Expected Init command");
+    }
+}
+
+#[test]
+fn cli_parses_init_auto_apply_false() {
+    let cli = Cli::try_parse_from(["gitar", "init", "--auto-apply", "false"]).unwrap();
+    if let Some(Commands::Init { auto_apply, show }) = cli.command {
+        assert_eq!(auto_apply, Some(false));
+        assert!(!show);
+    } else {
+        panic!("Expected Init command");
+    }
+}
+
+#[test]
+fn cli_parses_init_show() {
+    let cli = Cli::try_parse_from(["gitar", "init", "--show"]).unwrap();
+    if let Some(Commands::Init { auto_apply, show }) = cli.command {
+        assert!(show);
+        assert!(auto_apply.is_none());
+    } else {
+        panic!("Expected Init command");
     }
 }
