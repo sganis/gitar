@@ -84,7 +84,7 @@ pub struct Config {
     pub default_provider: Option<String>,
     pub base_branch: Option<String>,
     pub max_diff_chars: Option<usize>,
-    pub insecure_tls: Option<bool>,
+    pub insecure: Option<bool>,
     pub preset: Option<String>,
     pub secret_action: Option<String>,
     pub openai: Option<ProviderConfig>,
@@ -151,7 +151,7 @@ pub struct ResolvedConfig {
     pub base_branch: String,
     pub stream: bool,
     pub max_diff_chars: usize,
-    pub insecure_tls: bool,
+    pub insecure: bool,
     pub preset: Preset,
     pub secret_action: SecretAction,
 }
@@ -167,7 +167,7 @@ impl ResolvedConfig {
         cli_provider: Option<&String>,
         cli_base_branch: Option<&String>,
         cli_stream: Option<bool>,
-        cli_insecure_tls: Option<bool>,
+        cli_insecure: Option<bool>,
         cli_preset: Option<&String>,
         file: &Config,
         default_branch_fn: impl Fn() -> String,
@@ -225,7 +225,7 @@ impl ResolvedConfig {
 
         let max_diff_chars = file.max_diff_chars.unwrap_or(DEFAULT_MAX_DIFF_CHARS);
 
-        let insecure_tls = cli_insecure_tls.or(file.insecure_tls).unwrap_or(false);
+        let insecure = cli_insecure.or(file.insecure).unwrap_or(false);
 
         let preset = Preset::resolve(cli_preset, file.preset.as_ref(), repo_root);
 
@@ -245,7 +245,7 @@ impl ResolvedConfig {
             base_branch,
             stream,
             max_diff_chars,
-            insecure_tls,
+            insecure,
             preset,
             secret_action,
         }

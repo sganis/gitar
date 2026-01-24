@@ -1,49 +1,155 @@
 // src/cli.rs
+use clap::builder::styling::{AnsiColor, Effects, Styles};
 use clap::{Parser, Subcommand};
+
+/// Build Cargo-style CLI colors for clap.
+/// Respects NO_COLOR env and works cross-platform.
+pub fn cargo_styles() -> Styles {
+    Styles::styled()
+        .usage(AnsiColor::Green.on_default() | Effects::BOLD)
+        .header(AnsiColor::Green.on_default() | Effects::BOLD)
+        .literal(AnsiColor::Cyan.on_default() | Effects::BOLD)
+        .placeholder(AnsiColor::Blue.on_default() | Effects::BOLD)
+        .error(AnsiColor::Red.on_default() | Effects::BOLD)
+        .valid(AnsiColor::Green.on_default())
+        .invalid(AnsiColor::Yellow.on_default())
+}
+
+/// Build styled after_help text with Cargo-like colors.
+/// - Headers: Green + Bold
+/// - Commands/flags: Cyan + Bold
+/// - Placeholders: Blue + Bold
+/// - Comments: Gray (BrightBlack)
+/// - Descriptions: Default
+pub fn styled_after_help() -> String {
+    use anstyle::{AnsiColor, Effects, Style};
+
+    let header = Style::new()
+        .fg_color(Some(AnsiColor::Green.into()))
+        .effects(Effects::BOLD);
+    let cmd = Style::new()
+        .fg_color(Some(AnsiColor::Cyan.into()))
+        .effects(Effects::BOLD);
+    let placeholder = Style::new()
+        .fg_color(Some(AnsiColor::Blue.into()))
+        .effects(Effects::BOLD);
+    //let comment = Style::new().fg_color(Some(AnsiColor::BrightBlack.into()));
+    let desc = Style::new(); // default
+
+    let h = |s: &str| format!("{header}{s}{header:#}");
+    let c = |s: &str| format!("{cmd}{s}{cmd:#}");
+    let p = |s: &str| format!("{placeholder}{s}{placeholder:#}");
+    let g = |s: &str| format!("{s}");
+    let d = |s: &str| format!("{desc}{s}{desc:#}");
+
+    format!(
+        r#"{header}
+    {cmd1}                          {cmt1}
+    {cmd2}                     {cmt2}
+    {cmd3}             {cmt3}
+    {cmd4}    {cmt4}
+
+    {cmd5}                  {cmt5}
+    {cmd6}         {cmt6}
+    {cmd7}             {cmt7}
+    {cmd8}        {cmt8}
+    {cmd9} {cmt9}
+    {cmd10}   {cmt10}
+
+    {cmd11}                      {cmt11}
+    {cmd12}              {cmt12}
+
+    {cmd13}                  {cmt13}
+    {cmd14}          {cmt14}
+
+    {cmd15}           {cmt15}
+    {cmd16}         {cmt16}
+
+{scope_header}
+    {flag1}                      {cmt17}
+    {flag2}                       {cmt18}
+    {flag3} {ph1}                {cmt19}
+
+{algo_header}
+    {algo1}                       {desc1}
+    {algo2}                       {desc2}
+    {algo3}                       {desc3}
+    {algo4}                       {desc4}
+
+{preset_header}
+    {preset1}                  {desc5}
+    {preset2}                    {desc6}
+    {preset3}                {desc7}
+    {preset4}                  {desc8}"#,
+        header = h("EXAMPLES:"),
+        cmd1 = c("gitar"),
+        cmt1 = g("# Plan commits (default command)"),
+        cmd2 = c("gitar plan"),
+        cmt2 = g("# Same as above"),
+        cmd3 = c("gitar plan --apply"),
+        cmt3 = g("# Execute the plan"),
+        cmd4 = c("gitar plan --history v1.0.0"),
+        cmt4 = g("# Plan from history"),
+        cmd5 = c("gitar explain"),
+        cmt5 = g("# Plain English report (default)"),
+        cmd6 = c("gitar explain --commit"),
+        cmt6 = g("# Generate commit message"),
+        cmd7 = c("gitar explain --pr"),
+        cmt7 = g("# Generate PR description"),
+        cmd8 = c("gitar explain --pr main"),
+        cmt8 = g("# PR description against main"),
+        cmd9 = c("gitar explain --changelog v1.0"),
+        cmt9 = g("# Release notes since tag"),
+        cmd10 = c("gitar explain --history v1.0"),
+        cmt10 = g("# Describe commits since tag"),
+        cmd11 = c("gitar fix"),
+        cmt11 = g("# Preview conflict resolution"),
+        cmd12 = c("gitar fix --apply"),
+        cmt12 = g("# Apply conflict fixes"),
+        cmd13 = c("gitar release"),
+        cmt13 = g("# Preview release (version, changelog, tag)"),
+        cmd14 = c("gitar release --apply"),
+        cmt14 = g("# Execute release"),
+        cmd15 = c("gitar hook --install"),
+        cmt15 = g("# Install git hook for auto-commit messages"),
+        cmd16 = c("gitar hook --uninstall"),
+        cmt16 = g("# Remove gitar git hook"),
+        scope_header = h("SCOPE FLAGS (available on plan command):"),
+        flag1 = c("--working"),
+        cmt17 = g("# Analyze working tree changes"),
+        flag2 = c("--staged"),
+        cmt18 = g("# Analyze staged changes only"),
+        flag3 = c("--history"),
+        ph1 = p("<REF>"),
+        cmt19 = g("# Analyze history from REF to HEAD"),
+        algo_header = h("DIFF ALGORITHMS:"),
+        algo1 = c("--algo 1"),
+        desc1 = d("# Full: complete git diff (ignores --max-chars)"),
+        algo2 = c("--algo 2"),
+        desc2 = d("# Files: selective files, ranked by priority"),
+        algo3 = c("--algo 3"),
+        desc3 = d("# Hunks: selective hunks, ranked by importance"),
+        algo4 = c("--algo 4"),
+        desc4 = d("# Semantic: JSON IR with scored hunks (default)"),
+        preset_header = h("STYLE PRESETS:"),
+        preset1 = c("--preset rust"),
+        desc5 = d("# Rust conventions (crate/module focused)"),
+        preset2 = c("--preset js"),
+        desc6 = d("# JavaScript conventions (component/hook focused)"),
+        preset3 = c("--preset python"),
+        desc7 = d("# Python conventions (module/endpoint focused)"),
+        preset4 = c("--preset auto"),
+        desc8 = d("# Auto-detect from project files (default)"),
+    )
+}
 
 #[derive(Parser)]
 #[command(
     name = "gitar",
     version,
+    styles = cargo_styles(),
     about = "AI-powered Git assistant\n\nGitar is an AI-native interface to plan, explain, fix, and release your Git history.",
-    after_help = "EXAMPLES:
-    gitar                           # Plan commits (default command)
-    gitar plan                      # Same as above
-    gitar plan --apply              # Execute the plan
-    gitar plan --history v1.0.0     # Plan from history
-
-    gitar explain                   # Plain English report (default)
-    gitar explain --commit          # Generate commit message
-    gitar explain --pr              # Generate PR description
-    gitar explain --pr main         # PR description against main
-    gitar explain --changelog v1.0  # Release notes since tag
-    gitar explain --history v1.0    # Describe commits since tag
-
-    gitar fix                       # Preview conflict resolution
-    gitar fix --apply               # Apply conflict fixes
-
-    gitar release                   # Preview release (version, changelog, tag)
-    gitar release --apply           # Execute release
-
-    gitar hook --install            # Install git hook for auto-commit messages
-    gitar hook --uninstall          # Remove gitar git hook
-
-SCOPE FLAGS (available on plan command):
-    --working                       # Analyze working tree changes
-    --staged                        # Analyze staged changes only
-    --history <REF>                 # Analyze history from REF to HEAD
-
-DIFF ALGORITHMS:
-    --algo 1    Full: complete git diff (ignores --max-chars)
-    --algo 2    Files: selective files, ranked by priority
-    --algo 3    Hunks: selective hunks, ranked by importance
-    --algo 4    Semantic: JSON IR with scored hunks (default)
-
-STYLE PRESETS:
-    --preset rust       Rust conventions (crate/module focused)
-    --preset js         JavaScript conventions (component/hook focused)
-    --preset python     Python conventions (module/endpoint focused)
-    --preset auto       Auto-detect from project files (default)"
+    after_help = styled_after_help()
 )]
 pub struct Cli {
     #[arg(long, global = true)]
@@ -65,7 +171,6 @@ pub struct Cli {
     )]
     pub provider: Option<String>,
 
-    /// Commit message style preset (rust, js, python, auto)
     #[arg(
         long,
         global = true,
@@ -79,7 +184,7 @@ pub struct Cli {
 
     /// Disable TLS certificate verification (INSECURE - use only for debugging)
     #[arg(long, global = true, default_value_t = false)]
-    pub insecure_tls: bool,
+    pub insecure: bool,
 
     #[command(subcommand)]
     pub command: Option<Commands>,

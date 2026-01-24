@@ -21,7 +21,7 @@ impl LlmClient {
         let mut builder = Client::builder().timeout(std::time::Duration::from_secs(120));
 
         // TLS verification: secure by default
-        if config.insecure_tls {
+        if config.insecure {
             eprintln!(
                 "{} TLS certificate verification disabled (insecure)",
                 styled("[WARN]", warning_style())
@@ -173,7 +173,7 @@ mod tests {
             base_branch: "main".into(),
             stream: false,
             max_diff_chars: 10_000,
-            insecure_tls: false,
+            insecure: false,
             preset: Preset::Default,
             secret_action: SecretAction::Redact,
         }
