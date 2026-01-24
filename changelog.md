@@ -1,3 +1,21 @@
+## [1.3.1] - 2026-01-24
+
+# Release Notes
+## Features
+- Added success message after plan execution in `execute_plan` function.
+- Added manual installation instructions to README, covering both binary and source installation options.
+
+## Fixes
+- Removed redundant success message after commit execution in `plan` command.
+
+## Improvements
+- Adjusted final output formatting in `execute_plan` for dry-run mode.
+- Improved version bump parsing and clarified semantic versioning criteria in the release module.
+- Normalized version handling in install scripts by stripping the 'v' prefix from tags for artifact URLs.
+
+## Infrastructure
+- Updated Rust dependencies.
+
 ## [1.3.0] - 2026-01-24
 
 # Release Notes
