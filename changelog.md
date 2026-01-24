@@ -1,3 +1,19 @@
+## [1.3.2] - 2026-01-24
+
+# Release Notes
+## Features
+- Define gitar binary target in Cargo manifest ([3b2dd37])
+
+## Fixes
+- Fix Windows CMD install command to use temporary script path ([eeb4412])
+- Fix CMD installer to create temporary directory before version resolution and correct errorlevel checks ([d736123])
+
+## Improvements
+- Use serial_test crate for test isolation in git module ([ea33579])
+- Remove unused success color import from plan module ([3b66efa])
+- Update Rust dependencies ([3e82f39])
+- Remove redundant Rust coding standards section from CLAUDE.md ([ce1bea2])
+
 ## [1.3.1] - 2026-01-24
 
 # Release Notes
