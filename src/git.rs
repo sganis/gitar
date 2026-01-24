@@ -518,13 +518,9 @@ mod tests {
     // Conflict helpers tests (temp repo)
     // ==========================================================================
 
-    use std::sync::{LazyLock, Mutex};
-
-    static DIR_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+    use serial_test::serial;
 
     fn in_temp_repo<F: FnOnce()>(f: F) {
-        let _g = DIR_LOCK.lock().unwrap();
-
         let cwd = std::env::current_dir().unwrap();
         let dir = tempfile::tempdir().unwrap();
         std::env::set_current_dir(dir.path()).unwrap();
@@ -539,6 +535,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn conflict_helpers_detect_and_read_index_stages() {
         in_temp_repo(|| {
             std::fs::write("conflict.txt", "base\n").unwrap();
