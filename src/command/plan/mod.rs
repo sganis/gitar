@@ -6,7 +6,6 @@ pub mod execute;
 pub mod group;
 
 use crate::client::LlmClient;
-use crate::color::success;
 use crate::command::cmd_fix;
 use crate::config::ResolvedConfig;
 use crate::git;
