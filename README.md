@@ -245,7 +245,7 @@ Does:
 
 ```bash
 gitar init
-gitar config
+gitar init --show      # View resolved configuration
 gitar models
 gitar hook --install
 gitar hook --uninstall
@@ -318,7 +318,7 @@ Stored in:
 View:
 
 ```bash
-gitar config
+gitar init --show
 ```
 
 ---

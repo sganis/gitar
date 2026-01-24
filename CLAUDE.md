@@ -109,8 +109,7 @@ src/
 │   ├── rewrite/      # Rewrite commit history with AI messages
 │   ├── diff/         # Debug diff algorithms
 │   ├── hook/         # Git hook installation
-│   ├── config/       # Show resolved configuration
-│   ├── init/         # Create/update ~/.gitar.toml
+│   ├── init/         # Create/update ~/.gitar.toml (--show displays config)
 │   └── models/       # List available models
 ├── util/             # Shared utilities
 │   ├── mod.rs        # Module exports
@@ -261,7 +260,7 @@ fn test_command_name() {
 - `squash <N|REF>` — Squash commits with AI message
 - `rewrite <N|REF>` — Rewrite commit messages
 - `release` — Version bump + changelog + tag
-- `init`, `config`, `models`, `hook install|uninstall`, `diff`
+- `init` (with `--show` to display resolved config), `models`, `hook install|uninstall`, `diff`
 
 ## Common Development Patterns
 
