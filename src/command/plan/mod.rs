@@ -129,7 +129,6 @@ pub async fn cmd_plan(
             interactive,
             client.model(),
         )?;
-        success("Commits executed successfully");
     } else {
         println!("Dry run complete. Use --apply to execute commits.");
     }
