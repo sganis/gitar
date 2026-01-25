@@ -296,6 +296,7 @@ fn validate_execution() -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command::plan::group::{FileStatus, FileWithStatus};
 
     #[test]
     fn execute_plan_empty_groups() {
@@ -312,6 +313,10 @@ mod tests {
             title: "Test commit".to_string(),
             message: "Test commit message".to_string(),
             files: vec!["test.txt".to_string()],
+            files_with_status: vec![FileWithStatus {
+                path: "test.txt".to_string(),
+                status: FileStatus::Added,
+            }],
             estimated_tokens: 50,
         }];
 

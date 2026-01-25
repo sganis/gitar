@@ -310,6 +310,7 @@ impl PlanEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::command::plan::group::{FileStatus, FileWithStatus};
 
     fn create_test_editor() -> PlanEditor {
         let groups = vec![
@@ -318,6 +319,16 @@ mod tests {
                 title: "Update docs".to_string(),
                 message: "Update documentation".to_string(),
                 files: vec!["README.md".to_string(), "CHANGELOG.md".to_string()],
+                files_with_status: vec![
+                    FileWithStatus {
+                        path: "README.md".to_string(),
+                        status: FileStatus::Modified,
+                    },
+                    FileWithStatus {
+                        path: "CHANGELOG.md".to_string(),
+                        status: FileStatus::Modified,
+                    },
+                ],
                 estimated_tokens: 100,
             },
             CommitGroup {
@@ -325,6 +336,10 @@ mod tests {
                 title: "Add tests".to_string(),
                 message: "Add unit tests".to_string(),
                 files: vec!["test.rs".to_string()],
+                files_with_status: vec![FileWithStatus {
+                    path: "test.rs".to_string(),
+                    status: FileStatus::Added,
+                }],
                 estimated_tokens: 150,
             },
         ];
