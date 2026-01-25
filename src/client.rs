@@ -29,7 +29,7 @@ impl LlmClient {
             builder = builder.danger_accept_invalid_certs(true);
         }
 
-        if let Ok(proxy_url) = std::env::var("ALL_PROXY") {
+        if let Ok(proxy_url) = std::env::var("GITAR_PROXY") {
             let proxy_url = proxy_url.trim();
             if !proxy_url.is_empty() {
                 builder = builder.proxy(Proxy::all(proxy_url)?);
@@ -51,7 +51,7 @@ impl LlmClient {
     pub fn new_with_provider(provider: &str, provider_config: &ProviderConfig) -> Result<Self> {
         let mut builder = Client::builder().timeout(std::time::Duration::from_secs(120));
 
-        if let Ok(proxy_url) = std::env::var("ALL_PROXY") {
+        if let Ok(proxy_url) = std::env::var("GITAR_PROXY") {
             let proxy_url = proxy_url.trim();
             if !proxy_url.is_empty() {
                 builder = builder.proxy(Proxy::all(proxy_url)?);
@@ -201,21 +201,21 @@ mod tests {
 
     #[test]
     fn detect_claude() {
-        let _e = EnvGuard::remove("ALL_PROXY");
+        let _e = EnvGuard::remove("GITAR_PROXY");
         let c = LlmClient::new(&make_config("claude", "https://api.openai.com")).unwrap();
         assert!(c.is_claude());
     }
 
     #[test]
     fn detect_gemini() {
-        let _e = EnvGuard::remove("ALL_PROXY");
+        let _e = EnvGuard::remove("GITAR_PROXY");
         let c = LlmClient::new(&make_config("gemini", "https://api.openai.com")).unwrap();
         assert!(c.is_gemini());
     }
 
     #[test]
     fn detect_by_url() {
-        let _e = EnvGuard::remove("ALL_PROXY");
+        let _e = EnvGuard::remove("GITAR_PROXY");
         let c = LlmClient::new(&make_config("openai", "https://api.anthropic.com/v1")).unwrap();
         assert!(c.is_claude());
     }

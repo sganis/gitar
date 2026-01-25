@@ -5,7 +5,10 @@ use std::path::{Path, PathBuf};
 
 use crate::cli::Cli;
 use crate::client::LlmClient;
-use crate::config::{normalize_provider, Config, ProviderConfig, DEFAULT_MAX_DIFF_CHARS};
+use crate::config::{
+    normalize_provider, provider_to_url, Config, ProviderConfig, DEFAULT_MAX_DIFF_CHARS,
+    SYSTEM_CONFIG_ENV,
+};
 use crate::context::preset::Preset;
 use crate::git;
 use crate::prompt;
@@ -190,6 +193,7 @@ fn select_provider(current: Option<&str>) -> Result<Option<String>> {
 async fn select_model(
     provider: &str,
     api_key: &str,
+    base_url: Option<&str>,
     current_model: Option<&str>,
 ) -> Result<Option<String>> {
     println!("\nFetching available models from {}...", provider);
@@ -197,6 +201,9 @@ async fn select_model(
     // Create a temporary config with the provider settings
     let mut temp_config = ProviderConfig::default();
     temp_config.api_key = Some(api_key.to_string());
+    if let Some(url) = base_url {
+        temp_config.base_url = Some(url.to_string());
+    }
 
     // Create temp client
     let client = match LlmClient::new_with_provider(provider, &temp_config) {
@@ -333,6 +340,32 @@ pub async fn cmd_init(cli: &Cli, file: &Config, show: bool, auto_apply: Option<b
             }
         };
         println!("Selected provider: {}", selected_provider);
+        let default_url = provider_to_url(&selected_provider);
+        if let Some(url) = default_url {
+            println!("Base URL: {}", url);
+        }
+
+        // For ollama, allow customizing the base URL
+        let custom_base_url = if selected_provider == "ollama" {
+            let current_url = config
+                .get_provider(&selected_provider)
+                .and_then(|p| p.base_url.clone());
+            let default = current_url
+                .as_deref()
+                .or(default_url)
+                .unwrap_or("http://localhost:11434/v1");
+            let input = prompt::input(
+                &format!("Base URL (press Enter for {})", default),
+                Some(""),
+            )?;
+            if input.is_empty() {
+                None // Use default, don't store in config
+            } else {
+                Some(input)
+            }
+        } else {
+            None
+        };
 
         // Step 2: Get API key (skip for providers that don't need it)
         let needs_api_key = !matches!(selected_provider.as_str(), "ollama" | "local");
@@ -399,7 +432,15 @@ pub async fn cmd_init(cli: &Cli, file: &Config, show: bool, auto_apply: Option<b
 
         // Step 3: Select model (query API)
         let current_model = provider_config.model.as_deref();
-        let selected_model = match select_model(&selected_provider, &api_key, current_model).await?
+        let effective_base_url =
+            custom_base_url.as_deref().or(provider_config.base_url.as_deref());
+        let selected_model = match select_model(
+            &selected_provider,
+            &api_key,
+            effective_base_url,
+            current_model,
+        )
+        .await?
         {
             Some(m) => Some(m),
             None => {
@@ -413,6 +454,9 @@ pub async fn cmd_init(cli: &Cli, file: &Config, show: bool, auto_apply: Option<b
         provider_config.api_key = Some(api_key);
         if let Some(model) = selected_model {
             provider_config.model = Some(model);
+        }
+        if let Some(url) = custom_base_url {
+            provider_config.base_url = Some(url);
         }
         config.default_provider = Some(selected_provider.clone());
 
@@ -459,6 +503,12 @@ pub async fn cmd_init(cli: &Cli, file: &Config, show: bool, auto_apply: Option<b
         println!("Configuration saved successfully!");
         println!("==========================================================");
         println!("\nProvider: {}", selected_provider);
+        if let Some(base_url) = config
+            .get_provider(&selected_provider)
+            .and_then(|p| p.base_url.as_ref())
+        {
+            println!("Base URL: {}", base_url);
+        }
         if let Some(model) = config
             .get_provider(&selected_provider)
             .and_then(|p| p.model.as_ref())
@@ -572,9 +622,31 @@ pub async fn cmd_init(cli: &Cli, file: &Config, show: bool, auto_apply: Option<b
 // =============================================================================
 
 fn show_config(config: &Config) -> Result<()> {
-    let path = Config::path()
+    // Show system config path if set
+    if let Some(system_path) = Config::system_path() {
+        let exists = system_path.exists();
+        println!(
+            "System config: {} {}",
+            system_path.display(),
+            if exists { "" } else { "(not found)" }
+        );
+    } else {
+        println!(
+            "System config: (not set, use ${} to configure)",
+            SYSTEM_CONFIG_ENV
+        );
+    }
+
+    let user_path = Config::path()
         .map(|p| p.display().to_string())
         .unwrap_or_else(|| "(unknown)".into());
+    let user_exists = Config::path().is_some_and(|p| p.exists());
+    println!(
+        "User config:   {} {}",
+        user_path,
+        if user_exists { "" } else { "(not found)" }
+    );
+    println!();
 
     // Detect preset for display
     let detected_preset = if git::is_git_repo() {
@@ -592,7 +664,7 @@ fn show_config(config: &Config) -> Result<()> {
         .or(detected_preset)
         .unwrap_or(Preset::Default);
 
-    println!("Config file: {}\n", path);
+    println!("Resolved configuration (system + user merged):");
     println!(
         "default_provider: {}",
         config.default_provider.as_deref().unwrap_or("(not set)")
