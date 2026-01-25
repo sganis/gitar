@@ -8,10 +8,12 @@ use anyhow::{Context, Result};
 // TAG OPERATIONS
 // =============================================================================
 
-/// Get the latest tag in the repository
+/// Get the latest tag in the repository by semantic version.
+/// Uses version sorting to find the highest version tag, regardless of branch history.
 pub fn get_latest_tag() -> Result<Option<String>> {
-    let output = git::run_git_optional(&["describe", "--tags", "--abbrev=0"])?;
-    Ok(output.map(|s| s.trim().to_string()))
+    // Sort by version (descending) to get the highest semantic version
+    let output = git::run_git_optional(&["tag", "--sort=-v:refname"])?;
+    Ok(output.and_then(|s| s.lines().next().map(|l| l.trim().to_string())))
 }
 
 /// Get all tags sorted by creation date
