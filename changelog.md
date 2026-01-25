@@ -1,11 +1,58 @@
-## [1.3.3] - 2026-01-24
+## [2.2.0] - 2026-01-25
 
 # Release Notes
-## Features
-- Use repository root for absolute path handling across fix, plan, and release commands ([fc109d9])
+
+## Fixes
+- Fix release command version file detection to use the current directory, improving support for monorepos.
 
 ## Improvements
-- Update Cargo manifest with revised description, keywords, and reordered dependencies ([e2aa0fd])
+- Add test to verify release command correctly detects Cargo.toml when run from a subdirectory.
+
+## Infrastructure
+- Update Rust dependencies.
+
+## [2.1.0] - 2026-01-25
+
+# Release Notes
+
+## Improvements
+- Added repository root caching to the git module, improving performance and reliability when operating from subdirectories.
+- Ensured the plan command correctly detects changes when run from a subdirectory by adding targeted test coverage.
+
+## Fixes
+- Routed fix and git_helper commands through run_git to ensure correct behavior when executed from subdirectories.
+
+## Infrastructure
+- Updated Rust dependencies to their latest compatible versions.
+
+## [2.0.0] - 2026-01-25
+
+# Release Notes
+
+## Features
+- Enterprise configuration support with environment variables for proxy, custom CA certificates, and cascading config precedence. Adds GITAR_CA_FILE for custom CA trust and GITAR_SYSTEM_CONFIG for system-wide configuration merged with user config.
+- Centralized HTTP client configuration to ensure consistent proxy and TLS behavior across commands.
+- Improved path handling so fix, plan, and release commands consistently operate from the repository root.
+
+## Fixes
+- Windows CMD installation now uses a temporary script path to avoid failures on install.
+- Absolute path resolution issues fixed across multiple commands by standardizing repository root usage.
+
+## Improvements
+- Documentation expanded and clarified for enterprise deployments, including environment variables, proxy and CA configuration, and config precedence.
+- Core command documentation updated along with code style guidelines and testing practices.
+- Cargo manifest updated with a revised description, improved keywords, and reordered dependencies.
+
+## Breaking Changes
+- Renamed configuration environment variables:
+  - System config is now specified via GITAR_SYSTEM_CONFIG.
+  - User config environment variable renamed to GITAR_CONFIG_FILE.
+  - Proxy configuration standardized to GITAR_PROXY.
+  These changes may require updating existing scripts or deployment environments.
+
+## Infrastructure
+- HTTP client setup consolidated to simplify maintenance and improve consistency.
+- Project metadata refreshed to better reflect current functionality and ecosystem usage.
 
 ## [1.3.2] - 2026-01-24
 

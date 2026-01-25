@@ -8,61 +8,31 @@ Gitar is an AI-powered Git assistant written in Rust that generates commit messa
 
 ## Product Philosophy
 
-Gitar is an **AI-native interface to Git history** with a small, stable command language:
+Gitar is an **AI-native interface to Git history** with four core commands:
 
-```
-gitar plan      # Create/reshape history (default command)
-gitar tell      # Understand/communicate history (read-only)
-gitar fix       # Repair conflicts
-gitar release   # Ship releases
-```
-
-**Single-letter shortcuts:** `p`, `t`, `f`, `r` (e.g., `gitar t --commit`)
+| Command | Alias | Purpose | Mutates? |
+|---------|-------|---------|----------|
+| `gitar plan` | `p` | Create/reshape history (default) | Only with `--apply` |
+| `gitar tell` | `t` | Understand/communicate history | No (read-only) |
+| `gitar fix` | `f` | Repair conflicts | Only with `--apply` |
+| `gitar release` | `r` | Ship releases | Only with `--apply` |
 
 **Core Principles:**
 - Dry-run by default — nothing mutates without `--apply`
 - Unified scope flags: `--working`, `--staged`, `--history <REF>`
-- No magic behavior or hidden mode switches
-
-All commands share a **context optimization engine** with smart diff shaping, secret detection, language presets, and token budget management.
 
 ## Build & Test Commands
 
 ```bash
-# Build the project
-cargo build --release
-
-# Run tests
-cargo test
-
-# Run tests with output
-cargo test -- --nocapture
-
-# Run a specific test
-cargo test test_name
-
-# Check code (fast, no build)
-cargo check
-
-# Format code
-cargo fmt
-
-# Lint
-cargo clippy
-
-# Run the binary (after building)
-./target/release/gitar --help
-
-# Run without building (debug mode)
-cargo run -- <command>
+cargo build --release     # Build
+cargo test                # Run all tests
+cargo test test_name      # Run specific test
+cargo test -- --nocapture # Tests with output
+cargo check               # Fast syntax check
+cargo fmt                 # Format code
+cargo clippy              # Lint
+cargo run -- <command>    # Run without building
 ```
-
-## Development Build Targets
-
-The project supports cross-compilation for multiple platforms (see .github/workflows/ci.yml):
-- Linux: x86_64-unknown-linux-gnu, x86_64-unknown-linux-musl
-- macOS: aarch64-apple-darwin
-- Windows: x86_64-pc-windows-msvc
 
 ## Architecture
 
@@ -200,7 +170,7 @@ src/
 - API keys read from environment variables (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
 
 **Proxy Support**
-- Respects ALL_PROXY environment variable
+- Respects GITAR_PROXY environment variable
 - Supports HTTP and SOCKS5 proxies (socks5h:// for DNS through proxy)
 - Useful for corporate/air-gapped environments via SSH tunnel
 
@@ -211,14 +181,16 @@ src/
 
 ## Testing
 
-Tests are in `tests/` directory:
-- `cli.rs`: Core integration tests using assert_cmd
+Tests are in `tests/` directory using `assert_cmd` for integration testing:
+- `cli.rs`: Core integration tests
 - `cli_parse.rs`: CLI argument parsing tests
 - `commands.rs`: Command-specific integration tests
 - `diff.rs`: Unit tests for diff shaping algorithms
 - `resolve.rs`: Integration tests for conflict resolution
 
-When adding new commands, add corresponding tests in tests/cli.rs using the pattern:
+Use `serial_test` for tests that require isolation (git state, file system).
+
+When adding new commands, add tests in tests/cli.rs:
 ```rust
 #[test]
 fn test_command_name() {
@@ -229,28 +201,19 @@ fn test_command_name() {
 }
 ```
 
-## Command Reference
-
-**Primary Commands (Product Layer)**
-
-| Command | Alias | Purpose | Mutates? |
-|---------|-------|---------|----------|
-| `gitar plan` | `p` | Multi-commit planning from changes or history | Only with `--apply` |
-| `gitar tell` | `t` | Read-only narration (commit, pr, changelog, history, explain) | No |
-| `gitar fix` | `f` | Merge conflict resolution | Only with `--apply` |
-| `gitar release` | `r` | Version bump, changelog, tag creation | Only with `--apply` |
+## Command Details
 
 **Plan Command** (command/plan/) — Default when running `gitar` with no args
 - Scope flags: `--working`, `--staged`, `--history <REF>`
 - `--apply` to execute, `-i` for interactive editing
-- Architecture: analyze.rs → group.rs → editor.rs → execute.rs
+- Flow: analyze.rs → group.rs → editor.rs → execute.rs
 
 **Tell Subcommands** (gitar tell --<selector>)
 - `--commit` — Generate AI commit message and commit
 - `--pr [BASE]` — Generate PR description
 - `--changelog [REF]` — Generate release notes
 - `--history [REF]` — Describe commit range
-- `--explain` — Plain English explanation for stakeholders (default)
+- `--explain` — Plain English explanation (default)
 
 **Fix Command** (command/fix/)
 - Three-tier resolution: heuristics → per-region LLM → full-file LLM
@@ -260,7 +223,7 @@ fn test_command_name() {
 - `squash <N|REF>` — Squash commits with AI message
 - `rewrite <N|REF>` — Rewrite commit messages
 - `release` — Version bump + changelog + tag
-- `init` (with `--show` to display resolved config), `models`, `hook install|uninstall`, `diff`
+- `init --show` — Display resolved config
 
 ## Common Development Patterns
 
@@ -295,22 +258,10 @@ fn test_command_name() {
 - Add new algorithm module and update dispatch in shape_diff()
 - Add comparison logic to compare_algorithms() for --compare flag
 
-## Key Dependencies
-
-- **clap**: CLI argument parsing with derive macros
-- **reqwest**: HTTP client with JSON, SOCKS, and streaming support
-- **tokio**: Async runtime (full features)
-- **serde/serde_json**: Serialization for API requests/responses
-- **anyhow**: Error handling with context
-- **regex**: Secret detection patterns
-- **toml**: Config file parsing
-- **dialoguer**: Interactive prompts (select, confirm, input)
-
 ## Code Style
 
-- Use Result<T> with anyhow for error handling
-- Keep command functions async (use tokio runtime)
-- Prefer explicit error messages with context
-- Use const for string literals and configuration values
-- Module-level comments explain purpose and design
-- Function-level comments only where logic is non-obvious
+- Use `Result<T>` with `anyhow` for error handling
+- Keep command functions async (tokio runtime)
+- Prefer explicit error messages with `.context()`
+- Use `const` for string literals and configuration values
+- Module-level comments explain purpose; function-level only where non-obvious

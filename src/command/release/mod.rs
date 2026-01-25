@@ -104,8 +104,10 @@ pub async fn cmd_release(
     // Get repo root for all path operations (works from any subdirectory)
     let repo_root = PathBuf::from(git::get_repo_root()?);
 
-    // Step 4: Detect version files
-    let version_files = detect_version_files(&repo_root)?;
+    // Step 4: Detect version files (use current directory, not repo root,
+    // so subfolder projects like monorepos work correctly)
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    let version_files = detect_version_files(&cwd)?;
 
     if version_files.is_empty() {
         println!();

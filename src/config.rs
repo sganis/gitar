@@ -78,6 +78,7 @@ fn env_var_for_provider(provider: &str) -> Option<&'static str> {
 // =============================================================================
 
 pub const CONFIG_FILENAME: &str = ".gitar.toml";
+pub const SYSTEM_CONFIG_ENV: &str = "GITAR_CONFIG_FILE";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
@@ -87,6 +88,30 @@ pub struct ProviderConfig {
     pub temperature: Option<f32>,
     pub base_url: Option<String>,
     pub stream: Option<bool>,
+}
+
+impl ProviderConfig {
+    /// Merge self with another config. Self takes precedence (non-None values win).
+    pub fn merge_with(&mut self, base: &ProviderConfig) {
+        if self.api_key.is_none() {
+            self.api_key = base.api_key.clone();
+        }
+        if self.model.is_none() {
+            self.model = base.model.clone();
+        }
+        if self.max_tokens.is_none() {
+            self.max_tokens = base.max_tokens;
+        }
+        if self.temperature.is_none() {
+            self.temperature = base.temperature;
+        }
+        if self.base_url.is_none() {
+            self.base_url = base.base_url.clone();
+        }
+        if self.stream.is_none() {
+            self.stream = base.stream;
+        }
+    }
 }
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
@@ -111,11 +136,35 @@ impl Config {
         dirs::home_dir().map(|h| h.join(CONFIG_FILENAME))
     }
 
-    pub fn load() -> Self {
-        Self::path()
-            .and_then(|p| std::fs::read_to_string(&p).ok())
+    /// Returns the system config path from GITAR_SYSTEM_CONFIG env var, if set.
+    pub fn system_path() -> Option<PathBuf> {
+        std::env::var(SYSTEM_CONFIG_ENV)
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(PathBuf::from)
+    }
+
+    /// Load config from a specific path.
+    pub fn load_from_path(path: &std::path::Path) -> Option<Self> {
+        std::fs::read_to_string(path)
+            .ok()
             .and_then(|s| toml::from_str(&s).ok())
-            .unwrap_or_default()
+    }
+
+    /// Load config with cascading: system config -> user config.
+    /// User config values override system config values.
+    pub fn load() -> Self {
+        // Start with system config if available
+        let mut config = Self::system_path()
+            .and_then(|p| Self::load_from_path(&p))
+            .unwrap_or_default();
+
+        // Merge user config on top (user values take precedence)
+        if let Some(user_config) = Self::path().and_then(|p| Self::load_from_path(&p)) {
+            config.merge_with(&user_config);
+        }
+
+        config
     }
 
     pub fn save(&self) -> Result<()> {
@@ -124,6 +173,72 @@ impl Config {
         std::fs::write(&path, content).context("Failed to write config file")?;
         println!("Config saved to: {}", path.display());
         Ok(())
+    }
+
+    /// Merge another config into self. The other config's values take precedence.
+    pub fn merge_with(&mut self, other: &Config) {
+        // Top-level fields: other takes precedence if set
+        if other.default_provider.is_some() {
+            self.default_provider = other.default_provider.clone();
+        }
+        if other.base_branch.is_some() {
+            self.base_branch = other.base_branch.clone();
+        }
+        if other.max_diff_chars.is_some() {
+            self.max_diff_chars = other.max_diff_chars;
+        }
+        if other.insecure.is_some() {
+            self.insecure = other.insecure;
+        }
+        if other.preset.is_some() {
+            self.preset = other.preset.clone();
+        }
+        if other.secret_action.is_some() {
+            self.secret_action = other.secret_action.clone();
+        }
+        if other.auto_apply.is_some() {
+            self.auto_apply = other.auto_apply;
+        }
+
+        // Provider configs: merge each provider section
+        Self::merge_provider(&mut self.openai, &other.openai);
+        Self::merge_provider(&mut self.claude, &other.claude);
+        Self::merge_provider(&mut self.gemini, &other.gemini);
+        Self::merge_provider(&mut self.groq, &other.groq);
+        Self::merge_provider(&mut self.ollama, &other.ollama);
+    }
+
+    fn merge_provider(target: &mut Option<ProviderConfig>, source: &Option<ProviderConfig>) {
+        match (target.as_mut(), source) {
+            (Some(t), Some(s)) => {
+                // Both exist: merge source into target (source takes precedence)
+                if s.api_key.is_some() {
+                    t.api_key = s.api_key.clone();
+                }
+                if s.model.is_some() {
+                    t.model = s.model.clone();
+                }
+                if s.max_tokens.is_some() {
+                    t.max_tokens = s.max_tokens;
+                }
+                if s.temperature.is_some() {
+                    t.temperature = s.temperature;
+                }
+                if s.base_url.is_some() {
+                    t.base_url = s.base_url.clone();
+                }
+                if s.stream.is_some() {
+                    t.stream = s.stream;
+                }
+            }
+            (None, Some(s)) => {
+                // Only source exists: clone it
+                *target = Some(s.clone());
+            }
+            _ => {
+                // Target exists or both are None: nothing to do
+            }
+        }
     }
 
     pub fn get_provider(&self, name: &str) -> Option<&ProviderConfig> {
@@ -367,5 +482,93 @@ mod tests {
             repo.path(),
         );
         assert_eq!(r.preset, Preset::Rust);
+    }
+
+    #[test]
+    fn config_merge_user_overrides_system() {
+        let mut system = Config {
+            default_provider: Some("openai".into()),
+            base_branch: Some("main".into()),
+            openai: Some(ProviderConfig {
+                api_key: Some("system-key".into()),
+                model: Some("gpt-4".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let user = Config {
+            default_provider: Some("claude".into()),
+            // base_branch not set - should keep system value
+            openai: Some(ProviderConfig {
+                model: Some("gpt-4o".into()), // override model
+                // api_key not set - should keep system value
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        system.merge_with(&user);
+
+        // User values should take precedence
+        assert_eq!(system.default_provider, Some("claude".into()));
+        // System values should be kept when user doesn't override
+        assert_eq!(system.base_branch, Some("main".into()));
+        // Provider merge: user model wins, system api_key kept
+        let openai = system.openai.unwrap();
+        assert_eq!(openai.model, Some("gpt-4o".into()));
+        assert_eq!(openai.api_key, Some("system-key".into()));
+    }
+
+    #[test]
+    fn config_merge_user_adds_provider() {
+        let mut system = Config {
+            default_provider: Some("openai".into()),
+            openai: Some(ProviderConfig {
+                api_key: Some("openai-key".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let user = Config {
+            claude: Some(ProviderConfig {
+                api_key: Some("claude-key".into()),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        system.merge_with(&user);
+
+        // System provider should still exist
+        assert!(system.openai.is_some());
+        // User provider should be added
+        assert_eq!(
+            system.claude.as_ref().unwrap().api_key,
+            Some("claude-key".into())
+        );
+    }
+
+    #[test]
+    fn config_load_from_path_works() {
+        let dir = TempDir::new().unwrap();
+        let path = dir.path().join("test.toml");
+        std::fs::write(
+            &path,
+            r#"
+default_provider = "gemini"
+[gemini]
+api_key = "test-key"
+"#,
+        )
+        .unwrap();
+
+        let config = Config::load_from_path(&path).unwrap();
+        assert_eq!(config.default_provider, Some("gemini".into()));
+        assert_eq!(
+            config.gemini.as_ref().unwrap().api_key,
+            Some("test-key".into())
+        );
     }
 }
