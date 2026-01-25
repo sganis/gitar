@@ -1,3 +1,16 @@
+## [2.2.0] - 2026-01-25
+
+# Release Notes
+
+## Fixes
+- Fix release command version file detection to use the current directory, improving support for monorepos.
+
+## Improvements
+- Add test to verify release command correctly detects Cargo.toml when run from a subdirectory.
+
+## Infrastructure
+- Update Rust dependencies.
+
 ## [2.1.0] - 2026-01-25
 
 # Release Notes
