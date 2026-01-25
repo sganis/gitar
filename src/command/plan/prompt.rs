@@ -171,6 +171,13 @@ pub fn parse_plan_response(response: &str) -> Result<PlanResponse, ParseError> {
         if let Ok(plan) = serde_json::from_str::<PlanResponse>(&json) {
             return Ok(plan);
         }
+
+        // Try to repair truncated JSON
+        if let Some(repaired) = try_repair_json(&json) {
+            if let Ok(plan) = serde_json::from_str::<PlanResponse>(&repaired) {
+                return Ok(plan);
+            }
+        }
     }
 
     // Try finding JSON object in response
@@ -181,9 +188,89 @@ pub fn parse_plan_response(response: &str) -> Result<PlanResponse, ParseError> {
                 return Ok(plan);
             }
         }
+
+        // Try to repair truncated JSON from embedded object
+        let json = &response[start..];
+        if let Some(repaired) = try_repair_json(json) {
+            if let Ok(plan) = serde_json::from_str::<PlanResponse>(&repaired) {
+                return Ok(plan);
+            }
+        }
+    }
+
+    // Check if response looks truncated
+    if is_truncated_json(response) {
+        return Err(ParseError::TruncatedJson);
     }
 
     Err(ParseError::InvalidJson(response.to_string()))
+}
+
+/// Attempt to repair truncated JSON by closing brackets
+fn try_repair_json(json: &str) -> Option<String> {
+    let mut repaired = json.trim().to_string();
+
+    // Count unclosed brackets
+    let mut brace_count = 0;
+    let mut bracket_count = 0;
+    let mut in_string = false;
+    let mut escape_next = false;
+
+    for ch in repaired.chars() {
+        if escape_next {
+            escape_next = false;
+            continue;
+        }
+        match ch {
+            '\\' if in_string => escape_next = true,
+            '"' => in_string = !in_string,
+            '{' if !in_string => brace_count += 1,
+            '}' if !in_string => brace_count -= 1,
+            '[' if !in_string => bracket_count += 1,
+            ']' if !in_string => bracket_count -= 1,
+            _ => {}
+        }
+    }
+
+    // If we're inside a string, close it
+    if in_string {
+        repaired.push('"');
+    }
+
+    // Close any unclosed brackets/braces
+    for _ in 0..bracket_count {
+        repaired.push(']');
+    }
+    for _ in 0..brace_count {
+        repaired.push('}');
+    }
+
+    // Only return if we made changes and result looks valid
+    if repaired != json && (repaired.ends_with('}') || repaired.ends_with(']')) {
+        Some(repaired)
+    } else {
+        None
+    }
+}
+
+/// Check if JSON appears to be truncated
+fn is_truncated_json(text: &str) -> bool {
+    let trimmed = text.trim();
+
+    // Looks like it started JSON but doesn't end properly
+    if trimmed.contains('{') || trimmed.contains('[') {
+        let has_open_brace = trimmed.contains('{');
+        let has_close_brace = trimmed.ends_with('}');
+        let has_open_bracket = trimmed.contains('[');
+        let has_close_bracket = trimmed.ends_with(']');
+
+        // Started but didn't finish
+        if (has_open_brace && !has_close_brace) || (has_open_bracket && !has_close_bracket) {
+            return true;
+        }
+    }
+
+    false
 }
 
 /// Extract JSON from markdown code block
@@ -191,21 +278,43 @@ fn extract_json_block(text: &str) -> Option<String> {
     // Look for ```json ... ``` block
     let json_start = text.find("```json").or_else(|| text.find("```"))?;
     let content_start = text[json_start..].find('\n')? + json_start + 1;
-    let content_end = text[content_start..].find("```")? + content_start;
 
-    Some(text[content_start..content_end].trim().to_string())
+    // Try to find closing ```, but if not found, take rest of text
+    let content_end = text[content_start..]
+        .find("```")
+        .map(|i| i + content_start)
+        .unwrap_or(text.len());
+
+    let content = text[content_start..content_end].trim();
+    if content.is_empty() {
+        return None;
+    }
+
+    Some(content.to_string())
 }
 
 /// Parse error types
 #[derive(Debug)]
 pub enum ParseError {
     InvalidJson(String),
+    TruncatedJson,
 }
 
 impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            ParseError::InvalidJson(s) => write!(f, "Invalid JSON response: {}", s),
+            ParseError::InvalidJson(s) => {
+                // Truncate long responses in error message
+                let preview = if s.len() > 200 {
+                    format!("{}...", &s[..200])
+                } else {
+                    s.clone()
+                };
+                write!(f, "Invalid JSON response: {}", preview)
+            }
+            ParseError::TruncatedJson => {
+                write!(f, "LLM response was truncated (try increasing max_tokens)")
+            }
         }
     }
 }
@@ -474,5 +583,62 @@ Let me know if you need changes."#;
         let text = "No code block here";
         let result = extract_json_block(text);
         assert!(result.is_none());
+    }
+
+    #[test]
+    fn extract_json_block_no_closing_fence() {
+        // LLM response truncated without closing ```
+        let text = "Here is the plan:\n```json\n{\"key\": \"value\"}";
+        let result = extract_json_block(text);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), "{\"key\": \"value\"}");
+    }
+
+    #[test]
+    fn try_repair_json_closes_braces() {
+        let truncated = r#"{"candidates": [{"groups": [{"title": "Test"#;
+        let repaired = try_repair_json(truncated);
+        assert!(repaired.is_some());
+        let repaired = repaired.unwrap();
+        assert!(repaired.ends_with('}'));
+    }
+
+    #[test]
+    fn try_repair_json_closes_string() {
+        let truncated = r#"{"title": "Test title"#;
+        let repaired = try_repair_json(truncated);
+        assert!(repaired.is_some());
+        let repaired = repaired.unwrap();
+        assert!(repaired.contains("\"Test title\""));
+    }
+
+    #[test]
+    fn is_truncated_json_detects_incomplete() {
+        assert!(is_truncated_json(r#"{"key": "value"#));
+        assert!(is_truncated_json(r#"[1, 2, 3"#));
+        assert!(!is_truncated_json(r#"{"key": "value"}"#));
+        assert!(!is_truncated_json(r#"[1, 2, 3]"#));
+    }
+
+    #[test]
+    fn parse_truncated_json_in_code_block() {
+        // Simulates LLM response that got truncated mid-JSON
+        let response = r#"```json
+{
+    "candidates": [{
+        "groups": [{
+            "title": "Update docs",
+            "summary": "Documentation changes",
+            "files": ["README.md"]
+        }],
+        "rationale": "Simple change",
+        "confidence": 0.9
+    }],
+    "assumptions": [],
+    "open_questions": []
+"#;
+        // Missing closing } and ```
+        let result = parse_plan_response(response);
+        assert!(result.is_ok());
     }
 }

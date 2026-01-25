@@ -117,7 +117,10 @@ pub async fn cmd_plan(
         for (idx, group) in groups.iter().enumerate() {
             println!("\nCommit {}/{}", idx + 1, groups.len());
             println!("{}", group.message);
-            println!("Files ({}): {}", group.files.len(), group.files.join(", "));
+            println!("Files ({}):", group.files_with_status.len());
+            for file in &group.files_with_status {
+                println!("  {} {}", file.status.label(), file.path);
+            }
         }
         println!("\n===========================================================\n");
         groups

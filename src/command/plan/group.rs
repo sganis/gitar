@@ -20,6 +20,34 @@ use super::scoring::{format_score, select_best_candidate};
 // DATA STRUCTURES
 // =============================================================================
 
+/// File status indicator for display
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileStatus {
+    Added,
+    Modified,
+    Deleted,
+    Renamed,
+}
+
+impl FileStatus {
+    /// Short label for display (e.g., "[A]", "[M]", "[D]", "[R]")
+    pub fn label(&self) -> &'static str {
+        match self {
+            FileStatus::Added => "[A]",
+            FileStatus::Modified => "[M]",
+            FileStatus::Deleted => "[D]",
+            FileStatus::Renamed => "[R]",
+        }
+    }
+}
+
+/// A file with its status in a commit group
+#[derive(Debug, Clone)]
+pub struct FileWithStatus {
+    pub path: String,
+    pub status: FileStatus,
+}
+
 #[derive(Debug, Clone)]
 pub struct CommitGroup {
     #[allow(dead_code)]
@@ -27,6 +55,7 @@ pub struct CommitGroup {
     pub title: String,
     pub message: String,
     pub files: Vec<String>,
+    pub files_with_status: Vec<FileWithStatus>,
     #[allow(dead_code)]
     pub estimated_tokens: usize,
 }
@@ -232,16 +261,44 @@ async fn convert_to_commit_groups(
 
         let title = truncate_title(&message);
 
+        // Build files with status from analysis
+        let files_with_status: Vec<FileWithStatus> = files
+            .iter()
+            .map(|path| {
+                let status = analysis
+                    .files
+                    .iter()
+                    .find(|f| &f.path == path)
+                    .map(|f| change_status_to_file_status(&f.status))
+                    .unwrap_or(FileStatus::Modified);
+                FileWithStatus {
+                    path: path.clone(),
+                    status,
+                }
+            })
+            .collect();
+
         commit_groups.push(CommitGroup {
             id: idx,
             title,
             message,
             files,
+            files_with_status,
             estimated_tokens,
         });
     }
 
     Ok(commit_groups)
+}
+
+/// Convert ChangeStatus to FileStatus
+fn change_status_to_file_status(status: &ChangeStatus) -> FileStatus {
+    match status {
+        ChangeStatus::Added => FileStatus::Added,
+        ChangeStatus::Modified => FileStatus::Modified,
+        ChangeStatus::Deleted => FileStatus::Deleted,
+        ChangeStatus::Renamed { .. } => FileStatus::Renamed,
+    }
 }
 
 /// Truncate title to max 60 chars
@@ -471,11 +528,47 @@ mod tests {
             title: "Test".to_string(),
             message: "Test message".to_string(),
             files: vec!["file.rs".to_string()],
+            files_with_status: vec![FileWithStatus {
+                path: "file.rs".to_string(),
+                status: FileStatus::Added,
+            }],
             estimated_tokens: 100,
         };
 
         assert_eq!(group.id, 0);
         assert_eq!(group.title, "Test");
         assert_eq!(group.files.len(), 1);
+        assert_eq!(group.files_with_status.len(), 1);
+        assert_eq!(group.files_with_status[0].status, FileStatus::Added);
+    }
+
+    #[test]
+    fn file_status_labels() {
+        assert_eq!(FileStatus::Added.label(), "[A]");
+        assert_eq!(FileStatus::Modified.label(), "[M]");
+        assert_eq!(FileStatus::Deleted.label(), "[D]");
+        assert_eq!(FileStatus::Renamed.label(), "[R]");
+    }
+
+    #[test]
+    fn change_status_conversion() {
+        assert_eq!(
+            change_status_to_file_status(&ChangeStatus::Added),
+            FileStatus::Added
+        );
+        assert_eq!(
+            change_status_to_file_status(&ChangeStatus::Modified),
+            FileStatus::Modified
+        );
+        assert_eq!(
+            change_status_to_file_status(&ChangeStatus::Deleted),
+            FileStatus::Deleted
+        );
+        assert_eq!(
+            change_status_to_file_status(&ChangeStatus::Renamed {
+                from: "old.rs".to_string()
+            }),
+            FileStatus::Renamed
+        );
     }
 }

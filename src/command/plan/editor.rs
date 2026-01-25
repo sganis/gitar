@@ -59,9 +59,9 @@ impl PlanEditor {
         for (idx, group) in self.groups.iter().enumerate() {
             println!("Commit {}/{}", idx + 1, self.groups.len());
             println!("Message: {}", group.message);
-            println!("Files ({}):", group.files.len());
-            for file in &group.files {
-                println!("  - {}", file);
+            println!("Files ({}):", group.files_with_status.len());
+            for file in &group.files_with_status {
+                println!("  {} {}", file.status.label(), file.path);
             }
             println!();
         }
