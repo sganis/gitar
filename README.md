@@ -420,13 +420,9 @@ gitar diff --compare
 
 ## Configuration
 
-Stored in:
+### User Configuration
 
-```bash
-~/.gitar.toml
-```
-
-Example configuration:
+Stored in `~/.gitar.toml`:
 
 ```toml
 default_provider = "claude"
@@ -439,11 +435,29 @@ secret_action = "redact"  # or "warn" or "block"
 model = "claude-sonnet-4-5-20250514"
 ```
 
-View resolved configuration:
+### System Configuration (Enterprise/Cluster)
+
+For shared environments (clusters, teams), set a system-wide config file:
+
+```bash
+export GITAR_CONFIG_FILE=/shared/path/gitar.toml
+```
+
+**Config precedence** (highest to lowest):
+1. CLI flags
+2. User config (`~/.gitar.toml`)
+3. System config (`$GITAR_CONFIG_FILE`)
+4. Built-in defaults
+
+This allows admins to pre-configure gitar for users who can then use it immediately without running `gitar init`. Users can still override system settings with their own `~/.gitar.toml`.
+
+### View Configuration
 
 ```bash
 gitar init --show
 ```
+
+Shows system config path, user config path, and the merged result.
 
 ---
 
@@ -472,11 +486,43 @@ And the message is generated automatically.
 
 ---
 
-## Behind Firewalls (Proxy / SSH Tunnel)
+## Enterprise Deployment
+
+### Environment Variables
+
+| Variable | Purpose |
+|----------|---------|
+| `GITAR_CONFIG_FILE` | Path to system-wide config file |
+| `GITAR_CA_FILE` | Path to custom CA certificate (PEM or DER) |
+| `GITAR_PROXY` | HTTP or SOCKS5 proxy URL |
+
+### Proxy / SSH Tunnel
 
 ```bash
 export GITAR_PROXY="socks5h://localhost:8000"
+export GITAR_PROXY="http://proxy.internal:8080"
 ```
+
+### Custom CA Certificate
+
+For internal HTTPS endpoints with custom certificate authorities:
+
+```bash
+export GITAR_CA_FILE=/path/to/internal-ca.cer
+```
+
+Supports both PEM and DER formats (`.cer`, `.crt`, `.pem`).
+
+### Example Cluster Setup
+
+```bash
+# /etc/profile.d/gitar.sh (or module load script)
+export GITAR_CONFIG_FILE=/shared/gitar/config.toml
+export GITAR_CA_FILE=/shared/certs/internal-ca.cer
+export GITAR_PROXY=http://proxy.internal:8080  # optional
+```
+
+With this setup, users can run gitar immediately without any configuration.
 
 ---
 
