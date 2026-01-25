@@ -1,3 +1,25 @@
+## [2.3.0] - 2026-01-25
+
+# Release Notes
+## Features
+- Added file status tracking to commit groups for better change analysis and improved JSON repair handling in the plan prompt parser.
+- Replaced the Python-based LLM planner with a new Rust implementation, introducing context, model, prompt, and scoring modules.
+- Added comprehensive technical documentation and removed outdated planning notes.
+- Added planning document to improve commit grouping quality in the gitar plan command.
+
+## Fixes
+- Fixed Windows CMD installer to use a temporary script path.
+- Fixed CMD installer to create the temp directory before version resolution and corrected errorlevel checks.
+
+## Improvements
+- Improved Windows installer reliability by using PowerShell JSON parsing and Expand-Archive with a curl User-Agent header.
+- Updated Rust dependencies for compatibility and performance.
+- Updated Cargo manifest with revised description, keywords, and reordered dependencies.
+- Updated path handling to use the repository root for absolute path resolution across fix, plan, and release commands.
+
+## Infrastructure
+- Internal release tags updated (v1.3.2, v1.3.3).
+
 ## [2.2.0] - 2026-01-25
 
 # Release Notes
