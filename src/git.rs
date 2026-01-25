@@ -584,6 +584,30 @@ mod tests {
 
     use serial_test::serial;
 
+    /// Run a git command with retry logic for lock file contention
+    fn run_git_with_retry(args: &[&str]) -> Result<String> {
+        let max_retries = 5;
+        let mut last_error = None;
+
+        for attempt in 0..max_retries {
+            match run_git(args) {
+                Ok(output) => return Ok(output),
+                Err(e) => {
+                    let err_str = e.to_string();
+                    if err_str.contains("index.lock") || err_str.contains("File exists") {
+                        // Lock contention - wait and retry
+                        std::thread::sleep(std::time::Duration::from_millis(100 * (attempt + 1) as u64));
+                        last_error = Some(e);
+                        continue;
+                    }
+                    return Err(e);
+                }
+            }
+        }
+
+        Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Git command failed after retries")))
+    }
+
     fn in_temp_repo<F: FnOnce()>(f: F) {
         let cwd = std::env::current_dir().unwrap();
         let dir = tempfile::tempdir().unwrap();
@@ -593,10 +617,23 @@ mod tests {
         reset_repo_root_cache();
 
         run_git(&["init", "-q"]).unwrap();
+
+        // Clean up any stale lock files that might exist
+        let index_lock = dir.path().join(".git/index.lock");
+        if index_lock.exists() {
+            let _ = std::fs::remove_file(&index_lock);
+        }
+
         run_git(&["config", "user.email", "test@example.com"]).unwrap();
         run_git(&["config", "user.name", "Test"]).unwrap();
 
         f();
+
+        // Clean up lock files before leaving
+        let index_lock = dir.path().join(".git/index.lock");
+        if index_lock.exists() {
+            let _ = std::fs::remove_file(&index_lock);
+        }
 
         std::env::set_current_dir(cwd).unwrap();
         // Reset cache again to restore original repo root
@@ -608,26 +645,26 @@ mod tests {
     fn conflict_helpers_detect_and_read_index_stages() {
         in_temp_repo(|| {
             std::fs::write("conflict.txt", "base\n").unwrap();
-            run_git(&["add", "conflict.txt"]).unwrap();
-            run_git(&["commit", "-m", "base", "-q"]).unwrap();
+            run_git_with_retry(&["add", "conflict.txt"]).unwrap();
+            run_git_with_retry(&["commit", "-m", "base", "-q"]).unwrap();
 
-            run_git(&["checkout", "-b", "feature", "-q"]).unwrap();
+            run_git_with_retry(&["checkout", "-b", "feature", "-q"]).unwrap();
             std::fs::write("conflict.txt", "feature\n").unwrap();
-            run_git(&["add", "conflict.txt"]).unwrap();
-            run_git(&["commit", "-m", "feature change", "-q"]).unwrap();
+            run_git_with_retry(&["add", "conflict.txt"]).unwrap();
+            run_git_with_retry(&["commit", "-m", "feature change", "-q"]).unwrap();
 
             if run_git_optional(&["rev-parse", "--verify", "master"])
                 .unwrap()
                 .is_some()
             {
-                run_git(&["checkout", "master", "-q"]).unwrap();
+                run_git_with_retry(&["checkout", "master", "-q"]).unwrap();
             } else {
-                run_git(&["checkout", "main", "-q"]).unwrap();
+                run_git_with_retry(&["checkout", "main", "-q"]).unwrap();
             }
 
             std::fs::write("conflict.txt", "main\n").unwrap();
-            run_git(&["add", "conflict.txt"]).unwrap();
-            run_git(&["commit", "-m", "main change", "-q"]).unwrap();
+            run_git_with_retry(&["add", "conflict.txt"]).unwrap();
+            run_git_with_retry(&["commit", "-m", "main change", "-q"]).unwrap();
 
             let (_out, _err, ok) = run_git_status(&["merge", "feature", "-q"]);
             assert!(!ok, "merge should conflict");
