@@ -138,6 +138,39 @@ fn release_requires_git_repo() {
         .stderr(predicate::str::contains("Not a git repository"));
 }
 
+#[test]
+fn release_detects_version_file_from_subdirectory() {
+    let home = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+
+    init_repo(repo.path());
+    commit_file(repo.path(), "README.md", "# Root project\n", "initial");
+
+    // Create a subdirectory with its own Cargo.toml (simulating a monorepo)
+    let subproject = repo.path().join("backend");
+    fs::create_dir(&subproject).unwrap();
+    let cargo_toml = r#"[package]
+name = "backend"
+version = "1.2.3"
+"#;
+    fs::write(subproject.join("Cargo.toml"), cargo_toml).unwrap();
+    git(repo.path(), &["add", "backend/Cargo.toml"]);
+    git(repo.path(), &["commit", "-m", "add backend"]);
+
+    // Run gitar release from subdirectory with explicit bump (no LLM needed)
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
+    with_isolated_home(&mut cmd, home.path());
+    cmd.current_dir(&subproject);
+
+    // Release should detect the Cargo.toml in the current subdirectory
+    // Use --skip-changelog to avoid LLM call, dry-run by default
+    cmd.args(["release", "--bump", "patch", "--skip-changelog"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("Cargo.toml"))
+        .stdout(predicate::str::contains("1.2.3"));
+}
+
 // =============================================================================
 // FIX COMMAND TESTS
 // =============================================================================
