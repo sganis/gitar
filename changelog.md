@@ -1,3 +1,13 @@
+## [2.3.1] - 2026-01-25
+
+# Release Notes
+## Features
+- Add FileWithStatus usage in plan editor and execute tests to validate file status handling
+- Add architecture overview for agent workflow and kernel execution flow
+
+## Improvements
+- Update Rust dependencies
+
 ## [2.3.0] - 2026-01-25
 
 # Release Notes
