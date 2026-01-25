@@ -2,6 +2,48 @@
 use anyhow::{bail, Result};
 use std::path::PathBuf;
 use std::process::Command;
+use std::sync::Mutex;
+
+// =============================================================================
+// REPO ROOT CACHING (for subdirectory support)
+// =============================================================================
+
+static REPO_ROOT: Mutex<Option<Option<PathBuf>>> = Mutex::new(None);
+
+/// Detect repo root from current directory (called once per process).
+fn detect_repo_root() -> Option<PathBuf> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--show-toplevel"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let s = String::from_utf8_lossy(&output.stdout);
+    let t = s.trim();
+    if t.is_empty() {
+        None
+    } else {
+        Some(PathBuf::from(t))
+    }
+}
+
+/// Get cached repo root for running git commands from a consistent directory.
+/// This enables gitar to work correctly from any subdirectory of a repo.
+fn get_cached_repo_root() -> Option<PathBuf> {
+    let mut cache = REPO_ROOT.lock().unwrap();
+    if cache.is_none() {
+        *cache = Some(detect_repo_root());
+    }
+    cache.as_ref().unwrap().clone()
+}
+
+/// Reset the cached repo root. Used by tests that create temp repos.
+#[cfg(test)]
+pub fn reset_repo_root_cache() {
+    let mut cache = REPO_ROOT.lock().unwrap();
+    *cache = None;
+}
 
 // =============================================================================
 // EXCLUDE PATTERNS
@@ -35,8 +77,15 @@ pub struct CommitInfo {
 // GIT UTILITIES
 // =============================================================================
 pub fn run_git(args: &[&str]) -> Result<String> {
-    let output = Command::new("git")
-        .args(args)
+    let mut cmd = Command::new("git");
+    cmd.args(args);
+
+    // Run from repo root for consistent path handling (subdirectory support)
+    if let Some(root) = get_cached_repo_root() {
+        cmd.current_dir(root);
+    }
+
+    let output = cmd
         .output()
         .map_err(|e| anyhow::anyhow!("Failed to execute git: {}", e))?;
 
@@ -59,7 +108,15 @@ pub fn run_git(args: &[&str]) -> Result<String> {
 /// Run git command and return (stdout, stderr, success) tuple.
 /// Unlike run_git(), this does not fail on non-zero exit.
 pub fn run_git_status(args: &[&str]) -> (String, String, bool) {
-    match Command::new("git").args(args).output() {
+    let mut cmd = Command::new("git");
+    cmd.args(args);
+
+    // Run from repo root for consistent path handling (subdirectory support)
+    if let Some(root) = get_cached_repo_root() {
+        cmd.current_dir(root);
+    }
+
+    match cmd.output() {
         Ok(o) => (
             String::from_utf8_lossy(&o.stdout).to_string(),
             String::from_utf8_lossy(&o.stderr).to_string(),
@@ -72,8 +129,15 @@ pub fn run_git_status(args: &[&str]) -> (String, String, bool) {
 /// Run git command, returning Ok(stdout) on success or Ok(None) on failure.
 /// Useful for commands where failure is expected (e.g., checking if ref exists).
 pub fn run_git_optional(args: &[&str]) -> Result<Option<String>> {
-    let output = Command::new("git")
-        .args(args)
+    let mut cmd = Command::new("git");
+    cmd.args(args);
+
+    // Run from repo root for consistent path handling (subdirectory support)
+    if let Some(root) = get_cached_repo_root() {
+        cmd.current_dir(root);
+    }
+
+    let output = cmd
         .output()
         .map_err(|e| anyhow::anyhow!("Failed to execute git: {}", e))?;
 
@@ -525,6 +589,9 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::env::set_current_dir(dir.path()).unwrap();
 
+        // Reset the repo root cache so git commands use the temp repo
+        reset_repo_root_cache();
+
         run_git(&["init", "-q"]).unwrap();
         run_git(&["config", "user.email", "test@example.com"]).unwrap();
         run_git(&["config", "user.name", "Test"]).unwrap();
@@ -532,6 +599,8 @@ mod tests {
         f();
 
         std::env::set_current_dir(cwd).unwrap();
+        // Reset cache again to restore original repo root
+        reset_repo_root_cache();
     }
 
     #[test]
