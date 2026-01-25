@@ -1,3 +1,17 @@
+## [2.1.0] - 2026-01-25
+
+# Release Notes
+
+## Improvements
+- Added repository root caching to the git module, improving performance and reliability when operating from subdirectories.
+- Ensured the plan command correctly detects changes when run from a subdirectory by adding targeted test coverage.
+
+## Fixes
+- Routed fix and git_helper commands through run_git to ensure correct behavior when executed from subdirectories.
+
+## Infrastructure
+- Updated Rust dependencies to their latest compatible versions.
+
 ## [2.0.0] - 2026-01-25
 
 # Release Notes
