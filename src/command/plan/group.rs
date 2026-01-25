@@ -11,7 +11,10 @@ use crate::context::Preset;
 use crate::git;
 
 use super::analyze::AnalysisResult;
-use crate::util::group_by_heuristics;
+use super::context::build_planning_context;
+use super::model::PlanCandidate;
+use super::prompt::{create_fallback_plan, get_plan_prompts, parse_plan_response};
+use super::scoring::{format_score, select_best_candidate};
 
 // =============================================================================
 // DATA STRUCTURES
@@ -21,9 +24,9 @@ use crate::util::group_by_heuristics;
 pub struct CommitGroup {
     #[allow(dead_code)]
     pub id: usize,
-    pub title: String,      // Short label
-    pub message: String,    // Full commit message
-    pub files: Vec<String>, // File paths
+    pub title: String,
+    pub message: String,
+    pub files: Vec<String>,
     #[allow(dead_code)]
     pub estimated_tokens: usize,
 }
@@ -45,7 +48,7 @@ const LOCK_FILES: &[&str] = &[
 // PUBLIC API: CREATE GROUPS
 // =============================================================================
 
-/// Create commit groups from analysis result
+/// Create commit groups from analysis result using improved planning pipeline
 pub async fn create_groups(
     analysis: &AnalysisResult,
     client: &LlmClient,
@@ -54,68 +57,180 @@ pub async fn create_groups(
     max_chars: usize,
     secret_action: SecretAction,
 ) -> Result<Vec<CommitGroup>> {
-    // Load contexts once (project + user)
-    let (project_ctx, user_ctx) = load_all_context();
+    // Build planning context
+    let planning_context = build_planning_context(analysis);
 
-    // Step 1: Heuristic grouping
-    let initial_groups = group_by_heuristics(&analysis.files);
-
-    if initial_groups.is_empty() {
+    if planning_context.files.is_empty() {
         return Ok(vec![]);
     }
 
-    // Step 2: Generate commit message for each group using LLM
-    let mut commit_groups = Vec::new();
+    // Get prompts for LLM
+    let (system_prompt, user_prompt) = get_plan_prompts(&planning_context, preset, None);
 
+    // Call LLM for multi-candidate response
+    let response = match client.chat(&system_prompt, &user_prompt, false).await {
+        Ok(resp) => resp,
+        Err(e) => {
+            eprintln!("Warning: LLM grouping failed: {}. Using heuristic fallback.", e);
+            return create_groups_from_fallback(analysis, client, preset, algo, max_chars, secret_action).await;
+        }
+    };
+
+    // Parse response
+    let plan_response = match parse_plan_response(&response) {
+        Ok(pr) => pr,
+        Err(e) => {
+            eprintln!("Warning: Failed to parse LLM response: {}. Using heuristic fallback.", e);
+            return create_groups_from_fallback(analysis, client, preset, algo, max_chars, secret_action).await;
+        }
+    };
+
+    if plan_response.candidates.is_empty() {
+        eprintln!("Warning: No candidates in LLM response. Using heuristic fallback.");
+        return create_groups_from_fallback(analysis, client, preset, algo, max_chars, secret_action).await;
+    }
+
+    // Score and select best candidate
+    let (best_idx, best_score) = match select_best_candidate(&plan_response.candidates, &planning_context) {
+        Some(result) => result,
+        None => {
+            eprintln!("Warning: Could not select candidate. Using heuristic fallback.");
+            return create_groups_from_fallback(analysis, client, preset, algo, max_chars, secret_action).await;
+        }
+    };
+
+    let best_candidate = &plan_response.candidates[best_idx];
+
+    // Display score info
+    println!("\n{}", format_score(&best_score));
+    if plan_response.candidates.len() > 1 {
+        println!(
+            "Selected candidate {} of {} (score: {})",
+            best_idx + 1,
+            plan_response.candidates.len(),
+            best_score.total
+        );
+    }
+
+    // Convert PlanGroups to CommitGroups with LLM-generated messages
+    let commit_groups = convert_to_commit_groups(
+        best_candidate,
+        analysis,
+        client,
+        preset,
+        algo,
+        max_chars,
+        secret_action,
+    )
+    .await?;
+
+    Ok(commit_groups)
+}
+
+// =============================================================================
+// FALLBACK: HEURISTIC GROUPING
+// =============================================================================
+
+/// Create groups using heuristic fallback (no LLM grouping)
+async fn create_groups_from_fallback(
+    analysis: &AnalysisResult,
+    client: &LlmClient,
+    preset: Preset,
+    algo: u8,
+    max_chars: usize,
+    secret_action: SecretAction,
+) -> Result<Vec<CommitGroup>> {
+    let planning_context = build_planning_context(analysis);
+    let fallback = create_fallback_plan(&planning_context);
+
+    if fallback.candidates.is_empty() || fallback.candidates[0].groups.is_empty() {
+        return Ok(vec![]);
+    }
+
+    convert_to_commit_groups(
+        &fallback.candidates[0],
+        analysis,
+        client,
+        preset,
+        algo,
+        max_chars,
+        secret_action,
+    )
+    .await
+}
+
+// =============================================================================
+// CONVERT PLAN TO COMMIT GROUPS
+// =============================================================================
+
+/// Convert PlanCandidate groups to CommitGroups with generated messages
+async fn convert_to_commit_groups(
+    candidate: &PlanCandidate,
+    analysis: &AnalysisResult,
+    client: &LlmClient,
+    preset: Preset,
+    algo: u8,
+    max_chars: usize,
+    secret_action: SecretAction,
+) -> Result<Vec<CommitGroup>> {
+    let (project_ctx, user_ctx) = load_all_context();
     let context = AnalysisContext::new()
         .with_provider(client.provider())
         .with_model(client.model());
 
-    for (idx, group) in initial_groups.into_iter().enumerate() {
-        // Extract file paths for commit group
-        let files: Vec<String> = group.iter().map(|c| c.path.clone()).collect();
+    let mut commit_groups = Vec::new();
 
-        // Check if this group contains only lock files (dependency updates)
-        // These files are excluded from diff shaping, so use a default message
+    for (idx, plan_group) in candidate.groups.iter().enumerate() {
+        let files = plan_group.files.clone();
+
+        // Check if this group contains only lock files
         let (message, estimated_tokens) = if is_lock_file_group(&files) {
             (get_lock_file_message(&files), 0)
         } else {
-            // Build comprehensive diff including all file states
-            let diff_output = get_diff_for_group(&group, &analysis.mode)?;
+            // Get diff for this group's files
+            let group_changes: Vec<_> = analysis
+                .files
+                .iter()
+                .filter(|f| files.contains(&f.path))
+                .cloned()
+                .collect();
 
-            // Apply diff algorithm + secret detection
-            let shaped_diff = apply_smart_diff_with_context(
-                &diff_output,
-                max_chars,
-                false, // show context
-                algo,
-                Some(&context),
-                secret_action,
-            )?;
+            if group_changes.is_empty() {
+                // Use the plan group's title as fallback
+                (plan_group.title.clone(), 0)
+            } else {
+                let diff_output = get_diff_for_group(&group_changes, &analysis.mode)?;
 
-            // Use LLM to generate commit message
-            let system_prompt =
-                commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
-            let user_prompt = COMMIT_USER.replace("{diff}", &shaped_diff);
+                // Apply diff algorithm + secret detection
+                let shaped_diff = apply_smart_diff_with_context(
+                    &diff_output,
+                    max_chars,
+                    false,
+                    algo,
+                    Some(&context),
+                    secret_action,
+                )?;
 
-            let msg = match client.chat(&system_prompt, &user_prompt, false).await {
-                Ok(m) => m.trim().to_string(),
-                Err(e) => {
-                    eprintln!("Warning: LLM error for group {}: {}", idx + 1, e);
-                    format!("Update {} files", files.len())
-                }
-            };
+                // Use LLM to generate commit message
+                let system_prompt =
+                    commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
+                let user_prompt = COMMIT_USER.replace("{diff}", &shaped_diff);
 
-            // Estimate tokens (rough: chars / 4)
-            let tokens = shaped_diff.len() / 4;
-            (msg, tokens)
+                let msg = match client.chat(&system_prompt, &user_prompt, false).await {
+                    Ok(m) => m.trim().to_string(),
+                    Err(e) => {
+                        eprintln!("Warning: LLM error for group {}: {}", idx + 1, e);
+                        // Fallback to plan group title
+                        plan_group.title.clone()
+                    }
+                };
+
+                let tokens = shaped_diff.len() / 4;
+                (msg, tokens)
+            }
         };
 
-        let title = if message.len() > 60 {
-            format!("{}...", &message[..57])
-        } else {
-            message.clone()
-        };
+        let title = truncate_title(&message);
 
         commit_groups.push(CommitGroup {
             id: idx,
@@ -127,6 +242,15 @@ pub async fn create_groups(
     }
 
     Ok(commit_groups)
+}
+
+/// Truncate title to max 60 chars
+fn truncate_title(message: &str) -> String {
+    if message.len() > 60 {
+        format!("{}...", &message[..57])
+    } else {
+        message.to_string()
+    }
 }
 
 // =============================================================================
@@ -171,29 +295,17 @@ use super::analyze::{ChangeStatus, FileChange};
 use super::AnalysisMode;
 use std::fs;
 
-/// Get comprehensive diff for a group of files, handling all file states
+/// Get comprehensive diff for a group of files
 fn get_diff_for_group(group: &[FileChange], mode: &AnalysisMode) -> Result<String> {
-    // Get repo root for resolving file paths (works from any subdirectory)
     let repo_root = PathBuf::from(git::get_repo_root()?);
-
     let mut full_diff = String::new();
 
     for file_change in group {
         let file_diff = match &file_change.status {
-            ChangeStatus::Added => {
-                // Untracked file - show full content as addition
-                get_added_file_diff(&file_change.path, &repo_root)?
-            }
-            ChangeStatus::Deleted => {
-                // Deleted file - show as deletion
-                get_deleted_file_diff(&file_change.path, mode)?
-            }
-            ChangeStatus::Modified => {
-                // Modified file - use normal git diff
-                get_modified_file_diff(&file_change.path, mode)?
-            }
+            ChangeStatus::Added => get_added_file_diff(&file_change.path, &repo_root)?,
+            ChangeStatus::Deleted => get_deleted_file_diff(&file_change.path, mode)?,
+            ChangeStatus::Modified => get_modified_file_diff(&file_change.path, mode)?,
             ChangeStatus::Renamed { from } => {
-                // Renamed file - show rename + any changes
                 get_renamed_file_diff(from, &file_change.path, mode)?
             }
         };
@@ -207,13 +319,10 @@ fn get_diff_for_group(group: &[FileChange], mode: &AnalysisMode) -> Result<Strin
     Ok(full_diff)
 }
 
-/// Get diff for an added/untracked file
 fn get_added_file_diff(path: &str, repo_root: &PathBuf) -> Result<String> {
-    // Read file contents using absolute path from repo root
     let abs_path = repo_root.join(path);
     let content = fs::read_to_string(&abs_path).unwrap_or_else(|_| String::from("(binary file)"));
 
-    // Format as git diff (all additions)
     let mut diff = String::new();
     diff.push_str(&format!("diff --git a/{} b/{}\n", path, path));
     diff.push_str("new file mode 100644\n");
@@ -232,11 +341,9 @@ fn get_added_file_diff(path: &str, repo_root: &PathBuf) -> Result<String> {
     Ok(diff)
 }
 
-/// Get diff for a deleted file
 fn get_deleted_file_diff(path: &str, mode: &AnalysisMode) -> Result<String> {
     match mode {
         AnalysisMode::WorkingTree | AnalysisMode::Staged => {
-            // For working tree or staged, show deletion from HEAD
             match git::run_git_optional(&["show", &format!("HEAD:{}", path)]) {
                 Ok(Some(content)) => {
                     let mut diff = String::new();
@@ -259,7 +366,6 @@ fn get_deleted_file_diff(path: &str, mode: &AnalysisMode) -> Result<String> {
             }
         }
         AnalysisMode::History { from, to } => {
-            // For history mode, use git diff
             let to_ref = to.as_deref().unwrap_or("HEAD");
             git::run_git(&["diff", from, to_ref, "--", path])
         }
@@ -267,19 +373,11 @@ fn get_deleted_file_diff(path: &str, mode: &AnalysisMode) -> Result<String> {
     }
 }
 
-/// Get diff for a modified file
 fn get_modified_file_diff(path: &str, mode: &AnalysisMode) -> Result<String> {
     match mode {
-        AnalysisMode::WorkingTree => {
-            // Unstaged changes
-            git::run_git(&["diff", "--", path])
-        }
-        AnalysisMode::Staged => {
-            // Staged changes
-            git::run_git(&["diff", "--cached", "--", path])
-        }
+        AnalysisMode::WorkingTree => git::run_git(&["diff", "--", path]),
+        AnalysisMode::Staged => git::run_git(&["diff", "--cached", "--", path]),
         AnalysisMode::History { from, to } => {
-            // History range
             let to_ref = to.as_deref().unwrap_or("HEAD");
             git::run_git(&["diff", from, to_ref, "--", path])
         }
@@ -287,19 +385,13 @@ fn get_modified_file_diff(path: &str, mode: &AnalysisMode) -> Result<String> {
     }
 }
 
-/// Get diff for a renamed file
 fn get_renamed_file_diff(from: &str, to: &str, mode: &AnalysisMode) -> Result<String> {
     match mode {
-        AnalysisMode::Staged => {
-            // Staged rename - use git diff with rename detection
-            git::run_git(&["diff", "--cached", "-M", "--", from, to])
-        }
+        AnalysisMode::Staged => git::run_git(&["diff", "--cached", "-M", "--", from, to]),
         _ => {
-            // For other modes, show as separate delete + add
             let mut diff = String::new();
             diff.push_str(&format!("renamed: {} -> {}\n", from, to));
 
-            // Show any content changes if the file was modified during rename
             if let Ok(changes) = get_modified_file_diff(to, mode) {
                 if !changes.is_empty() {
                     diff.push_str(&changes);
@@ -318,188 +410,72 @@ fn get_renamed_file_diff(from: &str, to: &str, mode: &AnalysisMode) -> Result<St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::plan::analyze::{ChangeStatus, FileCategory, FileChange};
 
     #[test]
-    fn group_by_heuristics_separates_categories() {
+    fn is_lock_file_group_true() {
+        let files = vec!["Cargo.lock".to_string()];
+        assert!(is_lock_file_group(&files));
+
+        let files = vec!["package-lock.json".to_string()];
+        assert!(is_lock_file_group(&files));
+    }
+
+    #[test]
+    fn is_lock_file_group_false() {
+        let files = vec!["src/main.rs".to_string()];
+        assert!(!is_lock_file_group(&files));
+
+        let files = vec!["Cargo.lock".to_string(), "src/main.rs".to_string()];
+        assert!(!is_lock_file_group(&files));
+    }
+
+    #[test]
+    fn get_lock_file_message_rust() {
+        let files = vec!["Cargo.lock".to_string()];
+        assert_eq!(get_lock_file_message(&files), "Update Rust dependencies");
+    }
+
+    #[test]
+    fn get_lock_file_message_npm() {
+        let files = vec!["package-lock.json".to_string()];
+        assert_eq!(get_lock_file_message(&files), "Update npm dependencies");
+    }
+
+    #[test]
+    fn get_lock_file_message_multiple() {
         let files = vec![
-            FileChange {
-                path: "README.md".to_string(),
-                status: ChangeStatus::Modified,
-                additions: 10,
-                deletions: 5,
-                category: FileCategory::Documentation,
-            },
-            FileChange {
-                path: "test.rs".to_string(),
-                status: ChangeStatus::Modified,
-                additions: 20,
-                deletions: 10,
-                category: FileCategory::Tests,
-            },
-            FileChange {
-                path: "Cargo.toml".to_string(),
-                status: ChangeStatus::Modified,
-                additions: 5,
-                deletions: 2,
-                category: FileCategory::Config,
-            },
-            FileChange {
-                path: "src/main.rs".to_string(),
-                status: ChangeStatus::Modified,
-                additions: 30,
-                deletions: 15,
-                category: FileCategory::Code,
-            },
+            "Cargo.lock".to_string(),
+            "package-lock.json".to_string(),
         ];
-
-        let groups = group_by_heuristics(&files);
-
-        // Should have 4 groups: docs, tests, config, code
-        assert_eq!(groups.len(), 4);
-
-        // First group should be documentation
-        assert_eq!(groups[0].len(), 1);
-        assert_eq!(groups[0][0].category, FileCategory::Documentation);
-
-        // Second group should be tests
-        assert_eq!(groups[1].len(), 1);
-        assert_eq!(groups[1][0].category, FileCategory::Tests);
-
-        // Third group should be config
-        assert_eq!(groups[2].len(), 1);
-        assert_eq!(groups[2][0].category, FileCategory::Config);
-
-        // Fourth group should be code
-        assert_eq!(groups[3].len(), 1);
-        assert_eq!(groups[3][0].category, FileCategory::Code);
+        assert_eq!(get_lock_file_message(&files), "Update dependencies");
     }
 
     #[test]
-    fn group_by_heuristics_groups_code_by_directory() {
-        let files = vec![
-            FileChange {
-                path: "src/main.rs".to_string(),
-                status: ChangeStatus::Modified,
-                additions: 10,
-                deletions: 5,
-                category: FileCategory::Code,
-            },
-            FileChange {
-                path: "src/lib.rs".to_string(),
-                status: ChangeStatus::Modified,
-                additions: 20,
-                deletions: 10,
-                category: FileCategory::Code,
-            },
-            FileChange {
-                path: "tests/integration.rs".to_string(),
-                status: ChangeStatus::Modified,
-                additions: 15,
-                deletions: 7,
-                category: FileCategory::Code,
-            },
-        ];
-
-        let groups = group_by_heuristics(&files);
-
-        // Should have 2 groups: src and tests directories
-        assert_eq!(groups.len(), 2);
-
-        // Each group should have files from same directory
-        for group in groups {
-            let first_dir = if let Some(idx) = group[0].path.find('/') {
-                &group[0].path[..idx]
-            } else {
-                "root"
-            };
-
-            for file in &group {
-                let file_dir = if let Some(idx) = file.path.find('/') {
-                    &file.path[..idx]
-                } else {
-                    "root"
-                };
-                assert_eq!(file_dir, first_dir);
-            }
-        }
+    fn truncate_title_short() {
+        let short = "Short message";
+        assert_eq!(truncate_title(short), short);
     }
 
     #[test]
-    fn group_by_heuristics_handles_renames() {
-        let files = vec![
-            FileChange {
-                path: "new_name.rs".to_string(),
-                status: ChangeStatus::Renamed {
-                    from: "old_name.rs".to_string(),
-                },
-                additions: 0,
-                deletions: 0,
-                category: FileCategory::Code,
-            },
-            FileChange {
-                path: "src/main.rs".to_string(),
-                status: ChangeStatus::Modified,
-                additions: 10,
-                deletions: 5,
-                category: FileCategory::Code,
-            },
-        ];
-
-        let groups = group_by_heuristics(&files);
-
-        // Should have 2 groups: renames and code
-        assert_eq!(groups.len(), 2);
-
-        // First group should be renames
-        assert!(matches!(groups[0][0].status, ChangeStatus::Renamed { .. }));
-
-        // Second group should be code
-        assert_eq!(groups[1][0].status, ChangeStatus::Modified);
+    fn truncate_title_long() {
+        let long = "This is a very long commit message that exceeds the sixty character limit";
+        let truncated = truncate_title(long);
+        assert_eq!(truncated.len(), 60);
+        assert!(truncated.ends_with("..."));
     }
 
     #[test]
-    fn group_by_heuristics_empty_input() {
-        let files: Vec<FileChange> = vec![];
-        let groups = group_by_heuristics(&files);
-        assert_eq!(groups.len(), 0);
-    }
-
-    #[test]
-    fn commit_group_title_truncation() {
-        let long_message = "This is a very long commit message that exceeds the sixty character limit and should be truncated";
+    fn commit_group_creation() {
         let group = CommitGroup {
             id: 0,
-            title: if long_message.len() > 60 {
-                format!("{}...", &long_message[..57])
-            } else {
-                long_message.to_string()
-            },
-            message: long_message.to_string(),
+            title: "Test".to_string(),
+            message: "Test message".to_string(),
             files: vec!["file.rs".to_string()],
             estimated_tokens: 100,
         };
 
-        assert_eq!(group.title.len(), 60);
-        assert!(group.title.ends_with("..."));
-    }
-
-    #[test]
-    fn commit_group_title_no_truncation() {
-        let short_message = "Short message";
-        let group = CommitGroup {
-            id: 0,
-            title: if short_message.len() > 60 {
-                format!("{}...", &short_message[..57])
-            } else {
-                short_message.to_string()
-            },
-            message: short_message.to_string(),
-            files: vec!["file.rs".to_string()],
-            estimated_tokens: 50,
-        };
-
-        assert_eq!(group.title, short_message);
-        assert!(!group.title.ends_with("..."));
+        assert_eq!(group.id, 0);
+        assert_eq!(group.title, "Test");
+        assert_eq!(group.files.len(), 1);
     }
 }

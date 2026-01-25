@@ -1,9 +1,13 @@
 // src/command/plan/mod.rs
 
 pub mod analyze;
+pub mod context;
 pub mod editor;
 pub mod execute;
 pub mod group;
+pub mod model;
+pub mod prompt;
+pub mod scoring;
 
 use crate::client::LlmClient;
 use crate::command::cmd_fix;
