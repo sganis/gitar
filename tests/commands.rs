@@ -452,3 +452,61 @@ fn commit_alias_requires_git_repo() {
         .failure()
         .stderr(predicate::str::contains("Not a git repository"));
 }
+
+// =============================================================================
+// SUBDIRECTORY TESTS
+// =============================================================================
+
+#[test]
+fn plan_works_from_subdirectory() {
+    let home = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+
+    init_repo(repo.path());
+    commit_file(repo.path(), "a.txt", "initial", "initial");
+
+    // Create a subdirectory
+    let subdir = repo.path().join("subdir");
+    fs::create_dir(&subdir).unwrap();
+
+    // Create a file at repo root (path will be relative to repo root)
+    fs::write(repo.path().join("b.txt"), "new file").unwrap();
+
+    // Run gitar from subdirectory
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
+    with_isolated_home(&mut cmd, home.path());
+    cmd.current_dir(&subdir);
+
+    // Plan should detect the new file even from subdirectory
+    cmd.arg("plan")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("b.txt"));
+}
+
+#[test]
+fn diff_works_from_subdirectory() {
+    let home = tempfile::tempdir().unwrap();
+    let repo = tempfile::tempdir().unwrap();
+
+    init_repo(repo.path());
+    commit_file(repo.path(), "a.txt", "initial", "initial");
+
+    // Create a subdirectory
+    let subdir = repo.path().join("subdir");
+    fs::create_dir(&subdir).unwrap();
+
+    // Create unstaged changes at repo root
+    fs::write(repo.path().join("a.txt"), "modified").unwrap();
+
+    // Run gitar diff from subdirectory
+    let mut cmd = Command::new(assert_cmd::cargo_bin!("gitar"));
+    with_isolated_home(&mut cmd, home.path());
+    cmd.current_dir(&subdir);
+
+    // Diff should see the changes from subdirectory (no LLM needed)
+    cmd.arg("diff")
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("a.txt"));
+}
