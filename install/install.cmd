@@ -217,7 +217,10 @@ REM SUBROUTINES
 REM ============================================================================
 
 :say
-echo %~1
+setlocal
+set "MSG=%~1"
+if "!MSG!"=="" (echo.) else echo !MSG!
+endlocal
 exit /b 0
 
 :err
@@ -272,29 +275,19 @@ exit /b 0
 set "API=https://api.github.com/repos/%GITAR_REPO%/releases/latest"
 set "JSON=%TMPROOT%\latest.json"
 
+REM Download with User-Agent header (required by GitHub API)
 call :download_file "%API%" "%JSON%"
 if errorlevel 1 (
   call :err "Failed to query GitHub API for latest release"
   exit /b 1
 )
 
+REM Use PowerShell to parse the JSON (handles minified JSON correctly)
 set "VERSION="
-for /f "usebackq delims=" %%l in (`findstr /c:"\"tag_name\"" "%JSON%"`) do (
-  set "LINE=%%l"
-  REM Split on :
-  for /f "tokens=2 delims=:" %%a in ("!LINE!") do (
-    set "V=%%a"
-    set "V=!V: =!"
-    set "V=!V:"=!"
-    set "V=!V:,=!"
-    if not "!V!"=="" (
-      set "VERSION=!V!"
-      goto :got_tag
-    )
-  )
+for /f "delims=" %%v in ('powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; (Get-Content -Raw '%JSON%' | ConvertFrom-Json).tag_name"') do (
+  set "VERSION=%%v"
 )
 
-:got_tag
 del "%JSON%" >nul 2>&1
 if "%VERSION%"=="" (
   call :err "Could not parse latest release tag from GitHub API"
@@ -305,13 +298,13 @@ exit /b 0
 :download_file
 set "URL=%~1"
 set "OUT=%~2"
-curl -fsSL "%URL%" -o "%OUT%"
+curl -fsSL -A "gitar-installer" "%URL%" -o "%OUT%"
 exit /b %ERRORLEVEL%
 
 :download_file_quiet
 set "URL=%~1"
 set "OUT=%~2"
-curl -fsSL "%URL%" -o "%OUT%" >nul 2>&1
+curl -fsSL -A "gitar-installer" "%URL%" -o "%OUT%" >nul 2>&1
 exit /b %ERRORLEVEL%
 
 :is_sha256
@@ -345,19 +338,21 @@ set "%OUTVAR%=%HASH%"
 exit /b 0
 
 :extract_zip
-REM Prefer tar.exe (Windows 10+), fallback to PowerShell
+REM Use PowerShell's Expand-Archive (works reliably on Windows 10+)
+REM Prefer this over tar.exe which may conflict with WSL tar
 set "ZIP=%~1"
 set "DEST=%~2"
 
-tar --version >nul 2>&1
-if not errorlevel 1 (
-  REM bsdtar can usually extract zip via -xf
-  tar -xf "%ZIP%" -C "%DEST%" >nul 2>&1
+powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue'; Expand-Archive -LiteralPath '%ZIP%' -DestinationPath '%DEST%' -Force" >nul 2>&1
+if not errorlevel 1 exit /b 0
+
+REM Fallback to Windows native tar.exe if PowerShell fails
+if exist "%SystemRoot%\System32\tar.exe" (
+  "%SystemRoot%\System32\tar.exe" -xf "%ZIP%" -C "%DEST%" >nul 2>&1
   exit /b %ERRORLEVEL%
 )
 
-powershell -NoProfile -Command "Expand-Archive -LiteralPath '%ZIP%' -DestinationPath '%DEST%' -Force" >nul 2>&1
-exit /b %ERRORLEVEL%
+exit /b 1
 
 :maybe_add_path
 set "BDIR=%~1"
