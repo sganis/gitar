@@ -1,10 +1,55 @@
 // src/client.rs
-use anyhow::Result;
-use reqwest::{Client, Proxy};
+use anyhow::{Context, Result};
+use reqwest::{Certificate, Client, ClientBuilder, Proxy};
 
 use crate::color::{styled, warning_style};
 use crate::config::{provider_to_url, ProviderConfig, ResolvedConfig};
 use crate::provider::{claude, gemini, openai};
+
+/// Environment variable for custom CA certificate file path.
+pub const CA_FILE_ENV: &str = "GITAR_CA_FILE";
+
+/// Load custom CA certificate from GITAR_CA_FILE if set.
+/// Supports both PEM and DER formats (tries PEM first, then DER).
+fn load_ca_certificate() -> Result<Option<Certificate>> {
+    let ca_path = match std::env::var(CA_FILE_ENV) {
+        Ok(p) if !p.trim().is_empty() => p,
+        _ => return Ok(None),
+    };
+
+    let cert_data = std::fs::read(&ca_path)
+        .with_context(|| format!("Failed to read CA certificate from {}", ca_path))?;
+
+    // Try PEM format first, then DER
+    let cert = Certificate::from_pem(&cert_data)
+        .or_else(|_| Certificate::from_der(&cert_data))
+        .with_context(|| {
+            format!(
+                "Failed to parse CA certificate from {} (tried PEM and DER formats)",
+                ca_path
+            )
+        })?;
+
+    Ok(Some(cert))
+}
+
+/// Apply common client configuration: proxy and CA certificate.
+fn apply_common_config(mut builder: ClientBuilder) -> Result<ClientBuilder> {
+    // Custom CA certificate
+    if let Some(cert) = load_ca_certificate()? {
+        builder = builder.add_root_certificate(cert);
+    }
+
+    // Proxy
+    if let Ok(proxy_url) = std::env::var("GITAR_PROXY") {
+        let proxy_url = proxy_url.trim();
+        if !proxy_url.is_empty() {
+            builder = builder.proxy(Proxy::all(proxy_url)?);
+        }
+    }
+
+    Ok(builder)
+}
 
 pub struct LlmClient {
     http: Client,
@@ -29,12 +74,7 @@ impl LlmClient {
             builder = builder.danger_accept_invalid_certs(true);
         }
 
-        if let Ok(proxy_url) = std::env::var("GITAR_PROXY") {
-            let proxy_url = proxy_url.trim();
-            if !proxy_url.is_empty() {
-                builder = builder.proxy(Proxy::all(proxy_url)?);
-            }
-        }
+        builder = apply_common_config(builder)?;
 
         Ok(Self {
             http: builder.build()?,
@@ -49,14 +89,8 @@ impl LlmClient {
 
     /// Create a client with just a provider and provider config (for init command)
     pub fn new_with_provider(provider: &str, provider_config: &ProviderConfig) -> Result<Self> {
-        let mut builder = Client::builder().timeout(std::time::Duration::from_secs(120));
-
-        if let Ok(proxy_url) = std::env::var("GITAR_PROXY") {
-            let proxy_url = proxy_url.trim();
-            if !proxy_url.is_empty() {
-                builder = builder.proxy(Proxy::all(proxy_url)?);
-            }
-        }
+        let builder = Client::builder().timeout(std::time::Duration::from_secs(120));
+        let builder = apply_common_config(builder)?;
 
         let base_url = provider_config
             .base_url
@@ -201,21 +235,24 @@ mod tests {
 
     #[test]
     fn detect_claude() {
-        let _e = EnvGuard::remove("GITAR_PROXY");
+        let _e1 = EnvGuard::remove("GITAR_PROXY");
+        let _e2 = EnvGuard::remove(CA_FILE_ENV);
         let c = LlmClient::new(&make_config("claude", "https://api.openai.com")).unwrap();
         assert!(c.is_claude());
     }
 
     #[test]
     fn detect_gemini() {
-        let _e = EnvGuard::remove("GITAR_PROXY");
+        let _e1 = EnvGuard::remove("GITAR_PROXY");
+        let _e2 = EnvGuard::remove(CA_FILE_ENV);
         let c = LlmClient::new(&make_config("gemini", "https://api.openai.com")).unwrap();
         assert!(c.is_gemini());
     }
 
     #[test]
     fn detect_by_url() {
-        let _e = EnvGuard::remove("GITAR_PROXY");
+        let _e1 = EnvGuard::remove("GITAR_PROXY");
+        let _e2 = EnvGuard::remove(CA_FILE_ENV);
         let c = LlmClient::new(&make_config("openai", "https://api.anthropic.com/v1")).unwrap();
         assert!(c.is_claude());
     }
