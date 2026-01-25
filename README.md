@@ -475,7 +475,7 @@ And the message is generated automatically.
 ## Behind Firewalls (Proxy / SSH Tunnel)
 
 ```bash
-export ALL_PROXY="socks5h://localhost:8000"
+export GITAR_PROXY="socks5h://localhost:8000"
 ```
 
 ---
