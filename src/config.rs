@@ -78,7 +78,7 @@ fn env_var_for_provider(provider: &str) -> Option<&'static str> {
 // =============================================================================
 
 pub const CONFIG_FILENAME: &str = ".gitar.toml";
-pub const SYSTEM_CONFIG_ENV: &str = "GITAR_SYSTEM_CONFIG";
+pub const SYSTEM_CONFIG_ENV: &str = "GITAR_CONFIG_FILE";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
