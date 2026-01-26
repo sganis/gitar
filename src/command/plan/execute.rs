@@ -8,7 +8,36 @@ use crate::git;
 use crate::prompt;
 
 use super::analyze::AnalysisMode;
-use super::group::CommitGroup;
+use super::group::{CommitGroup, FileStatus};
+
+// =============================================================================
+// STAGING HELPER
+// =============================================================================
+
+/// Stage a file based on its status
+fn stage_file(path: &str, status: &FileStatus) -> Result<()> {
+    match status {
+        FileStatus::Deleted => {
+            // For deleted files, use git rm --cached (file already deleted from disk)
+            // Or use git add -u which handles deletions
+            let result = git::run_git_status(&["add", "-u", "--", path]);
+            if !result.2 {
+                // Fallback: try git rm --cached if git add -u fails
+                git::run_git(&["rm", "--cached", "--", path])?;
+            }
+        }
+        FileStatus::Renamed => {
+            // For renamed files, stage both the deletion and addition
+            // git add -A handles this correctly
+            git::run_git(&["add", "-A", "--", path])?;
+        }
+        _ => {
+            // For added and modified files, use standard git add
+            git::run_git(&["add", "--", path])?;
+        }
+    }
+    Ok(())
+}
 
 // =============================================================================
 // PLAN EXECUTION
@@ -36,35 +65,49 @@ pub fn execute_plan(
         println!("{}\n", group.message);
 
         // Check mode for staging strategy
-        match mode {
+        let skip_staging = match mode {
             AnalysisMode::Staged => {
-                // Files already staged, no action needed
+                // Verify files are actually staged before committing
+                let staged = git::run_git(&["diff", "--cached", "--name-only"])?;
+                if staged.trim().is_empty() {
+                    warning(&format!(
+                        "Skipping commit {}/{}: no staged files",
+                        idx + 1,
+                        groups.len()
+                    ));
+                    println!();
+                    continue;
+                }
                 println!("Using already-staged files");
+                true
             }
             AnalysisMode::History { from, to } => {
                 return execute_history_mode(groups, from, to.as_deref(), dry_run);
             }
             _ => {
                 // Will stage files below
+                false
             }
-        }
+        };
 
-        // Show what will be committed
-        println!("Staging files...");
-        for file in &group.files {
-            println!("  {}", file);
-        }
-
-        if !dry_run {
-            // Actually stage the files
-            for file in &group.files {
-                git::run_git(&["add", file])?;
+        if !skip_staging {
+            // Show what will be committed
+            println!("Staging files...");
+            for file in &group.files_with_status {
+                println!("  {} {}", file.status.label(), file.path);
             }
 
-            // Show diff preview
-            println!("\nStaged changes:");
-            let stat = git::run_git(&["diff", "--cached", "--stat"])?;
-            println!("{}", stat);
+            if !dry_run {
+                // Stage files using files_with_status which has proper paths
+                for file in &group.files_with_status {
+                    stage_file(&file.path, &file.status)?;
+                }
+
+                // Show diff preview
+                println!("\nStaged changes:");
+                let stat = git::run_git(&["diff", "--cached", "--stat"])?;
+                println!("{}", stat);
+            }
         }
 
         // Interactive confirmation
@@ -95,8 +138,8 @@ pub fn execute_plan(
                     } else {
                         println!("Message cannot be empty - skipping");
                         if !dry_run {
-                            for file in &group.files {
-                                git::run_git(&["reset", "HEAD", file])?;
+                            for file in &group.files_with_status {
+                                git::run_git(&["reset", "HEAD", &file.path])?;
                             }
                         }
                     }
@@ -104,8 +147,8 @@ pub fn execute_plan(
                 2 => {
                     // Skip
                     if !dry_run {
-                        for file in &group.files {
-                            git::run_git(&["reset", "HEAD", file])?;
+                        for file in &group.files_with_status {
+                            git::run_git(&["reset", "HEAD", &file.path])?;
                         }
                     }
                     println!("Skipped (files unstaged)");
@@ -113,8 +156,8 @@ pub fn execute_plan(
                 _ => {
                     // Quit
                     if !dry_run {
-                        for file in &group.files {
-                            git::run_git(&["reset", "HEAD", file])?;
+                        for file in &group.files_with_status {
+                            git::run_git(&["reset", "HEAD", &file.path])?;
                         }
                     }
                     println!("Quit (remaining files unstaged)");
