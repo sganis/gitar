@@ -14,12 +14,16 @@ use super::group::{create_groups, CommitGroup};
 // =============================================================================
 
 pub enum EditResult {
-    Approved(Vec<CommitGroup>),
+    /// Accept all and execute without per-commit prompts
+    ApprovedAll(Vec<CommitGroup>),
+    /// Approve one by one with per-commit prompts
+    ApprovedOneByOne(Vec<CommitGroup>),
     Cancelled,
 }
 
 enum Action {
-    Accept,
+    AcceptAll,
+    AcceptOneByOne,
     Regenerate,
     MoveFile {
         file: String,
@@ -76,7 +80,8 @@ impl PlanEditor {
 
         println!("-----------------------------------------------------------");
         println!("Options:");
-        println!("  [Enter] Accept plan and execute");
+        println!("  [Enter] Accept all and commit");
+        println!("  [y]     Approve commits one by one");
         println!("  [r]     Regenerate plan (re-call LLM)");
         println!("  [m]     Move file between commits");
         println!("  [x]     Exclude file from all commits");
@@ -106,8 +111,11 @@ impl PlanEditor {
             let choice = input.trim().to_lowercase();
 
             match self.parse_action(&choice)? {
-                Action::Accept => {
-                    return Ok(EditResult::Approved(self.groups.clone()));
+                Action::AcceptAll => {
+                    return Ok(EditResult::ApprovedAll(self.groups.clone()));
+                }
+                Action::AcceptOneByOne => {
+                    return Ok(EditResult::ApprovedOneByOne(self.groups.clone()));
                 }
                 Action::Regenerate => {
                     println!("\nRegenerating plan...");
@@ -142,7 +150,8 @@ impl PlanEditor {
     /// Parse user input into Action
     fn parse_action(&self, input: &str) -> Result<Action> {
         match input {
-            "" | "y" | "yes" | "a" | "accept" => Ok(Action::Accept),
+            "" | "a" | "accept" | "all" => Ok(Action::AcceptAll),
+            "y" | "yes" => Ok(Action::AcceptOneByOne),
             "r" | "regenerate" => Ok(Action::Regenerate),
             "q" | "quit" | "exit" => Ok(Action::Quit),
             _ if input.starts_with("m ") || input.starts_with("move ") => {
@@ -154,7 +163,7 @@ impl PlanEditor {
             _ if input.starts_with("e ") || input.starts_with("edit ") => {
                 self.parse_edit_action(input)
             }
-            _ => bail!("Invalid choice. Try: Enter, r, m, x, e, or q."),
+            _ => bail!("Invalid choice. Try: Enter, y, r, m, x, e, or q."),
         }
     }
 
@@ -348,13 +357,32 @@ mod tests {
     }
 
     #[test]
-    fn parse_action_accept() {
+    fn parse_action_accept_all() {
         let editor = create_test_editor();
-        assert!(matches!(editor.parse_action("").unwrap(), Action::Accept));
-        assert!(matches!(editor.parse_action("y").unwrap(), Action::Accept));
+        assert!(matches!(
+            editor.parse_action("").unwrap(),
+            Action::AcceptAll
+        ));
+        assert!(matches!(
+            editor.parse_action("a").unwrap(),
+            Action::AcceptAll
+        ));
+        assert!(matches!(
+            editor.parse_action("all").unwrap(),
+            Action::AcceptAll
+        ));
+    }
+
+    #[test]
+    fn parse_action_accept_one_by_one() {
+        let editor = create_test_editor();
+        assert!(matches!(
+            editor.parse_action("y").unwrap(),
+            Action::AcceptOneByOne
+        ));
         assert!(matches!(
             editor.parse_action("yes").unwrap(),
-            Action::Accept
+            Action::AcceptOneByOne
         ));
     }
 

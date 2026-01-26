@@ -91,7 +91,8 @@ pub async fn cmd_plan(
     println!("\nGenerated strategy with {} commit(s)", groups.len());
 
     // Step 3: Interactive editing (if interactive)
-    let approved_groups = if interactive {
+    // execute_interactive tracks whether to prompt for each commit during execution
+    let (approved_groups, execute_interactive) = if interactive {
         let mut editor = editor::PlanEditor::new(groups);
         match editor
             .run_interactive(
@@ -104,7 +105,8 @@ pub async fn cmd_plan(
             )
             .await?
         {
-            editor::EditResult::Approved(g) => g,
+            editor::EditResult::ApprovedAll(g) => (g, false),
+            editor::EditResult::ApprovedOneByOne(g) => (g, true),
             editor::EditResult::Cancelled => {
                 println!("Execution cancelled.");
                 return Ok(());
@@ -123,7 +125,7 @@ pub async fn cmd_plan(
             }
         }
         println!("\n===========================================================\n");
-        groups
+        (groups, false)
     };
 
     // Step 4: Execute strategy (if apply flag is set)
@@ -132,7 +134,7 @@ pub async fn cmd_plan(
             &approved_groups,
             &analysis.mode,
             false,
-            interactive,
+            execute_interactive,
             client.model(),
         )?;
     } else {
