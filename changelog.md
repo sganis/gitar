@@ -1,3 +1,14 @@
+## [2.4.0] - 2026-01-26
+
+# Release Notes
+## Features
+- Added per-commit approval mode to the plan editor, supporting AcceptAll and AcceptOneByOne actions.
+- Introduced a staging helper and improved file status handling in execute_plan for more accurate git operations.
+
+## Improvements
+- Added retry logic for git commands in tests to handle index.lock contention.
+- Updated Rust dependencies to latest compatible versions.
+
 ## [2.3.1] - 2026-01-25
 
 # Release Notes
