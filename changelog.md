@@ -1,3 +1,9 @@
+## [2.6.0] - 2026-01-27
+
+# Release Notes
+## Features
+*   Implemented large file detection and handling in plan execution
+
 ## [2.5.0] - 2026-01-27
 
 # Release Notes
