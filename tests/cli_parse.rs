@@ -64,14 +64,9 @@ fn cli_default_command_is_plan() {
 #[test]
 fn cli_parses_algo_flag() {
     for algo_val in 1..=4 {
-        let cli = Cli::try_parse_from([
-            "gitar",
-            "tell",
-            "--commit",
-            "--algo",
-            &algo_val.to_string(),
-        ])
-        .unwrap();
+        let cli =
+            Cli::try_parse_from(["gitar", "tell", "--commit", "--algo", &algo_val.to_string()])
+                .unwrap();
         if let Some(Commands::Tell { algo, commit, .. }) = cli.command {
             assert!(commit);
             assert_eq!(algo, algo_val);
@@ -111,9 +106,7 @@ fn cli_parses_valid_providers() {
 
 #[test]
 fn cli_rejects_invalid_provider() {
-    assert!(
-        Cli::try_parse_from(["gitar", "--provider", "invalid", "tell", "--staged"]).is_err()
-    );
+    assert!(Cli::try_parse_from(["gitar", "--provider", "invalid", "tell", "--staged"]).is_err());
 }
 
 // ==========================================================================
@@ -133,8 +126,7 @@ fn cli_parses_valid_presets() {
         "default",
     ];
     for preset in presets {
-        let cli =
-            Cli::try_parse_from(["gitar", "--preset", preset, "tell", "--staged"]).unwrap();
+        let cli = Cli::try_parse_from(["gitar", "--preset", preset, "tell", "--staged"]).unwrap();
         assert_eq!(cli.preset, Some(preset.into()));
     }
 }
@@ -237,7 +229,10 @@ fn cli_parses_diff_staged() {
 #[test]
 fn cli_parses_fix_flags() {
     let cli = Cli::try_parse_from(["gitar", "fix", "--apply", "--yes", "--stream"]).unwrap();
-    if let Some(Commands::Fix { apply, yes, stream, .. }) = cli.command {
+    if let Some(Commands::Fix {
+        apply, yes, stream, ..
+    }) = cli.command
+    {
         assert!(apply);
         assert!(yes);
         assert!(stream);
@@ -440,10 +435,7 @@ fn cli_tell_defaults_to_explain() {
 #[test]
 fn cli_parses_tell_weekly() {
     let cli = Cli::try_parse_from(["gitar", "tell", "--weekly", "--staged"]).unwrap();
-    if let Some(Commands::Tell {
-        weekly, staged, ..
-    }) = cli.command
-    {
+    if let Some(Commands::Tell { weekly, staged, .. }) = cli.command {
         assert!(weekly);
         assert!(staged);
     } else {
@@ -453,8 +445,7 @@ fn cli_parses_tell_weekly() {
 
 #[test]
 fn cli_parses_tell_weekly_with_since() {
-    let cli =
-        Cli::try_parse_from(["gitar", "tell", "--weekly", "--since", "1 week ago"]).unwrap();
+    let cli = Cli::try_parse_from(["gitar", "tell", "--weekly", "--since", "1 week ago"]).unwrap();
     if let Some(Commands::Tell { weekly, since, .. }) = cli.command {
         assert!(weekly);
         assert_eq!(since, Some("1 week ago".to_string()));
