@@ -16,11 +16,6 @@ use super::group::{CommitGroup, FileStatus};
 
 /// Handle large file group - unstage if staged, otherwise ignore
 fn handle_large_file_group(group: &CommitGroup, mode: &AnalysisMode, dry_run: bool) -> Result<()> {
-    println!("Files:");
-    for file in &group.files_with_status {
-        println!("  {} {}", file.status.label(), file.path);
-    }
-
     match mode {
         AnalysisMode::Staged => {
             // Unstage large files that were staged
