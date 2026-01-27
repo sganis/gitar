@@ -473,12 +473,17 @@ Format: 4-5 paragraphs, no headings or bullets. Plain ASCII only.
 
 Each paragraph must:
 1. Start with delivery language: "The [Team] delivered/deployed/shipped..."
-2. Name a stakeholder: Core Team, CLI Users, Contributors, Platform, CI Operators
+2. Name a relevant stakeholder (see User Context if provided)
 3. State the outcome or improvement
 4. End with a next step
 
 Style: Executive summary tone. Focus on deliverables and business value, not code details.
-Group related changes into themes like reliability, developer experience, or workflow improvements."#;
+Group related changes into themes like reliability, developer experience, or workflow improvements.
+
+IMPORTANT: If User Context is provided below, use it to personalize the report:
+- Use the author's department/team name instead of generic "The Team"
+- Target the report to the listed stakeholders (customers, leadership, etc.)
+- Reference the author's projects when relevant"#;
 
 pub const WEEKLY_USER: &str = r#"Generate the Weekly Highlights report.
 

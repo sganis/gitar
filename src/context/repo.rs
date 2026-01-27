@@ -9,11 +9,8 @@ use crate::config::Config;
 static CACHED_CONTEXT: OnceLock<(Option<String>, Option<String>)> = OnceLock::new();
 static CACHED_REPO_ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
 
-/// Current context filename
+/// Context filename
 const CONTEXT_FILENAME: &str = "context.md";
-
-/// Legacy context filename (for backward compatibility)
-const LEGACY_FILENAME: &str = "gitar.md";
 
 fn read_text_file_if_exists(path: &Path) -> Option<String> {
     match fs::read_to_string(path) {
@@ -91,35 +88,19 @@ fn clean(opt: Option<String>) -> Option<String> {
     })
 }
 
-/// Load user context from ~/.gitar/context.md (or legacy gitar.md)
+/// Load user context from ~/.gitar/context.md
 /// Uses Config::config_base_dir() which respects GITAR_CONFIG_PATH env var
 pub fn load_user_context() -> Option<String> {
     let base = Config::config_base_dir()?;
-
-    // Try new filename first
-    let new_path = base.join(CONTEXT_FILENAME);
-    if let Some(content) = read_text_file_if_exists(&new_path) {
-        return clean(Some(content));
-    }
-
-    // Fall back to legacy filename
-    let legacy_path = base.join(LEGACY_FILENAME);
-    clean(read_text_file_if_exists(&legacy_path))
+    let path = base.join(CONTEXT_FILENAME);
+    clean(read_text_file_if_exists(&path))
 }
 
-/// Load project context from .gitar/context.md (or legacy gitar.md)
+/// Load project context from .gitar/context.md
 pub fn load_project_context() -> Option<String> {
     let root = repo_root_dir()?;
-
-    // Try new filename first
-    let new_path = root.join(".gitar").join(CONTEXT_FILENAME);
-    if let Some(content) = read_text_file_if_exists(&new_path) {
-        return clean(Some(content));
-    }
-
-    // Fall back to legacy filename
-    let legacy_path = root.join(".gitar").join(LEGACY_FILENAME);
-    clean(read_text_file_if_exists(&legacy_path))
+    let path = root.join(".gitar").join(CONTEXT_FILENAME);
+    clean(read_text_file_if_exists(&path))
 }
 
 pub fn load_all_context() -> (Option<String>, Option<String>) {

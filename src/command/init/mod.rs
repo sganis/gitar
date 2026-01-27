@@ -13,74 +13,47 @@ use crate::context::preset::Preset;
 use crate::git;
 use crate::prompt;
 
-const USER_CONTEXT_TEMPLATE: &str = r#"# Gitar User Context
-
-<!--
-This file is read by gitar and injected into LLM system prompts as "User Context".
-Renamed from gitar.md to context.md in v2.4.0 - legacy gitar.md still works.
-
-Purpose:
-- Your personal preferences across all repos (tone, verbosity, style, defaults)
-
-Rules:
-- Keep it short. This content is sent to the LLM often.
-- Do NOT put secrets here (tokens, passwords, private keys).
+const USER_CONTEXT_TEMPLATE: &str = r#"<!-- Gitar User Context
+Everything OUTSIDE HTML comment blocks is sent to the LLM.
+Uncomment sections below.
+Run "gitar init --show" to verify what gets sent.
 -->
 
 <!--
+## About Me
+I work in the ___ team as a ___.
+My main projects are ___.
+
+## My Stakeholders
+- Customers: ___
+- Team: ___
+- Product: ___
+- Leadership: ___
+
 ## Preferences
-- Prefer short, imperative commit messages
-- Focus on purpose and impact, not file listings
-- Avoid emojis/unicode
+- Commit style: conventional commits, imperative mood
+- Weekly reports: focus on customer impact and deliverables
+- Tone: professional, concise
 
-## Style
-- Tone: neutral / professional
-- Detail level: 1-2 lines unless complex
-
-## Notes
-- Anything else you want the assistant to remember
 -->
 "#;
 
-const PROJECT_CONTEXT_TEMPLATE: &str = r#"# Gitar Project Context
+const PROJECT_CONTEXT_TEMPLATE: &str = r#"<!-- Gitar Project Context
 
-<!--
-This file is read by gitar and injected into LLM system prompts as "Project Context".
-Renamed from gitar.md to context.md in v2.4.0 - legacy gitar.md still works.
+Everything OUTSIDE HTML comment blocks is sent to the LLM.
+Uncomment sections below.
+This file should be committed to the repo so the whole team shares it.
 
-Purpose:
-- Repo-specific conventions and rules (authoritative for this project)
-
-Rules:
-- Keep it current, like CONTRIBUTING.md.
-- Do NOT put secrets here.
-- This should be committed to the repo so the whole team shares it.
--->
-
-<!--
 ## Project
-(What is this repo about? 1-3 lines)
+Brief description of what this repo does.
 
 ## Conventions
-- Commit style:
-- PR style:
-- Changelog style:
-
-## Build & Test
-- Build:
-- Test:
-- Lint:
-
-## Split Rules (important for `gitar split`)
-- What must be committed together?
-- What should never be in the same commit?
-- Directories/features that are separate units:
-
-## Sensitive Areas
-- Paths that should be changed carefully:
+- Commit style: imperative mood, max 72 chars
+- PR style: include ticket number
 
 ## Glossary
-- Domain terms used in commits/PRs:
+- Domain-specific terms used in commits/PRs
+
 -->
 "#;
 
@@ -209,25 +182,13 @@ fn write_file_if_missing(path: &Path, content: &str) -> Result<bool> {
 }
 
 fn ensure_context_files() -> Result<()> {
-    // 1) User context: ~/.gitar/context.md (uses Config::config_base_dir for GITAR_CONFIG_PATH support)
+    // 1) User context: ~/.gitar/context.md
     if let Some(base) = Config::config_base_dir() {
-        // Create context.md (new name)
         let user_ctx = base.join("context.md");
-        let legacy_ctx = base.join("gitar.md");
-
-        // Only create if neither new nor legacy exists
-        if !user_ctx.exists() && !legacy_ctx.exists() {
-            match write_file_if_missing(&user_ctx, USER_CONTEXT_TEMPLATE) {
-                Ok(true) => println!("Created user context: {}", user_ctx.display()),
-                Ok(false) => {}
-                Err(e) => println!("Warning: could not create {}: {}", user_ctx.display(), e),
-            }
-        } else if legacy_ctx.exists() && !user_ctx.exists() {
-            // Migration notice: legacy file exists but new doesn't
-            println!(
-                "Note: Found legacy {}. Consider renaming to context.md",
-                legacy_ctx.display()
-            );
+        match write_file_if_missing(&user_ctx, USER_CONTEXT_TEMPLATE) {
+            Ok(true) => println!("Created user context: {}", user_ctx.display()),
+            Ok(false) => {}
+            Err(e) => println!("Warning: could not create {}: {}", user_ctx.display(), e),
         }
 
         // Create prompts.toml template
@@ -246,22 +207,12 @@ fn ensure_context_files() -> Result<()> {
         match git::get_repo_root() {
             Ok(root) => {
                 let project_ctx = PathBuf::from(&root).join(".gitar").join("context.md");
-                let legacy_ctx = PathBuf::from(&root).join(".gitar").join("gitar.md");
-
-                // Only create if neither new nor legacy exists
-                if !project_ctx.exists() && !legacy_ctx.exists() {
-                    match write_file_if_missing(&project_ctx, PROJECT_CONTEXT_TEMPLATE) {
-                        Ok(true) => println!("Created project context: {}", project_ctx.display()),
-                        Ok(false) => {}
-                        Err(e) => {
-                            println!("Warning: could not create {}: {}", project_ctx.display(), e)
-                        }
+                match write_file_if_missing(&project_ctx, PROJECT_CONTEXT_TEMPLATE) {
+                    Ok(true) => println!("Created project context: {}", project_ctx.display()),
+                    Ok(false) => {}
+                    Err(e) => {
+                        println!("Warning: could not create {}: {}", project_ctx.display(), e)
                     }
-                } else if legacy_ctx.exists() && !project_ctx.exists() {
-                    println!(
-                        "Note: Found legacy {}. Consider renaming to context.md",
-                        legacy_ctx.display()
-                    );
                 }
             }
             Err(e) => {
@@ -864,6 +815,61 @@ fn show_config(config: &Config) -> Result<()> {
                 println!("  base_url:    {}", url);
             }
         }
+    }
+
+    // Show context files
+    println!("\n--- Context Files ---");
+
+    // User context
+    if let Some(base) = Config::config_base_dir() {
+        let ctx_path = base.join("context.md");
+        if ctx_path.exists() {
+            println!("User context:    {}", ctx_path.display());
+        } else {
+            println!("User context:    (not found)");
+        }
+    }
+
+    // Project context
+    if git::is_git_repo() {
+        if let Ok(root) = git::get_repo_root() {
+            let ctx_path = PathBuf::from(&root).join(".gitar").join("context.md");
+            if ctx_path.exists() {
+                println!("Project context: {}", ctx_path.display());
+            } else {
+                println!("Project context: (not found)");
+            }
+        }
+    }
+
+    // Show loaded context content preview
+    use crate::context::repo::load_all_context;
+    let (project_ctx, user_ctx) = load_all_context();
+
+    if user_ctx.is_some() || project_ctx.is_some() {
+        println!("\n--- Loaded Context (sent to LLM) ---");
+    }
+
+    if let Some(ctx) = &user_ctx {
+        let preview = if ctx.len() > 200 {
+            format!("{}...", &ctx[..200])
+        } else {
+            ctx.clone()
+        };
+        println!("\nUser context preview:\n{}", preview);
+    }
+
+    if let Some(ctx) = &project_ctx {
+        let preview = if ctx.len() > 200 {
+            format!("{}...", &ctx[..200])
+        } else {
+            ctx.clone()
+        };
+        println!("\nProject context preview:\n{}", preview);
+    }
+
+    if user_ctx.is_none() && project_ctx.is_none() {
+        println!("\n(No context loaded - context.md files are empty or only contain comments)");
     }
 
     Ok(())
