@@ -15,9 +15,11 @@ use super::group::{create_groups, CommitGroup};
 
 pub enum EditResult {
     /// Accept all and execute without per-commit prompts
-    ApprovedAll(Vec<CommitGroup>),
+    /// bool = include_large_files
+    ApprovedAll(Vec<CommitGroup>, bool),
     /// Approve one by one with per-commit prompts
-    ApprovedOneByOne(Vec<CommitGroup>),
+    /// bool = include_large_files
+    ApprovedOneByOne(Vec<CommitGroup>, bool),
     Cancelled,
 }
 
@@ -25,15 +27,8 @@ enum Action {
     AcceptAll,
     AcceptOneByOne,
     Regenerate,
-    MoveFile {
-        file: String,
-        from: usize,
-        to: usize,
-    },
-    ExcludeFile(String),
-    EditMessage {
-        group_id: usize,
-    },
+    EditMessage { group_id: usize },
+    IncludeLargeFiles,
     Quit,
 }
 
@@ -43,49 +38,73 @@ enum Action {
 
 pub struct PlanEditor {
     pub groups: Vec<CommitGroup>,
-    pub excluded: Vec<String>,
+    pub include_large_files: bool,
 }
 
 impl PlanEditor {
     pub fn new(groups: Vec<CommitGroup>) -> Self {
         Self {
             groups,
-            excluded: Vec::new(),
+            include_large_files: false,
         }
     }
 
     /// Display the current plan
     pub fn display(&self) {
+        let total_groups = self.groups.len();
+        let skip_groups = self.groups.iter().filter(|g| g.is_large_file_group).count();
+
         println!("\n===========================================================");
-        println!("Commit Plan ({} commits)", self.groups.len());
+        println!("Commit Plan ({} groups)", total_groups);
         println!("===========================================================\n");
 
         for (idx, group) in self.groups.iter().enumerate() {
-            println!("Commit {}/{}", idx + 1, self.groups.len());
-            println!("Message: {}", group.message);
-            println!("Files ({}):", group.files_with_status.len());
-            for file in &group.files_with_status {
-                println!("  {} {}", file.status.label(), file.path);
-            }
-            println!();
-        }
-
-        if !self.excluded.is_empty() {
-            println!("Excluded files ({}):", self.excluded.len());
-            for file in &self.excluded {
-                println!("  - {}", file);
+            if group.is_large_file_group {
+                // Large/binary file group - shown with SKIP indicator
+                println!("Group {}/{} [BINARY/LARGE - default: SKIP]", idx + 1, total_groups);
+                println!("Title: {}", group.title);
+                println!("Files ({}):", group.files_with_status.len());
+                for file in &group.files_with_status {
+                    println!("  {} {}", file.status.label(), file.path);
+                }
+                println!("  (Will be SKIPPED unless you choose to commit)");
+            } else {
+                // Regular commit group
+                println!("Group {}/{}", idx + 1, total_groups);
+                println!("Message: {}", group.message);
+                println!("Files ({}):", group.files_with_status.len());
+                for file in &group.files_with_status {
+                    println!("  {} {}", file.status.label(), file.path);
+                }
             }
             println!();
         }
 
         println!("-----------------------------------------------------------");
+        if skip_groups > 0 {
+            if self.include_large_files {
+                println!("Binary/large files: WILL BE COMMITTED");
+            } else {
+                println!("Binary/large files: WILL BE SKIPPED (default)");
+            }
+            println!("-----------------------------------------------------------");
+        }
         println!("Options:");
-        println!("  [Enter] Accept all and commit");
+        if self.include_large_files {
+            println!("  [Enter] Accept all and commit (including binary/large files)");
+        } else {
+            println!("  [Enter] Accept all and commit (binary/large files will be SKIPPED)");
+        }
         println!("  [y]     Approve commits one by one");
         println!("  [r]     Regenerate plan (re-call LLM)");
-        println!("  [m]     Move file between commits");
-        println!("  [x]     Exclude file from all commits");
         println!("  [e]     Edit commit message");
+        if skip_groups > 0 {
+            if self.include_large_files {
+                println!("  [i]     Exclude binary/large files (skip them)");
+            } else {
+                println!("  [i]     Include binary/large files (commit them)");
+            }
+        }
         println!("  [q]     Quit without executing");
         println!("-----------------------------------------------------------");
     }
@@ -112,10 +131,10 @@ impl PlanEditor {
 
             match self.parse_action(&choice)? {
                 Action::AcceptAll => {
-                    return Ok(EditResult::ApprovedAll(self.groups.clone()));
+                    return Ok(EditResult::ApprovedAll(self.groups.clone(), self.include_large_files));
                 }
                 Action::AcceptOneByOne => {
-                    return Ok(EditResult::ApprovedOneByOne(self.groups.clone()));
+                    return Ok(EditResult::ApprovedOneByOne(self.groups.clone(), self.include_large_files));
                 }
                 Action::Regenerate => {
                     println!("\nRegenerating plan...");
@@ -123,21 +142,16 @@ impl PlanEditor {
                         .await?;
                     println!("Plan regenerated.");
                 }
-                Action::MoveFile { file, from, to } => {
-                    self.move_file(&file, from, to)?;
-                    println!(
-                        "Moved {} from commit {} to commit {}",
-                        file,
-                        from + 1,
-                        to + 1
-                    );
-                }
-                Action::ExcludeFile(file) => {
-                    self.exclude_file(&file)?;
-                    println!("Excluded {}", file);
-                }
                 Action::EditMessage { group_id } => {
                     self.edit_message(group_id)?;
+                }
+                Action::IncludeLargeFiles => {
+                    self.include_large_files = !self.include_large_files;
+                    if self.include_large_files {
+                        println!("Binary/large files will be COMMITTED.");
+                    } else {
+                        println!("Binary/large files will be SKIPPED (default).");
+                    }
                 }
                 Action::Quit => {
                     println!("Cancelled.");
@@ -153,55 +167,34 @@ impl PlanEditor {
             "" | "a" | "accept" | "all" => Ok(Action::AcceptAll),
             "y" | "yes" => Ok(Action::AcceptOneByOne),
             "r" | "regenerate" => Ok(Action::Regenerate),
+            "i" | "include" => Ok(Action::IncludeLargeFiles),
             "q" | "quit" | "exit" => Ok(Action::Quit),
-            _ if input.starts_with("m ") || input.starts_with("move ") => {
-                self.parse_move_action(input)
-            }
-            _ if input.starts_with("x ") || input.starts_with("exclude ") => {
-                self.parse_exclude_action(input)
-            }
+            "e" | "edit" => self.prompt_edit_action(),
             _ if input.starts_with("e ") || input.starts_with("edit ") => {
                 self.parse_edit_action(input)
             }
-            _ => bail!("Invalid choice. Try: Enter, y, r, m, x, e, or q."),
+            _ => bail!("Invalid choice. Try: Enter, y, r, e, i, or q."),
         }
     }
 
-    /// Parse move action: "m <file> <from> <to>"
-    fn parse_move_action(&self, input: &str) -> Result<Action> {
-        let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() < 4 {
-            bail!("Usage: m <file> <from_commit_number> <to_commit_number>");
+    /// Prompt for edit action arguments
+    fn prompt_edit_action(&self) -> Result<Action> {
+        print!("Group number to edit: ");
+        io::stdout().flush()?;
+        let mut num_str = String::new();
+        io::stdin().read_line(&mut num_str)?;
+        let group_id: usize = num_str.trim().parse().map_err(|_| anyhow::anyhow!("Invalid number"))?;
+
+        if group_id == 0 {
+            bail!("Group numbers start from 1");
+        }
+        if group_id > self.groups.len() {
+            bail!("Group number out of range (max: {})", self.groups.len());
         }
 
-        let file = parts[1..parts.len() - 2].join(" ");
-        let from: usize = parts[parts.len() - 2].parse()?;
-        let to: usize = parts[parts.len() - 1].parse()?;
-
-        if from == 0 || to == 0 {
-            bail!("Commit numbers start from 1");
-        }
-
-        if from > self.groups.len() || to > self.groups.len() {
-            bail!("Commit number out of range (max: {})", self.groups.len());
-        }
-
-        Ok(Action::MoveFile {
-            file,
-            from: from - 1,
-            to: to - 1,
+        Ok(Action::EditMessage {
+            group_id: group_id - 1,
         })
-    }
-
-    /// Parse exclude action: "x <file>"
-    fn parse_exclude_action(&self, input: &str) -> Result<Action> {
-        let parts: Vec<&str> = input.split_whitespace().collect();
-        if parts.len() < 2 {
-            bail!("Usage: x <file>");
-        }
-
-        let file = parts[1..].join(" ");
-        Ok(Action::ExcludeFile(file))
     }
 
     /// Parse edit action: "e <commit_number>"
@@ -222,42 +215,6 @@ impl PlanEditor {
         Ok(Action::EditMessage {
             group_id: group_id - 1,
         })
-    }
-
-    /// Move file from one group to another
-    fn move_file(&mut self, file: &str, from: usize, to: usize) -> Result<()> {
-        let from_group = &mut self.groups[from];
-        let file_idx = from_group
-            .files
-            .iter()
-            .position(|f| f == file)
-            .ok_or_else(|| anyhow::anyhow!("File {} not found in commit {}", file, from + 1))?;
-
-        from_group.files.remove(file_idx);
-
-        let to_group = &mut self.groups[to];
-        to_group.files.push(file.to_string());
-
-        Ok(())
-    }
-
-    /// Exclude file from all groups
-    fn exclude_file(&mut self, file: &str) -> Result<()> {
-        let mut found = false;
-
-        for group in &mut self.groups {
-            if let Some(idx) = group.files.iter().position(|f| f == file) {
-                group.files.remove(idx);
-                found = true;
-            }
-        }
-
-        if !found {
-            bail!("File {} not found in any commit", file);
-        }
-
-        self.excluded.push(file.to_string());
-        Ok(())
     }
 
     /// Edit commit message
@@ -401,36 +358,5 @@ mod tests {
     fn parse_action_quit() {
         let editor = create_test_editor();
         assert!(matches!(editor.parse_action("q").unwrap(), Action::Quit));
-    }
-
-    #[test]
-    fn parse_move_action_valid() {
-        let editor = create_test_editor();
-        match editor.parse_action("m README.md 1 2").unwrap() {
-            Action::MoveFile { file, from, to } => {
-                assert_eq!(file, "README.md");
-                assert_eq!(from, 0);
-                assert_eq!(to, 1);
-            }
-            _ => panic!("Expected MoveFile action"),
-        }
-    }
-
-    #[test]
-    fn move_file_between_groups() {
-        let mut editor = create_test_editor();
-        editor.move_file("README.md", 0, 1).unwrap();
-
-        assert_eq!(editor.groups[0].files.len(), 1);
-        assert_eq!(editor.groups[1].files.len(), 2);
-    }
-
-    #[test]
-    fn exclude_file_from_groups() {
-        let mut editor = create_test_editor();
-        editor.exclude_file("README.md").unwrap();
-
-        assert_eq!(editor.groups[0].files.len(), 1);
-        assert_eq!(editor.excluded.len(), 1);
     }
 }

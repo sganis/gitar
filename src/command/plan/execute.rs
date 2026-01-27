@@ -83,6 +83,22 @@ fn stage_file(path: &str, status: &FileStatus) -> Result<()> {
     Ok(())
 }
 
+/// Execute a commit group (stage files and commit)
+fn execute_commit_group(group: &CommitGroup, mode: &AnalysisMode, model: &str) -> Result<()> {
+    // Stage files if not already staged
+    if !matches!(mode, AnalysisMode::Staged) {
+        for file in &group.files_with_status {
+            stage_file(&file.path, &file.status)?;
+        }
+    }
+
+    // Commit
+    let msg = format!("{} [AI:{}]", group.message, model);
+    git::run_git(&["commit", "-m", &msg])?;
+    success("Committed");
+    Ok(())
+}
+
 // =============================================================================
 // PLAN EXECUTION
 // =============================================================================
@@ -93,6 +109,7 @@ pub fn execute_plan(
     mode: &AnalysisMode,
     dry_run: bool,
     interactive: bool,
+    include_large_files: bool,
     model: &str,
 ) -> Result<()> {
     if groups.is_empty() {
@@ -100,34 +117,49 @@ pub fn execute_plan(
         return Ok(());
     }
 
-    // Count actual commit groups (excluding large file groups)
-    let commit_count = groups.iter().filter(|g| !g.is_large_file_group).count();
+    // Count groups
+    let total_count = groups.len();
     let large_file_count = groups.iter().filter(|g| g.is_large_file_group).count();
 
     println!("\n===========================================================");
     if large_file_count > 0 {
-        println!(
-            "Executing Plan ({} commits, {} large file group{} ignored)",
-            commit_count,
-            large_file_count,
-            if large_file_count > 1 { "s" } else { "" }
-        );
+        if include_large_files {
+            println!("Executing Plan ({} groups, binary/large files INCLUDED)", total_count);
+        } else {
+            println!("Executing Plan ({} groups, binary/large files SKIPPED)", total_count);
+        }
     } else {
-        println!("Executing Plan ({} commits)", commit_count);
+        println!("Executing Plan ({} groups)", total_count);
     }
     println!("===========================================================\n");
 
     for (idx, group) in groups.iter().enumerate() {
-        // Handle large file groups specially
+        // Handle large file groups
         if group.is_large_file_group {
-            println!("Large File Group ({})", group.files.len());
-            println!("{}\n", group.message);
-            handle_large_file_group(group, mode, dry_run)?;
+            println!("Group {}/{} [BINARY/LARGE FILES]", idx + 1, total_count);
+            println!("Files ({}):", group.files.len());
+            for file in &group.files_with_status {
+                println!("  {} {}", file.status.label(), file.path);
+            }
+            println!();
+
+            if include_large_files {
+                // User chose to include - commit these files
+                println!("Committing binary/large files...");
+                if !dry_run {
+                    execute_commit_group(group, mode, model)?;
+                } else {
+                    println!("  (Dry run - would commit {} file(s))", group.files.len());
+                }
+            } else {
+                // Default: skip/unstage these files
+                handle_large_file_group(group, mode, dry_run)?;
+            }
             println!();
             continue;
         }
 
-        println!("Commit {}/{}", idx + 1, commit_count);
+        println!("Group {}/{}", idx + 1, total_count);
         println!("{}\n", group.message);
 
         // Check mode for staging strategy
@@ -137,9 +169,9 @@ pub fn execute_plan(
                 let staged = git::run_git(&["diff", "--cached", "--name-only"])?;
                 if staged.trim().is_empty() {
                     warning(&format!(
-                        "Skipping commit {}/{}: no staged files",
+                        "Skipping group {}/{}: no staged files",
                         idx + 1,
-                        groups.len()
+                        total_count
                     ));
                     println!();
                     continue;
@@ -391,8 +423,45 @@ fn validate_execution() -> Result<()> {
     let status = git::run_git(&["status", "--porcelain"])?;
 
     if !status.trim().is_empty() {
-        println!("Note: Working tree still has changes:");
-        println!("{}", status);
+        // Parse and display user-friendly status
+        let mut untracked = Vec::new();
+        let mut modified = Vec::new();
+        let mut staged = Vec::new();
+
+        for line in status.lines() {
+            if line.len() < 3 {
+                continue;
+            }
+            let code = &line[..2];
+            let file = line[3..].trim();
+
+            match code {
+                "??" => untracked.push(file),
+                " M" | " D" => modified.push(file),
+                "M " | "A " | "D " | "R " => staged.push(file),
+                _ => modified.push(file), // Catch-all for other statuses
+            }
+        }
+
+        println!("\nNote: Working tree still has changes:");
+        if !untracked.is_empty() {
+            println!("  Untracked files (not in git):");
+            for f in &untracked {
+                println!("    {}", f);
+            }
+        }
+        if !modified.is_empty() {
+            println!("  Modified files (unstaged):");
+            for f in &modified {
+                println!("    {}", f);
+            }
+        }
+        if !staged.is_empty() {
+            println!("  Staged files (not committed):");
+            for f in &staged {
+                println!("    {}", f);
+            }
+        }
     }
 
     Ok(())
@@ -411,7 +480,7 @@ mod tests {
     fn execute_plan_empty_groups() {
         let groups: Vec<CommitGroup> = vec![];
         let mode = AnalysisMode::WorkingTree;
-        let result = execute_plan(&groups, &mode, true, false, "test-model");
+        let result = execute_plan(&groups, &mode, true, false, false, "test-model");
         assert!(result.is_ok());
     }
 
@@ -432,7 +501,7 @@ mod tests {
 
         let mode = AnalysisMode::WorkingTree;
         // Dry run should not fail even if files don't exist
-        let result = execute_plan(&groups, &mode, true, false, "gpt-4");
+        let result = execute_plan(&groups, &mode, true, false, false, "gpt-4");
         assert!(result.is_ok());
     }
 
@@ -453,12 +522,12 @@ mod tests {
             },
             CommitGroup {
                 id: 1,
-                title: "Large files (1 file, >= 50MB) - IGNORED".to_string(),
+                title: "Large files (1 file, >= 50MB) [default: SKIP]".to_string(),
                 message: "Large files detected".to_string(),
                 files: vec!["assets/video.mp4".to_string()],
                 files_with_status: vec![FileWithStatus {
-                    path: "assets/video.mp4 (100MB)".to_string(),
-                    status: FileStatus::Ignored,
+                    path: "assets/video.mp4".to_string(),
+                    status: FileStatus::Added,
                 }],
                 estimated_tokens: 0,
                 is_large_file_group: true,
@@ -467,7 +536,7 @@ mod tests {
 
         let mode = AnalysisMode::WorkingTree;
         // Dry run should handle large file groups correctly
-        let result = execute_plan(&groups, &mode, true, false, "gpt-4");
+        let result = execute_plan(&groups, &mode, true, false, false, "gpt-4");
         assert!(result.is_ok());
     }
 

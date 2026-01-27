@@ -17,6 +17,8 @@ pub struct FileInfo {
     pub config: bool,
     #[serde(default)]
     pub large_file: bool, // >= 50 MB
+    #[serde(default)]
+    pub binary_file: bool, // Binary file by extension
 }
 
 impl FileInfo {
@@ -30,6 +32,7 @@ impl FileInfo {
             doc: false,
             config: false,
             large_file: false,
+            binary_file: false,
         }
     }
 
@@ -66,6 +69,16 @@ impl FileInfo {
     pub fn with_large_file(mut self, large_file: bool) -> Self {
         self.large_file = large_file;
         self
+    }
+
+    pub fn with_binary_file(mut self, binary_file: bool) -> Self {
+        self.binary_file = binary_file;
+        self
+    }
+
+    /// Check if this file should be skipped from LLM analysis
+    pub fn should_skip_llm(&self) -> bool {
+        self.large_file || self.binary_file
     }
 }
 

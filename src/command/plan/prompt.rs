@@ -405,11 +405,11 @@ pub fn create_fallback_plan(context: &PlanningContext) -> PlanResponse {
         });
     }
 
-    // Group 5: Code (everything else, excluding large files)
+    // Group 5: Code (everything else, excluding large/binary files)
     let code_files: Vec<String> = context
         .files
         .iter()
-        .filter(|f| !f.doc && !f.test && !f.config && !f.renamed && !f.large_file)
+        .filter(|f| !f.doc && !f.test && !f.config && !f.renamed && !f.should_skip_llm())
         .map(|f| f.path.clone())
         .collect();
 

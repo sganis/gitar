@@ -92,7 +92,8 @@ pub async fn cmd_plan(
 
     // Step 3: Interactive editing (if interactive)
     // execute_interactive tracks whether to prompt for each commit during execution
-    let (approved_groups, execute_interactive) = if interactive {
+    // include_large_files tracks whether to commit binary/large files
+    let (approved_groups, execute_interactive, include_large_files) = if interactive {
         let mut editor = editor::PlanEditor::new(groups);
         match editor
             .run_interactive(
@@ -105,8 +106,8 @@ pub async fn cmd_plan(
             )
             .await?
         {
-            editor::EditResult::ApprovedAll(g) => (g, false),
-            editor::EditResult::ApprovedOneByOne(g) => (g, true),
+            editor::EditResult::ApprovedAll(g, include) => (g, false, include),
+            editor::EditResult::ApprovedOneByOne(g, include) => (g, true, include),
             editor::EditResult::Cancelled => {
                 println!("Execution cancelled.");
                 return Ok(());
@@ -125,7 +126,7 @@ pub async fn cmd_plan(
             }
         }
         println!("\n===========================================================\n");
-        (groups, false)
+        (groups, false, false) // Default: don't include large files
     };
 
     // Step 4: Execute strategy (if apply flag is set)
@@ -135,6 +136,7 @@ pub async fn cmd_plan(
             &analysis.mode,
             false,
             execute_interactive,
+            include_large_files,
             client.model(),
         )?;
     } else {

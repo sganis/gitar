@@ -33,6 +33,7 @@ fn build_file_infos(changes: &[FileChange]) -> Vec<FileInfo> {
             let doc = change.category == FileCategory::Documentation;
             let config = change.category == FileCategory::Config;
             let large_file = change.is_large_file();
+            let binary_file = change.is_binary_file();
 
             FileInfo::new(change.path.clone())
                 .with_kind(kind)
@@ -42,6 +43,7 @@ fn build_file_infos(changes: &[FileChange]) -> Vec<FileInfo> {
                 .with_doc(doc)
                 .with_config(config)
                 .with_large_file(large_file)
+                .with_binary_file(binary_file)
         })
         .collect()
 }

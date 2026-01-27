@@ -10,6 +10,20 @@ use std::path::PathBuf;
 /// Large file threshold: 50 MB
 pub const LARGE_FILE_THRESHOLD: u64 = 50 * 1024 * 1024;
 
+/// Binary file extensions that should be skipped from LLM analysis
+const BINARY_EXTENSIONS: &[&str] = &[
+    "zip", "tar", "gz", "bz2", "xz", "7z", "rar",
+    "exe", "dll", "so", "dylib", "bin",
+    "png", "jpg", "jpeg", "gif", "bmp", "ico", "webp", "svg",
+    "mp3", "mp4", "wav", "ogg", "avi", "mov", "mkv", "webm",
+    "pdf", "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+    "ttf", "otf", "woff", "woff2", "eot",
+    "db", "sqlite", "sqlite3",
+    "jar", "war", "ear", "class",
+    "pyc", "pyo", "o", "a", "lib",
+    "wasm",
+];
+
 // =============================================================================
 // ANALYSIS MODE & RESULT
 // =============================================================================
@@ -82,6 +96,20 @@ impl FileChange {
     pub fn is_large_file(&self) -> bool {
         self.size_bytes.is_some_and(|s| s >= LARGE_FILE_THRESHOLD)
     }
+
+    /// Check if this file is a binary file based on extension
+    pub fn is_binary_file(&self) -> bool {
+        if let Some(ext) = self.path.rsplit('.').next() {
+            BINARY_EXTENSIONS.contains(&ext.to_lowercase().as_str())
+        } else {
+            false
+        }
+    }
+
+    /// Check if this file should be skipped from LLM analysis (large or binary)
+    pub fn should_skip_llm(&self) -> bool {
+        self.is_large_file() || self.is_binary_file()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,6 +118,7 @@ pub enum ChangeStatus {
     Modified,
     Deleted,
     Renamed { from: String },
+    Unknown, // Untracked or any unrecognized status
 }
 
 impl Groupable for FileChange {
@@ -193,13 +222,12 @@ pub fn analyze_working_tree() -> Result<AnalysisResult> {
     })
 }
 
-/// Scan unstaged and untracked files (extracted from split.rs)
+/// Scan all changes: staged, unstaged, and untracked files
 fn scan_working_tree() -> Result<Vec<FileChange>> {
     let mut changes = Vec::new();
 
-    // Get numstat for modified files
+    // Get numstat for unstaged modified files
     let numstat = git::run_git(&["diff", "--numstat"])?;
-
     if !numstat.trim().is_empty() {
         for line in numstat.lines() {
             let parts: Vec<&str> = line.split_whitespace().collect();
@@ -225,10 +253,42 @@ fn scan_working_tree() -> Result<Vec<FileChange>> {
         }
     }
 
-    // Get status for added, deleted, renamed files
+    // Get numstat for staged files (including binary files)
+    let staged_numstat = git::run_git(&["diff", "--cached", "--numstat"])?;
+    if !staged_numstat.trim().is_empty() {
+        for line in staged_numstat.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() < 3 {
+                continue;
+            }
+
+            let path = parts[2..].join(" ");
+
+            // Skip if already in changes (unstaged takes precedence)
+            if changes.iter().any(|c| c.path == path) {
+                continue;
+            }
+
+            let additions = parts[0].parse().unwrap_or(0);
+            let deletions = parts[1].parse().unwrap_or(0);
+            let category = categorize_file(&path);
+            let size_bytes = get_file_size(&path);
+
+            changes.push(FileChange {
+                path: path.clone(),
+                status: ChangeStatus::Added, // Will be updated below if different
+                additions,
+                deletions,
+                category,
+                size_bytes,
+            });
+        }
+    }
+
+    // Get full status to update statuses and add untracked files
     let status = git::run_git(&["status", "--porcelain"])?;
     for line in status.lines() {
-        if line.len() < 4 {
+        if line.len() < 3 {
             continue;
         }
         let status_code = &line[..2];
@@ -241,6 +301,23 @@ fn scan_working_tree() -> Result<Vec<FileChange>> {
                     let size_bytes = get_file_size(&path);
                     changes.push(FileChange {
                         path: path.clone(),
+                        status: ChangeStatus::Unknown,
+                        additions: 0,
+                        deletions: 0,
+                        category: categorize_file(&path),
+                        size_bytes,
+                    });
+                }
+            }
+            "A " | "AM" => {
+                // Staged new file
+                if let Some(change) = changes.iter_mut().find(|c| c.path == path) {
+                    change.status = ChangeStatus::Added;
+                } else {
+                    // File wasn't in numstat (might be binary)
+                    let size_bytes = get_file_size(&path);
+                    changes.push(FileChange {
+                        path: path.clone(),
                         status: ChangeStatus::Added,
                         additions: 0,
                         deletions: 0,
@@ -249,16 +326,22 @@ fn scan_working_tree() -> Result<Vec<FileChange>> {
                     });
                 }
             }
-            "R " | "RM" => {
-                // Renamed file
+            "M " | "MM" | " M" => {
+                // Modified file (staged, both, or unstaged)
                 if let Some(change) = changes.iter_mut().find(|c| c.path == path) {
-                    change.status = ChangeStatus::Renamed { from: path.clone() };
+                    change.status = ChangeStatus::Modified;
                 }
             }
-            " D" | "D " => {
+            "D " | " D" | "DD" => {
                 // Deleted file
                 if let Some(change) = changes.iter_mut().find(|c| c.path == path) {
                     change.status = ChangeStatus::Deleted;
+                }
+            }
+            s if s.starts_with('R') => {
+                // Renamed file - path contains "old -> new"
+                if let Some(change) = changes.iter_mut().find(|c| c.path == path) {
+                    change.status = ChangeStatus::Renamed { from: path.clone() };
                 }
             }
             _ => {}
@@ -562,5 +645,74 @@ mod tests {
             size_bytes: None,
         };
         assert!(!unknown.is_large_file());
+    }
+
+    #[test]
+    fn file_change_is_binary_file() {
+        let zip = FileChange {
+            path: "archive.zip".to_string(),
+            status: ChangeStatus::Added,
+            additions: 0,
+            deletions: 0,
+            category: FileCategory::Code,
+            size_bytes: Some(1024),
+        };
+        assert!(zip.is_binary_file());
+
+        let png = FileChange {
+            path: "image.PNG".to_string(), // Test case insensitivity
+            status: ChangeStatus::Added,
+            additions: 0,
+            deletions: 0,
+            category: FileCategory::Code,
+            size_bytes: Some(1024),
+        };
+        assert!(png.is_binary_file());
+
+        let rust = FileChange {
+            path: "main.rs".to_string(),
+            status: ChangeStatus::Modified,
+            additions: 10,
+            deletions: 5,
+            category: FileCategory::Code,
+            size_bytes: Some(1024),
+        };
+        assert!(!rust.is_binary_file());
+    }
+
+    #[test]
+    fn file_change_should_skip_llm() {
+        // Large file should skip
+        let large = FileChange {
+            path: "large.txt".to_string(),
+            status: ChangeStatus::Added,
+            additions: 0,
+            deletions: 0,
+            category: FileCategory::Code,
+            size_bytes: Some(100 * 1024 * 1024),
+        };
+        assert!(large.should_skip_llm());
+
+        // Binary file should skip
+        let binary = FileChange {
+            path: "app.exe".to_string(),
+            status: ChangeStatus::Added,
+            additions: 0,
+            deletions: 0,
+            category: FileCategory::Code,
+            size_bytes: Some(1024),
+        };
+        assert!(binary.should_skip_llm());
+
+        // Regular file should not skip
+        let regular = FileChange {
+            path: "main.rs".to_string(),
+            status: ChangeStatus::Modified,
+            additions: 10,
+            deletions: 5,
+            category: FileCategory::Code,
+            size_bytes: Some(1024),
+        };
+        assert!(!regular.should_skip_llm());
     }
 }

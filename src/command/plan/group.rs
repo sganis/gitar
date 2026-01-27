@@ -27,18 +27,18 @@ pub enum FileStatus {
     Modified,
     Deleted,
     Renamed,
-    Ignored, // Large file to be skipped
+    Unknown, // Untracked or any unrecognized status
 }
 
 impl FileStatus {
-    /// Short label for display (e.g., "[A]", "[M]", "[D]", "[R]", "[I]")
+    /// Short label for display
     pub fn label(&self) -> &'static str {
         match self {
-            FileStatus::Added => "[A]",
-            FileStatus::Modified => "[M]",
-            FileStatus::Deleted => "[D]",
-            FileStatus::Renamed => "[R]",
-            FileStatus::Ignored => "[I]",
+            FileStatus::Added => "A",
+            FileStatus::Modified => "M",
+            FileStatus::Deleted => "D",
+            FileStatus::Renamed => "R",
+            FileStatus::Unknown => "?",
         }
     }
 }
@@ -78,46 +78,50 @@ const LOCK_FILES: &[&str] = &[
 ];
 
 // =============================================================================
-// LARGE FILE HANDLING
+// SKIP FILE HANDLING (Large files and Binary files)
 // =============================================================================
 
 use super::analyze::LARGE_FILE_THRESHOLD;
 
-/// Create a special commit group for large files (>= 50 MB)
-/// This group is marked for ignore/unstage by default
-fn create_large_file_group(
-    large_files: &[&super::analyze::FileChange],
-    mode: &AnalysisMode,
+/// Create a commit group for large/binary files
+/// This group appears in the plan but defaults to "skip" during execution
+fn create_skip_file_group(
+    skip_files: &[&super::analyze::FileChange],
+    _mode: &AnalysisMode,
 ) -> CommitGroup {
-    let threshold_mb = LARGE_FILE_THRESHOLD / (1024 * 1024);
-    let file_count = large_files.len();
+    let file_count = skip_files.len();
+    let has_large = skip_files.iter().any(|f| f.is_large_file());
+    let has_binary = skip_files.iter().any(|f| f.is_binary_file());
 
-    let title = format!(
-        "Large files ({} file{}, >= {}MB) - IGNORED",
-        file_count,
-        if file_count > 1 { "s" } else { "" },
-        threshold_mb
-    );
+    let title = if has_large && has_binary {
+        format!("Binary/Large files ({} file{}) [default: SKIP]", file_count, if file_count > 1 { "s" } else { "" })
+    } else if has_large {
+        let threshold_mb = LARGE_FILE_THRESHOLD / (1024 * 1024);
+        format!("Large files >= {}MB ({} file{}) [default: SKIP]", threshold_mb, file_count, if file_count > 1 { "s" } else { "" })
+    } else {
+        format!("Binary files ({} file{}) [default: SKIP]", file_count, if file_count > 1 { "s" } else { "" })
+    };
 
-    let message = format!(
-        "Large files detected (>= {}MB). These files will be {}.\n\
-         Consider using Git LFS for large binary files.",
-        threshold_mb,
-        match mode {
-            AnalysisMode::Staged => "unstaged",
-            _ => "ignored",
-        }
-    );
+    let message = "Add binary/large files\n\n\
+        Note: These files are excluded from AI analysis.\n\
+        Default action is SKIP. Choose 'commit' to include them."
+        .to_string();
 
-    let files: Vec<String> = large_files.iter().map(|f| f.path.clone()).collect();
+    let files: Vec<String> = skip_files.iter().map(|f| f.path.clone()).collect();
 
-    let files_with_status: Vec<FileWithStatus> = large_files
+    let files_with_status: Vec<FileWithStatus> = skip_files
         .iter()
         .map(|f| {
-            let size_mb = f.size_bytes.unwrap_or(0) / (1024 * 1024);
+            let status = match &f.status {
+                super::analyze::ChangeStatus::Added => FileStatus::Added,
+                super::analyze::ChangeStatus::Modified => FileStatus::Modified,
+                super::analyze::ChangeStatus::Deleted => FileStatus::Deleted,
+                super::analyze::ChangeStatus::Renamed { .. } => FileStatus::Renamed,
+                super::analyze::ChangeStatus::Unknown => FileStatus::Unknown,
+            };
             FileWithStatus {
-                path: format!("{} ({}MB)", f.path, size_mb),
-                status: FileStatus::Ignored,
+                path: f.path.clone(),
+                status,
             }
         })
         .collect();
@@ -153,26 +157,26 @@ pub async fn create_groups(
         return Ok(vec![]);
     }
 
-    // Separate large files from regular files
-    let large_files: Vec<_> = analysis
+    // Separate files to skip (large or binary) from regular files
+    let skip_files: Vec<_> = analysis
         .files
         .iter()
-        .filter(|f| f.is_large_file())
+        .filter(|f| f.should_skip_llm())
         .collect();
 
-    // Create large file group if any exist
-    let large_file_group = if !large_files.is_empty() {
-        Some(create_large_file_group(&large_files, &analysis.mode))
+    // Create skip file group if any exist
+    let skip_file_group = if !skip_files.is_empty() {
+        Some(create_skip_file_group(&skip_files, &analysis.mode))
     } else {
         None
     };
 
-    // Filter out large files from planning context for LLM
-    let filtered_context = if !large_files.is_empty() {
+    // Filter out skip files from planning context for LLM
+    let filtered_context = if !skip_files.is_empty() {
         let filtered_files: Vec<_> = planning_context
             .files
             .iter()
-            .filter(|f| !f.large_file)
+            .filter(|f| !f.should_skip_llm())
             .cloned()
             .collect();
         super::model::PlanningContext::new(filtered_files)
@@ -182,15 +186,15 @@ pub async fn create_groups(
         planning_context.clone()
     };
 
-    // If only large files, return just the large file group
+    // If only skip files, return just the skip file group
     if filtered_context.files.is_empty() {
-        return Ok(large_file_group.into_iter().collect());
+        return Ok(skip_file_group.into_iter().collect());
     }
 
-    // Helper to append large file group and return
+    // Helper to append skip file group and return
     let finalize_groups = |mut groups: Vec<CommitGroup>| -> Vec<CommitGroup> {
-        if let Some(lfg) = large_file_group.clone() {
-            groups.push(lfg);
+        if let Some(sfg) = skip_file_group.clone() {
+            groups.push(sfg);
         }
         groups
     };
@@ -449,6 +453,7 @@ fn change_status_to_file_status(status: &ChangeStatus) -> FileStatus {
         ChangeStatus::Modified => FileStatus::Modified,
         ChangeStatus::Deleted => FileStatus::Deleted,
         ChangeStatus::Renamed { .. } => FileStatus::Renamed,
+        ChangeStatus::Unknown => FileStatus::Unknown,
     }
 }
 
@@ -514,6 +519,7 @@ fn get_diff_for_group(group: &[FileChange], mode: &AnalysisMode) -> Result<Strin
             ChangeStatus::Deleted => get_deleted_file_diff(&file_change.path, mode)?,
             ChangeStatus::Modified => get_modified_file_diff(&file_change.path, mode)?,
             ChangeStatus::Renamed { from } => get_renamed_file_diff(from, &file_change.path, mode)?,
+            ChangeStatus::Unknown => get_added_file_diff(&file_change.path, &repo_root)?,
         };
 
         if !file_diff.is_empty() {
@@ -692,11 +698,11 @@ mod tests {
 
     #[test]
     fn file_status_labels() {
-        assert_eq!(FileStatus::Added.label(), "[A]");
-        assert_eq!(FileStatus::Modified.label(), "[M]");
-        assert_eq!(FileStatus::Deleted.label(), "[D]");
-        assert_eq!(FileStatus::Renamed.label(), "[R]");
-        assert_eq!(FileStatus::Ignored.label(), "[I]");
+        assert_eq!(FileStatus::Added.label(), "A");
+        assert_eq!(FileStatus::Modified.label(), "M");
+        assert_eq!(FileStatus::Deleted.label(), "D");
+        assert_eq!(FileStatus::Renamed.label(), "R");
+        assert_eq!(FileStatus::Unknown.label(), "?");
     }
 
     #[test]
@@ -718,6 +724,10 @@ mod tests {
                 from: "old.rs".to_string()
             }),
             FileStatus::Renamed
+        );
+        assert_eq!(
+            change_status_to_file_status(&ChangeStatus::Unknown),
+            FileStatus::Unknown
         );
     }
 }
