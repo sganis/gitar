@@ -24,6 +24,7 @@ fn cli_parses_all_commands() {
         vec!["gitar", "tell", "--changelog"],
         vec!["gitar", "tell", "--history"],
         vec!["gitar", "tell", "--explain"],
+        vec!["gitar", "tell", "--weekly"],
         vec!["gitar", "tell"], // defaults to explain
         // Utilities
         vec!["gitar", "init"],
@@ -436,6 +437,32 @@ fn cli_tell_defaults_to_explain() {
     }
 }
 
+#[test]
+fn cli_parses_tell_weekly() {
+    let cli = Cli::try_parse_from(["gitar", "tell", "--weekly", "--staged"]).unwrap();
+    if let Some(Commands::Tell {
+        weekly, staged, ..
+    }) = cli.command
+    {
+        assert!(weekly);
+        assert!(staged);
+    } else {
+        panic!("Expected Tell command with --weekly flag");
+    }
+}
+
+#[test]
+fn cli_parses_tell_weekly_with_since() {
+    let cli =
+        Cli::try_parse_from(["gitar", "tell", "--weekly", "--since", "1 week ago"]).unwrap();
+    if let Some(Commands::Tell { weekly, since, .. }) = cli.command {
+        assert!(weekly);
+        assert_eq!(since, Some("1 week ago".to_string()));
+    } else {
+        panic!("Expected Tell command with --weekly flag");
+    }
+}
+
 // ==========================================================================
 // Selector flags are mutually exclusive
 // ==========================================================================
@@ -445,6 +472,7 @@ fn cli_rejects_multiple_selectors() {
     // Cannot use --commit and --pr together
     assert!(Cli::try_parse_from(["gitar", "tell", "--commit", "--pr"]).is_err());
     assert!(Cli::try_parse_from(["gitar", "tell", "--changelog", "--history"]).is_err());
+    assert!(Cli::try_parse_from(["gitar", "tell", "--weekly", "--explain"]).is_err());
 }
 
 // ==========================================================================
