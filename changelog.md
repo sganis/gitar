@@ -1,3 +1,19 @@
+## [2.5.0] - 2026-01-27
+
+# Release Notes
+
+## Features
+- Configurable prompt overrides via TOML configuration.
+- Weekly highlights command added, enabling weekly summaries.
+
+## Improvements
+- Added CLI tests for tell --weekly flag parsing and selector conflict validation.
+- Documentation expanded to cover configuration directory layout and the weekly tell flag.
+- Internal refactor to use the get_changelog_user accessor in the changelog module.
+
+## Infrastructure
+- Updated Rust dependencies to current versions.
+
 ## [2.4.0] - 2026-01-26
 
 # Release Notes
