@@ -204,7 +204,7 @@ gitar init --auto-apply true   # Enable
 gitar init --auto-apply false  # Disable
 ```
 
-Or set in `~/.gitar.toml`:
+Or set in `~/.gitar/gitar.toml`:
 
 ```toml
 auto_apply = true
@@ -257,6 +257,7 @@ Instead of subcommands, `tell` uses **selector flags** (exactly one):
 | Flag | Description |
 |------|-------------|
 | `--explain` | Plain English explanation for stakeholders (default) |
+| `--weekly` | Executive weekly highlights report for leadership |
 | `--commit` | Generate AI commit message |
 | `--pr` | Generate PR description |
 | `--changelog` | Generate release notes |
@@ -265,9 +266,10 @@ Instead of subcommands, `tell` uses **selector flags** (exactly one):
 ### Default Scope
 
 When no reference is provided, commands default to:
-1. **Latest tag to HEAD** (if a tag exists)
-2. **Last 50 commits** (if no tags)
-3. **Working tree** (for `--explain` without tags)
+1. **Latest tag to HEAD** (if a tag exists) — for most commands
+2. **Last 7 days** — for `--weekly` (capped at 50 commits)
+3. **Last 50 commits** (if no tags)
+4. **Working tree** (for `--explain` without tags)
 
 ### Examples
 
@@ -277,6 +279,11 @@ gitar tell
 gitar tell --explain
 gitar tell --explain --staged
 gitar tell --explain v1.0.0        # From specific ref
+
+# Weekly executive highlights (defaults to last 7 days)
+gitar tell --weekly
+gitar tell --weekly --since "3 days ago"
+gitar tell --weekly v1.0.0         # From specific ref
 
 # Generate commit message
 gitar tell --commit
@@ -381,6 +388,59 @@ preset = "rust"
 
 ---
 
+## Custom Prompts
+
+Override default LLM prompts by creating `~/.gitar/prompts.toml`:
+
+```toml
+[commit]
+system = """
+You generate Git commit messages.
+Rules: single line, imperative mood, max 72 chars
+"""
+user = """
+Generate a commit message for:
+{diff}
+"""
+```
+
+Run `gitar init` to generate a template with all available prompts.
+
+### Available Prompt Types
+
+| Type | Placeholders | Used By |
+|------|--------------|---------|
+| `commit` | `{diff}` | `gitar tell --commit`, `gitar plan` |
+| `history` | `{diff}`, `{original_message}` | `gitar tell --history` |
+| `pr` | `{branch}`, `{commits}`, `{stats}`, `{diff}` | `gitar tell --pr` |
+| `changelog` | `{range}`, `{count}`, `{commits}` | `gitar tell --changelog` |
+| `explain` | `{stats}`, `{diff}` | `gitar tell --explain` |
+| `version` | `{version}`, `{diff}` | `gitar release` |
+| `weekly` | `{stats}`, `{diff}` | `gitar tell --weekly` |
+
+Each prompt type has a `system` and `user` field. Only override what you need — missing keys use built-in defaults.
+
+### Project-Level Prompts
+
+Create `.gitar/prompts.toml` in your repo root for project-specific prompts. Project prompts override user prompts.
+
+---
+
+## User Context
+
+Add personal preferences that get injected into all prompts via `~/.gitar/context.md`:
+
+```markdown
+## Preferences
+- Prefer short, imperative commit messages
+- Use conventional commit format
+- Avoid emojis
+```
+
+Project-level context in `.gitar/context.md` overrides user context.
+
+---
+
 ## Secret Detection & Protection
 
 Gitar scans diffs **before sending to any LLM**:
@@ -422,7 +482,7 @@ gitar diff --compare
 
 ### User Configuration
 
-Stored in `~/.gitar.toml`:
+Stored in `~/.gitar/gitar.toml`:
 
 ```toml
 default_provider = "claude"
@@ -435,21 +495,28 @@ secret_action = "redact"  # or "warn" or "block"
 model = "claude-sonnet-4-5-20250514"
 ```
 
-### System Configuration (Enterprise/Cluster)
+### Shared Configuration (Enterprise/Cluster)
 
-For shared environments (clusters, teams), set a system-wide config file:
+For shared environments (clusters, teams), set a config directory:
 
 ```bash
-export GITAR_CONFIG_FILE=/shared/path/gitar.toml
+export GITAR_CONFIG_PATH=/shared/gitar-config
 ```
+
+All config files resolve relative to this path:
+- `$GITAR_CONFIG_PATH/gitar.toml` — Main configuration
+- `$GITAR_CONFIG_PATH/prompts.toml` — Custom prompts (optional)
+- `$GITAR_CONFIG_PATH/context.md` — User preferences (optional)
+
+Falls back to `~/.gitar/` if not set.
 
 **Config precedence** (highest to lowest):
 1. CLI flags
-2. User config (`~/.gitar.toml`)
-3. System config (`$GITAR_CONFIG_FILE`)
+2. User config (`~/.gitar/gitar.toml`)
+3. System config (`$GITAR_CONFIG_PATH/gitar.toml`)
 4. Built-in defaults
 
-This allows admins to pre-configure gitar for users who can then use it immediately without running `gitar init`. Users can still override system settings with their own `~/.gitar.toml`.
+This allows admins to pre-configure gitar for users who can then use it immediately without running `gitar init`. Users can still override system settings with their own `~/.gitar/gitar.toml`.
 
 ### View Configuration
 
@@ -492,7 +559,7 @@ And the message is generated automatically.
 
 | Variable | Purpose |
 |----------|---------|
-| `GITAR_CONFIG_FILE` | Path to system-wide config file |
+| `GITAR_CONFIG_PATH` | Path to config directory (contains gitar.toml, prompts.toml, context.md) |
 | `GITAR_CA_FILE` | Path to custom CA certificate (PEM or DER) |
 | `GITAR_PROXY` | HTTP or SOCKS5 proxy URL |
 
@@ -517,10 +584,15 @@ Supports both PEM and DER formats (`.cer`, `.crt`, `.pem`).
 
 ```bash
 # /etc/profile.d/gitar.sh (or module load script)
-export GITAR_CONFIG_FILE=/shared/gitar/config.toml
+export GITAR_CONFIG_PATH=/shared/gitar
 export GITAR_CA_FILE=/shared/certs/internal-ca.cer
 export GITAR_PROXY=http://proxy.internal:8080  # optional
 ```
+
+The shared directory should contain:
+- `gitar.toml` — Main configuration (provider, API keys, defaults)
+- `prompts.toml` — Custom prompts (optional)
+- `context.md` — Organization preferences (optional)
 
 With this setup, users can run gitar immediately without any configuration.
 

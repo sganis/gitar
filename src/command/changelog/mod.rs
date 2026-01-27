@@ -4,7 +4,7 @@ use anyhow::Result;
 use crate::client::LlmClient;
 use crate::context::load_all_context;
 use crate::context::secret::SecretAction;
-use crate::context::template::{changelog_system_with_context, CHANGELOG_USER};
+use crate::context::template::{changelog_system_with_context, get_changelog_user};
 use crate::git::{get_commit_logs, get_diff};
 
 use super::{apply_smart_diff_with_context, get_latest_tag, AnalysisContext, SHORT_HASH_LEN};
@@ -112,7 +112,7 @@ pub async fn cmd_changelog(
         String::new()
     };
 
-    let prompt = CHANGELOG_USER
+    let prompt = get_changelog_user()
         .replace("{range}", &display)
         .replace("{count}", &commits.len().to_string())
         .replace("{commits}", &ct)
