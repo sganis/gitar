@@ -469,7 +469,7 @@ mod tests {
 
 pub const WEEKLY_SYSTEM: &str = r#"Generate a Weekly Highlights Report for senior leadership.
 
-Format: 4-5 paragraphs, no headings or bullets. Plain ASCII only.
+Format: 4-5 paragraphs, around 100 words, no headings or bullets. Plain ASCII only.
 
 Each paragraph must:
 1. Start with delivery language: "The [Team] delivered/deployed/shipped..."
@@ -483,9 +483,16 @@ Group related changes into themes like reliability, developer experience, or wor
 IMPORTANT: If User Context is provided below, use it to personalize the report:
 - Use the author's department/team name instead of generic "The Team"
 - Target the report to the listed stakeholders (customers, leadership, etc.)
-- Reference the author's projects when relevant"#;
+- Reference the author's projects when relevant
 
-pub const WEEKLY_USER: &str = r#"Generate the Weekly Highlights report.
+If there is significant activity, create more than 1 highlight, maximum 4.
+Usually they are for Manager or Director levels, but high impact changes may be for VP executives or even CEO.
+Rank the highlights by importance and business impact.
+Start with the most important one, and add a title line like "Highlight 1: (VP)", "Highlight 2: (Director)", etc.
+"#;
+
+
+pub const WEEKLY_USER: &str = r#"Generate a Weekly Highlight Report.
 
 **Stats:**
 {stats}
