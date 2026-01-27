@@ -3,6 +3,35 @@
 # Release Notes
 
 ## Features
+
+- Added configurable prompt overrides using TOML files.
+- Introduced a new weekly highlights command.
+- Added initial Gitar project context file with commit and build conventions.
+- Refined weekly report templates to include highlight ranking and word count guidance.
+
+## Fixes
+
+- Added CLI tests for tell --weekly flag parsing and selector conflict validation.
+
+## Improvements
+
+- Enhanced context display and template personalization.
+- Documented config directory layout and weekly tell flag.
+- Switched changelog module to use get_changelog_user accessor.
+
+## Breaking Changes
+
+- Removed legacy gitar.md support.
+
+## Infrastructure
+
+- Updated Rust dependencies.
+
+## [2.5.0] - 2026-01-27
+
+# Release Notes
+
+## Features
 - Configurable prompt overrides via TOML configuration.
 - Weekly highlights command added, enabling weekly summaries.
 
