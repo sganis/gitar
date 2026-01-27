@@ -339,6 +339,7 @@ mod tests {
                     },
                 ],
                 estimated_tokens: 100,
+                is_large_file_group: false,
             },
             CommitGroup {
                 id: 1,
@@ -350,6 +351,7 @@ mod tests {
                     status: FileStatus::Added,
                 }],
                 estimated_tokens: 150,
+                is_large_file_group: false,
             },
         ];
 

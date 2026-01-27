@@ -14,7 +14,8 @@ use crate::command::{apply_smart_diff_with_context, AnalysisContext, SHORT_HASH_
 use crate::context::load_all_context;
 use crate::context::secret::SecretAction;
 use crate::context::template::{
-    changelog_system_with_context, get_changelog_user, get_version_user, version_system_with_context,
+    changelog_system_with_context, get_changelog_user, get_version_user,
+    version_system_with_context,
 };
 use crate::git::{self, build_diff_target, get_current_version, get_diff};
 
@@ -359,9 +360,7 @@ fn parse_version_bump_from_response(response: &str) -> Result<String> {
     }
 
     // Default to patch (safest choice)
-    eprintln!(
-        "Warning: Could not parse version bump from LLM response. Defaulting to 'patch'."
-    );
+    eprintln!("Warning: Could not parse version bump from LLM response. Defaulting to 'patch'.");
     eprintln!("LLM response: {}", response);
     Ok("patch".to_string())
 }

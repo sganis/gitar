@@ -491,7 +491,6 @@ Rank the highlights by importance and business impact.
 Start with the most important one, and add a title line like "Highlight 1: (VP)", "Highlight 2: (Director)", etc.
 "#;
 
-
 pub const WEEKLY_USER: &str = r#"Generate a Weekly Highlight Report.
 
 **Stats:**

@@ -68,7 +68,11 @@ pub fn select_best_candidate(
 // FILE COVERAGE CHECK
 // =============================================================================
 
-fn check_file_coverage(candidate: &PlanCandidate, context: &PlanningContext, score: &mut PlanScore) {
+fn check_file_coverage(
+    candidate: &PlanCandidate,
+    context: &PlanningContext,
+    score: &mut PlanScore,
+) {
     let context_files: HashSet<&str> = context.files.iter().map(|f| f.path.as_str()).collect();
     let grouped_files: HashSet<&str> = candidate
         .groups
@@ -77,10 +81,7 @@ fn check_file_coverage(candidate: &PlanCandidate, context: &PlanningContext, sco
         .collect();
 
     // Check for missing files
-    let missing: Vec<&str> = context_files
-        .difference(&grouped_files)
-        .copied()
-        .collect();
+    let missing: Vec<&str> = context_files.difference(&grouped_files).copied().collect();
 
     if !missing.is_empty() {
         score.add_reason(ScoreReason::penalty(
@@ -93,10 +94,7 @@ fn check_file_coverage(candidate: &PlanCandidate, context: &PlanningContext, sco
     }
 
     // Check for extra files (files in groups but not in context)
-    let extra: Vec<&str> = grouped_files
-        .difference(&context_files)
-        .copied()
-        .collect();
+    let extra: Vec<&str> = grouped_files.difference(&context_files).copied().collect();
 
     if !extra.is_empty() {
         score.add_reason(ScoreReason::penalty(
@@ -271,7 +269,11 @@ fn has_tests_with_related_src(group: &PlanGroup, context: &PlanningContext) -> b
 // GLOBAL BONUSES
 // =============================================================================
 
-fn apply_global_bonuses(candidate: &PlanCandidate, _context: &PlanningContext, score: &mut PlanScore) {
+fn apply_global_bonuses(
+    candidate: &PlanCandidate,
+    _context: &PlanningContext,
+    score: &mut PlanScore,
+) {
     // Bonus: clear rationale
     if !candidate.rationale.is_empty() && candidate.rationale.len() > 20 {
         score.add_reason(ScoreReason::bonus(
@@ -309,11 +311,7 @@ fn apply_global_bonuses(candidate: &PlanCandidate, _context: &PlanningContext, s
 // CONSTRAINT CHECKING
 // =============================================================================
 
-fn check_constraints(
-    candidate: &PlanCandidate,
-    context: &PlanningContext,
-    score: &mut PlanScore,
-) {
+fn check_constraints(candidate: &PlanCandidate, context: &PlanningContext, score: &mut PlanScore) {
     let constraints = &context.constraints;
 
     // Check max groups
@@ -384,8 +382,14 @@ fn check_formatting_separation(
 
     // Check if any group mixes format files with other types
     for (idx, group) in candidate.groups.iter().enumerate() {
-        let has_format = group.files.iter().any(|f| format_files.contains(&f.as_str()));
-        let has_other = group.files.iter().any(|f| !format_files.contains(&f.as_str()));
+        let has_format = group
+            .files
+            .iter()
+            .any(|f| format_files.contains(&f.as_str()));
+        let has_other = group
+            .files
+            .iter()
+            .any(|f| !format_files.contains(&f.as_str()));
 
         if has_format && has_other {
             score.add_violation(format!(
@@ -459,7 +463,10 @@ pub fn format_score(score: &PlanScore) -> String {
         out.push_str("\n\nReasons:");
         for reason in &score.reasons {
             let sign = if reason.points >= 0 { "+" } else { "" };
-            out.push_str(&format!("\n  {} {}: {}", sign, reason.points, reason.description));
+            out.push_str(&format!(
+                "\n  {} {}: {}",
+                sign, reason.points, reason.description
+            ));
         }
     }
 
@@ -553,12 +560,10 @@ mod tests {
 
         let score = score_plan(&candidate, &context);
         assert!(score.total < 100);
-        assert!(
-            score
-                .reasons
-                .iter()
-                .any(|r| r.description.contains("mixes docs"))
-        );
+        assert!(score
+            .reasons
+            .iter()
+            .any(|r| r.description.contains("mixes docs")));
     }
 
     #[test]
@@ -571,12 +576,10 @@ mod tests {
         let candidate = make_candidate(vec![make_group(vec!["src/a.rs", "src/b.rs", "src/c.rs"])]);
 
         let score = score_plan(&candidate, &context);
-        assert!(
-            score
-                .reasons
-                .iter()
-                .any(|r| r.description.contains("cohesion"))
-        );
+        assert!(score
+            .reasons
+            .iter()
+            .any(|r| r.description.contains("cohesion")));
     }
 
     #[test]
@@ -588,12 +591,10 @@ mod tests {
         let candidate = make_candidate(vec![make_group(vec!["src/main.rs", "tests/main_test.rs"])]);
 
         let score = score_plan(&candidate, &context);
-        assert!(
-            score
-                .reasons
-                .iter()
-                .any(|r| r.description.contains("tests with related"))
-        );
+        assert!(score
+            .reasons
+            .iter()
+            .any(|r| r.description.contains("tests with related")));
     }
 
     #[test]
@@ -610,10 +611,12 @@ mod tests {
             ("i.rs", FileKind::Code, false),
         ]);
 
-        let groups: Vec<PlanGroup> = (0..9).map(|i| {
-            let file = format!("{}.rs", (b'a' + i) as char);
-            make_group(vec![&file])
-        }).collect();
+        let groups: Vec<PlanGroup> = (0..9)
+            .map(|i| {
+                let file = format!("{}.rs", (b'a' + i) as char);
+                make_group(vec![&file])
+            })
+            .collect();
 
         let candidate = make_candidate(groups);
         let score = score_plan(&candidate, &context);

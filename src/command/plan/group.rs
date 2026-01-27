@@ -27,16 +27,18 @@ pub enum FileStatus {
     Modified,
     Deleted,
     Renamed,
+    Ignored, // Large file to be skipped
 }
 
 impl FileStatus {
-    /// Short label for display (e.g., "[A]", "[M]", "[D]", "[R]")
+    /// Short label for display (e.g., "[A]", "[M]", "[D]", "[R]", "[I]")
     pub fn label(&self) -> &'static str {
         match self {
             FileStatus::Added => "[A]",
             FileStatus::Modified => "[M]",
             FileStatus::Deleted => "[D]",
             FileStatus::Renamed => "[R]",
+            FileStatus::Ignored => "[I]",
         }
     }
 }
@@ -58,6 +60,8 @@ pub struct CommitGroup {
     pub files_with_status: Vec<FileWithStatus>,
     #[allow(dead_code)]
     pub estimated_tokens: usize,
+    /// If true, this group contains large files (>= 50 MB) and should be ignored/unstaged
+    pub is_large_file_group: bool,
 }
 
 // Lock files that should get default messages instead of LLM analysis
@@ -72,6 +76,62 @@ const LOCK_FILES: &[&str] = &[
     "composer.lock",
     "go.sum",
 ];
+
+// =============================================================================
+// LARGE FILE HANDLING
+// =============================================================================
+
+use super::analyze::LARGE_FILE_THRESHOLD;
+
+/// Create a special commit group for large files (>= 50 MB)
+/// This group is marked for ignore/unstage by default
+fn create_large_file_group(
+    large_files: &[&super::analyze::FileChange],
+    mode: &AnalysisMode,
+) -> CommitGroup {
+    let threshold_mb = LARGE_FILE_THRESHOLD / (1024 * 1024);
+    let file_count = large_files.len();
+
+    let title = format!(
+        "Large files ({} file{}, >= {}MB) - IGNORED",
+        file_count,
+        if file_count > 1 { "s" } else { "" },
+        threshold_mb
+    );
+
+    let message = format!(
+        "Large files detected (>= {}MB). These files will be {}.\n\
+         Consider using Git LFS for large binary files.",
+        threshold_mb,
+        match mode {
+            AnalysisMode::Staged => "unstaged",
+            _ => "ignored",
+        }
+    );
+
+    let files: Vec<String> = large_files.iter().map(|f| f.path.clone()).collect();
+
+    let files_with_status: Vec<FileWithStatus> = large_files
+        .iter()
+        .map(|f| {
+            let size_mb = f.size_bytes.unwrap_or(0) / (1024 * 1024);
+            FileWithStatus {
+                path: format!("{} ({}MB)", f.path, size_mb),
+                status: FileStatus::Ignored,
+            }
+        })
+        .collect();
+
+    CommitGroup {
+        id: usize::MAX, // Will be reassigned
+        title,
+        message,
+        files,
+        files_with_status,
+        estimated_tokens: 0,
+        is_large_file_group: true,
+    }
+}
 
 // =============================================================================
 // PUBLIC API: CREATE GROUPS
@@ -93,15 +153,70 @@ pub async fn create_groups(
         return Ok(vec![]);
     }
 
-    // Get prompts for LLM
-    let (system_prompt, user_prompt) = get_plan_prompts(&planning_context, preset, None);
+    // Separate large files from regular files
+    let large_files: Vec<_> = analysis
+        .files
+        .iter()
+        .filter(|f| f.is_large_file())
+        .collect();
+
+    // Create large file group if any exist
+    let large_file_group = if !large_files.is_empty() {
+        Some(create_large_file_group(&large_files, &analysis.mode))
+    } else {
+        None
+    };
+
+    // Filter out large files from planning context for LLM
+    let filtered_context = if !large_files.is_empty() {
+        let filtered_files: Vec<_> = planning_context
+            .files
+            .iter()
+            .filter(|f| !f.large_file)
+            .cloned()
+            .collect();
+        super::model::PlanningContext::new(filtered_files)
+            .with_signals(planning_context.signals.clone())
+            .with_constraints(planning_context.constraints.clone())
+    } else {
+        planning_context.clone()
+    };
+
+    // If only large files, return just the large file group
+    if filtered_context.files.is_empty() {
+        return Ok(large_file_group.into_iter().collect());
+    }
+
+    // Helper to append large file group and return
+    let finalize_groups = |mut groups: Vec<CommitGroup>| -> Vec<CommitGroup> {
+        if let Some(lfg) = large_file_group.clone() {
+            groups.push(lfg);
+        }
+        groups
+    };
+
+    // Get prompts for LLM (using filtered context without large files)
+    let (system_prompt, user_prompt) = get_plan_prompts(&filtered_context, preset, None);
 
     // Call LLM for multi-candidate response
     let response = match client.chat(&system_prompt, &user_prompt, false).await {
         Ok(resp) => resp,
         Err(e) => {
-            eprintln!("Warning: LLM grouping failed: {}. Using heuristic fallback.", e);
-            return create_groups_from_fallback(analysis, client, preset, algo, max_chars, secret_action).await;
+            eprintln!(
+                "Warning: LLM grouping failed: {}. Using heuristic fallback.",
+                e
+            );
+            let groups = create_groups_from_fallback(
+                &filtered_context,
+                analysis,
+                client,
+                preset,
+                algo,
+                max_chars,
+                secret_action,
+            )
+            .await?;
+            return Ok(finalize_groups(groups));
         }
     };
 
@@ -109,24 +224,58 @@ pub async fn create_groups(
     let plan_response = match parse_plan_response(&response) {
         Ok(pr) => pr,
         Err(e) => {
-            eprintln!("Warning: Failed to parse LLM response: {}. Using heuristic fallback.", e);
-            return create_groups_from_fallback(analysis, client, preset, algo, max_chars, secret_action).await;
+            eprintln!(
+                "Warning: Failed to parse LLM response: {}. Using heuristic fallback.",
+                e
+            );
+            let groups = create_groups_from_fallback(
+                &filtered_context,
+                analysis,
+                client,
+                preset,
+                algo,
+                max_chars,
+                secret_action,
+            )
+            .await?;
+            return Ok(finalize_groups(groups));
         }
     };
 
     if plan_response.candidates.is_empty() {
         eprintln!("Warning: No candidates in LLM response. Using heuristic fallback.");
-        return create_groups_from_fallback(analysis, client, preset, algo, max_chars, secret_action).await;
+        let groups = create_groups_from_fallback(
+            &filtered_context,
+            analysis,
+            client,
+            preset,
+            algo,
+            max_chars,
+            secret_action,
+        )
+        .await?;
+        return Ok(finalize_groups(groups));
     }
 
-    // Score and select best candidate
-    let (best_idx, best_score) = match select_best_candidate(&plan_response.candidates, &planning_context) {
-        Some(result) => result,
-        None => {
-            eprintln!("Warning: Could not select candidate. Using heuristic fallback.");
-            return create_groups_from_fallback(analysis, client, preset, algo, max_chars, secret_action).await;
-        }
-    };
+    // Score and select best candidate (using filtered_context to avoid penalizing for large files)
+    let (best_idx, best_score) =
+        match select_best_candidate(&plan_response.candidates, &filtered_context) {
+            Some(result) => result,
+            None => {
+                eprintln!("Warning: Could not select candidate. Using heuristic fallback.");
+                let groups = create_groups_from_fallback(
+                    &filtered_context,
+                    analysis,
+                    client,
+                    preset,
+                    algo,
+                    max_chars,
+                    secret_action,
+                )
+                .await?;
+                return Ok(finalize_groups(groups));
+            }
+        };
 
     let best_candidate = &plan_response.candidates[best_idx];
 
@@ -153,7 +302,7 @@ pub async fn create_groups(
     )
     .await?;
 
-    Ok(commit_groups)
+    Ok(finalize_groups(commit_groups))
 }
 
 // =============================================================================
@@ -161,7 +310,9 @@ pub async fn create_groups(
 // =============================================================================
 
 /// Create groups using heuristic fallback (no LLM grouping)
+/// Uses filtered_context (without large files) to ensure large files are handled separately
 async fn create_groups_from_fallback(
+    filtered_context: &super::model::PlanningContext,
     analysis: &AnalysisResult,
     client: &LlmClient,
     preset: Preset,
@@ -169,8 +320,7 @@ async fn create_groups_from_fallback(
     max_chars: usize,
     secret_action: SecretAction,
 ) -> Result<Vec<CommitGroup>> {
-    let planning_context = build_planning_context(analysis);
-    let fallback = create_fallback_plan(&planning_context);
+    let fallback = create_fallback_plan(filtered_context);
 
     if fallback.candidates.is_empty() || fallback.candidates[0].groups.is_empty() {
         return Ok(vec![]);
@@ -285,6 +435,7 @@ async fn convert_to_commit_groups(
             files,
             files_with_status,
             estimated_tokens,
+            is_large_file_group: false,
         });
     }
 
@@ -362,9 +513,7 @@ fn get_diff_for_group(group: &[FileChange], mode: &AnalysisMode) -> Result<Strin
             ChangeStatus::Added => get_added_file_diff(&file_change.path, &repo_root)?,
             ChangeStatus::Deleted => get_deleted_file_diff(&file_change.path, mode)?,
             ChangeStatus::Modified => get_modified_file_diff(&file_change.path, mode)?,
-            ChangeStatus::Renamed { from } => {
-                get_renamed_file_diff(from, &file_change.path, mode)?
-            }
+            ChangeStatus::Renamed { from } => get_renamed_file_diff(from, &file_change.path, mode)?,
         };
 
         if !file_diff.is_empty() {
@@ -500,10 +649,7 @@ mod tests {
 
     #[test]
     fn get_lock_file_message_multiple() {
-        let files = vec![
-            "Cargo.lock".to_string(),
-            "package-lock.json".to_string(),
-        ];
+        let files = vec!["Cargo.lock".to_string(), "package-lock.json".to_string()];
         assert_eq!(get_lock_file_message(&files), "Update dependencies");
     }
 
@@ -533,6 +679,7 @@ mod tests {
                 status: FileStatus::Added,
             }],
             estimated_tokens: 100,
+            is_large_file_group: false,
         };
 
         assert_eq!(group.id, 0);
@@ -540,6 +687,7 @@ mod tests {
         assert_eq!(group.files.len(), 1);
         assert_eq!(group.files_with_status.len(), 1);
         assert_eq!(group.files_with_status[0].status, FileStatus::Added);
+        assert!(!group.is_large_file_group);
     }
 
     #[test]
@@ -548,6 +696,7 @@ mod tests {
         assert_eq!(FileStatus::Modified.label(), "[M]");
         assert_eq!(FileStatus::Deleted.label(), "[D]");
         assert_eq!(FileStatus::Renamed.label(), "[R]");
+        assert_eq!(FileStatus::Ignored.label(), "[I]");
     }
 
     #[test]

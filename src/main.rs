@@ -119,8 +119,18 @@ async fn main() -> Result<()> {
         } => {
             let do_apply = resolve_apply(apply, dry_run);
             dispatch_plan(
-                &client, &config, do_apply, fix, suggest, working, staged, history, to,
-                interactive, yes, algo,
+                &client,
+                &config,
+                do_apply,
+                fix,
+                suggest,
+                working,
+                staged,
+                history,
+                to,
+                interactive,
+                yes,
+                algo,
             )
             .await?
         }
@@ -141,8 +151,18 @@ async fn main() -> Result<()> {
         } => {
             let do_apply = resolve_apply(apply, dry_run);
             dispatch_plan(
-                &client, &config, do_apply, fix, suggest, working, staged, history, to,
-                interactive, yes, algo,
+                &client,
+                &config,
+                do_apply,
+                fix,
+                suggest,
+                working,
+                staged,
+                history,
+                to,
+                interactive,
+                yes,
+                algo,
             )
             .await?
         }
@@ -466,9 +486,7 @@ async fn main() -> Result<()> {
         Commands::Models => cmd_models(&client).await?,
 
         // Already handled above
-        Commands::Init { .. }
-        | Commands::Hook { .. }
-        | Commands::Diff { .. } => unreachable!()
+        Commands::Init { .. } | Commands::Hook { .. } | Commands::Diff { .. } => unreachable!(),
     }
 
     Ok(())

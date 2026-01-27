@@ -596,7 +596,9 @@ mod tests {
                     let err_str = e.to_string();
                     if err_str.contains("index.lock") || err_str.contains("File exists") {
                         // Lock contention - wait and retry
-                        std::thread::sleep(std::time::Duration::from_millis(100 * (attempt + 1) as u64));
+                        std::thread::sleep(std::time::Duration::from_millis(
+                            100 * (attempt + 1) as u64,
+                        ));
                         last_error = Some(e);
                         continue;
                     }

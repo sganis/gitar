@@ -496,7 +496,6 @@ pub enum Commands {
 
     // === Compatibility Aliases ===
     // These are thin wrappers for migration / muscle memory
-
     /// [Alias] Same as `gitar plan`
     #[command(hide = true)]
     Run {

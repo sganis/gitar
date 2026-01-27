@@ -15,6 +15,8 @@ pub struct FileInfo {
     pub test: bool,
     pub doc: bool,
     pub config: bool,
+    #[serde(default)]
+    pub large_file: bool, // >= 50 MB
 }
 
 impl FileInfo {
@@ -27,6 +29,7 @@ impl FileInfo {
             test: false,
             doc: false,
             config: false,
+            large_file: false,
         }
     }
 
@@ -59,6 +62,11 @@ impl FileInfo {
         self.config = config;
         self
     }
+
+    pub fn with_large_file(mut self, large_file: bool) -> Self {
+        self.large_file = large_file;
+        self
+    }
 }
 
 /// File type classification
@@ -79,12 +87,13 @@ pub enum FileKind {
 /// Signals detected from the change set
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChangeSignals {
-    pub large_rename_set: bool,    // Many files renamed
-    pub mostly_whitespace: bool,   // Formatting-only changes
+    pub large_rename_set: bool,      // Many files renamed
+    pub mostly_whitespace: bool,     // Formatting-only changes
     pub touches_tests_and_src: bool, // Mixed test + source changes
-    pub single_module: bool,       // All files in same directory
-    pub dependency_update: bool,   // Cargo.toml/package.json changes
-    pub docs_only: bool,           // Only documentation files
+    pub single_module: bool,         // All files in same directory
+    pub dependency_update: bool,     // Cargo.toml/package.json changes
+    pub docs_only: bool,             // Only documentation files
+    pub has_large_files: bool,       // Files >= 50 MB present
 }
 
 /// Default constraints for planning
@@ -169,6 +178,7 @@ pub enum GroupTag {
     Test,
     Config,
     Rename,
+    LargeFile,
 }
 
 /// Risk level for a group
@@ -381,6 +391,7 @@ mod tests {
         assert!(!signals.large_rename_set);
         assert!(!signals.mostly_whitespace);
         assert!(!signals.docs_only);
+        assert!(!signals.has_large_files);
     }
 
     #[test]

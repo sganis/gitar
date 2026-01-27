@@ -32,6 +32,7 @@ fn build_file_infos(changes: &[FileChange]) -> Vec<FileInfo> {
             let test = change.category == FileCategory::Tests;
             let doc = change.category == FileCategory::Documentation;
             let config = change.category == FileCategory::Config;
+            let large_file = change.is_large_file();
 
             FileInfo::new(change.path.clone())
                 .with_kind(kind)
@@ -40,6 +41,7 @@ fn build_file_infos(changes: &[FileChange]) -> Vec<FileInfo> {
                 .with_test(test)
                 .with_doc(doc)
                 .with_config(config)
+                .with_large_file(large_file)
         })
         .collect()
 }
@@ -76,6 +78,7 @@ fn detect_signals(changes: &[FileChange], files: &[FileInfo]) -> ChangeSignals {
         .filter(|f| f.kind == FileKind::Code && !f.renamed)
         .count();
     let _config_count = files.iter().filter(|f| f.config).count();
+    let large_file_count = files.iter().filter(|f| f.large_file).count();
 
     // Large rename set: more than 3 renames or >30% of files
     signals.large_rename_set =
@@ -96,6 +99,9 @@ fn detect_signals(changes: &[FileChange], files: &[FileInfo]) -> ChangeSignals {
     // Mostly whitespace: check if changes look like formatting
     signals.mostly_whitespace =
         detect_formatting_only(changes, files.iter().map(|f| f.churn).sum());
+
+    // Has large files: any file >= 50 MB
+    signals.has_large_files = large_file_count > 0;
 
     signals
 }
@@ -255,6 +261,7 @@ mod tests {
             additions: 10,
             deletions: 5,
             category,
+            size_bytes: Some(1000),
         }
     }
 
@@ -267,6 +274,18 @@ mod tests {
             additions: 0,
             deletions: 0,
             category: FileCategory::Code,
+            size_bytes: Some(1000),
+        }
+    }
+
+    fn make_large_file_change(path: &str) -> FileChange {
+        FileChange {
+            path: path.to_string(),
+            status: ChangeStatus::Added,
+            additions: 0,
+            deletions: 0,
+            category: FileCategory::Code,
+            size_bytes: Some(100 * 1024 * 1024), // 100 MB
         }
     }
 
@@ -383,9 +402,41 @@ diff --git a/file.rs b/file.rs
     fn category_to_kind_conversion() {
         assert_eq!(category_to_kind(&FileCategory::Code), FileKind::Code);
         assert_eq!(category_to_kind(&FileCategory::Tests), FileKind::Test);
-        assert_eq!(category_to_kind(&FileCategory::Documentation), FileKind::Doc);
+        assert_eq!(
+            category_to_kind(&FileCategory::Documentation),
+            FileKind::Doc
+        );
         assert_eq!(category_to_kind(&FileCategory::Config), FileKind::Config);
-        assert_eq!(category_to_kind(&FileCategory::Formatting), FileKind::Format);
+        assert_eq!(
+            category_to_kind(&FileCategory::Formatting),
+            FileKind::Format
+        );
+    }
+
+    #[test]
+    fn detect_signals_large_files() {
+        let changes = vec![
+            make_file_change("src/main.rs", FileCategory::Code),
+            make_large_file_change("assets/video.mp4"),
+        ];
+        let infos = build_file_infos(&changes);
+        let signals = detect_signals(&changes, &infos);
+
+        assert!(signals.has_large_files);
+        assert!(infos[1].large_file);
+        assert!(!infos[0].large_file);
+    }
+
+    #[test]
+    fn detect_signals_no_large_files() {
+        let changes = vec![
+            make_file_change("src/main.rs", FileCategory::Code),
+            make_file_change("src/lib.rs", FileCategory::Code),
+        ];
+        let infos = build_file_infos(&changes);
+        let signals = detect_signals(&changes, &infos);
+
+        assert!(!signals.has_large_files);
     }
 
     #[test]

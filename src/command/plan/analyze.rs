@@ -4,6 +4,11 @@ use crate::git;
 pub use crate::util::FileCategory;
 use crate::util::{categorize_file, Groupable};
 use anyhow::Result;
+use std::fs;
+use std::path::PathBuf;
+
+/// Large file threshold: 50 MB
+pub const LARGE_FILE_THRESHOLD: u64 = 50 * 1024 * 1024;
 
 // =============================================================================
 // ANALYSIS MODE & RESULT
@@ -35,6 +40,13 @@ pub struct AnalysisResult {
 // HELPERS
 // =============================================================================
 
+/// Get file size in bytes, returns None for deleted files or on error
+fn get_file_size(path: &str) -> Option<u64> {
+    let repo_root = git::get_repo_root().ok()?;
+    let full_path = PathBuf::from(repo_root).join(path);
+    fs::metadata(&full_path).ok().map(|m| m.len())
+}
+
 /// Create empty DiffStats for cases where no diff processing has occurred yet
 fn empty_diff_stats() -> DiffStats {
     DiffStats {
@@ -62,6 +74,14 @@ pub struct FileChange {
     #[allow(dead_code)]
     pub deletions: usize,
     pub category: FileCategory,
+    pub size_bytes: Option<u64>,
+}
+
+impl FileChange {
+    /// Check if this file exceeds the large file threshold (50 MB)
+    pub fn is_large_file(&self) -> bool {
+        self.size_bytes.is_some_and(|s| s >= LARGE_FILE_THRESHOLD)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -192,6 +212,7 @@ fn scan_working_tree() -> Result<Vec<FileChange>> {
             let path = parts[2..].join(" ");
 
             let category = categorize_file(&path);
+            let size_bytes = get_file_size(&path);
 
             changes.push(FileChange {
                 path: path.clone(),
@@ -199,6 +220,7 @@ fn scan_working_tree() -> Result<Vec<FileChange>> {
                 additions,
                 deletions,
                 category,
+                size_bytes,
             });
         }
     }
@@ -216,12 +238,14 @@ fn scan_working_tree() -> Result<Vec<FileChange>> {
             "??" => {
                 // Untracked file
                 if !changes.iter().any(|c| c.path == path) {
+                    let size_bytes = get_file_size(&path);
                     changes.push(FileChange {
                         path: path.clone(),
                         status: ChangeStatus::Added,
                         additions: 0,
                         deletions: 0,
                         category: categorize_file(&path),
+                        size_bytes,
                     });
                 }
             }
@@ -291,6 +315,7 @@ fn scan_staged() -> Result<Vec<FileChange>> {
             let path = parts[2..].join(" ");
 
             let category = categorize_file(&path);
+            let size_bytes = get_file_size(&path);
 
             changes.push(FileChange {
                 path: path.clone(),
@@ -298,6 +323,7 @@ fn scan_staged() -> Result<Vec<FileChange>> {
                 additions,
                 deletions,
                 category,
+                size_bytes,
             });
         }
     }
@@ -388,6 +414,7 @@ fn parse_diff_files(from: &str, to: &str) -> Result<Vec<FileChange>> {
         let path = parts[2..].join(" ");
 
         let category = categorize_file(&path);
+        let size_bytes = get_file_size(&path);
 
         changes.push(FileChange {
             path: path.clone(),
@@ -395,6 +422,7 @@ fn parse_diff_files(from: &str, to: &str) -> Result<Vec<FileChange>> {
             additions,
             deletions,
             category,
+            size_bytes,
         });
     }
 
@@ -493,11 +521,46 @@ mod tests {
             additions: 10,
             deletions: 5,
             category: FileCategory::Code,
+            size_bytes: Some(1000),
         };
 
         assert_eq!(change.path, "src/main.rs");
         assert_eq!(change.additions, 10);
         assert_eq!(change.deletions, 5);
         assert_eq!(change.category, FileCategory::Code);
+        assert_eq!(change.size_bytes, Some(1000));
+    }
+
+    #[test]
+    fn file_change_is_large_file() {
+        let small = FileChange {
+            path: "small.txt".to_string(),
+            status: ChangeStatus::Added,
+            additions: 0,
+            deletions: 0,
+            category: FileCategory::Code,
+            size_bytes: Some(1024), // 1 KB
+        };
+        assert!(!small.is_large_file());
+
+        let large = FileChange {
+            path: "large.bin".to_string(),
+            status: ChangeStatus::Added,
+            additions: 0,
+            deletions: 0,
+            category: FileCategory::Code,
+            size_bytes: Some(100 * 1024 * 1024), // 100 MB
+        };
+        assert!(large.is_large_file());
+
+        let unknown = FileChange {
+            path: "deleted.txt".to_string(),
+            status: ChangeStatus::Deleted,
+            additions: 0,
+            deletions: 0,
+            category: FileCategory::Code,
+            size_bytes: None,
+        };
+        assert!(!unknown.is_large_file());
     }
 }

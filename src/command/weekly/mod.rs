@@ -51,7 +51,8 @@ pub async fn cmd_weekly(
             (Some(r), _, _) => (Some(r.clone()), format!("{}..HEAD", r)),
             (None, Some(s), Some(u)) => {
                 let commits = get_commit_logs(None, Some(s), Some(u), None)?;
-                let (from_hash, display) = cap_commits(&commits, &format!("--since {} --until {}", s, u));
+                let (from_hash, display) =
+                    cap_commits(&commits, &format!("--since {} --until {}", s, u));
                 (from_hash, display)
             }
             (None, Some(s), None) => {
@@ -117,10 +118,7 @@ pub async fn cmd_weekly(
     Ok(())
 }
 
-fn cap_commits(
-    commits: &[crate::git::CommitInfo],
-    range_desc: &str,
-) -> (Option<String>, String) {
+fn cap_commits(commits: &[crate::git::CommitInfo], range_desc: &str) -> (Option<String>, String) {
     use crate::color::{styled, warning_style};
 
     let total = commits.len();

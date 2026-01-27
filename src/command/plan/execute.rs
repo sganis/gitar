@@ -11,6 +11,50 @@ use super::analyze::AnalysisMode;
 use super::group::{CommitGroup, FileStatus};
 
 // =============================================================================
+// LARGE FILE HANDLING
+// =============================================================================
+
+/// Handle large file group - unstage if staged, otherwise ignore
+fn handle_large_file_group(group: &CommitGroup, mode: &AnalysisMode, dry_run: bool) -> Result<()> {
+    println!("Files:");
+    for file in &group.files_with_status {
+        println!("  {} {}", file.status.label(), file.path);
+    }
+
+    match mode {
+        AnalysisMode::Staged => {
+            // Unstage large files that were staged
+            println!("\nUnstaging large files...");
+            if !dry_run {
+                for file in &group.files {
+                    // Extract actual path (remove size suffix if present)
+                    let path = file.split(" (").next().unwrap_or(file);
+                    let result = git::run_git_status(&["reset", "HEAD", "--", path]);
+                    if result.2 {
+                        println!("  Unstaged: {}", path);
+                    } else {
+                        warning(format!("  Failed to unstage: {}", path));
+                    }
+                }
+            } else {
+                println!("  (Dry run - would unstage {} file(s))", group.files.len());
+            }
+        }
+        _ => {
+            // For working tree mode, just skip these files
+            println!("\nIgnoring large files (not staging).");
+            if !dry_run {
+                println!("  {} file(s) will not be committed.", group.files.len());
+            } else {
+                println!("  (Dry run - would skip {} file(s))", group.files.len());
+            }
+        }
+    }
+
+    Ok(())
+}
+
+// =============================================================================
 // STAGING HELPER
 // =============================================================================
 
@@ -56,12 +100,34 @@ pub fn execute_plan(
         return Ok(());
     }
 
+    // Count actual commit groups (excluding large file groups)
+    let commit_count = groups.iter().filter(|g| !g.is_large_file_group).count();
+    let large_file_count = groups.iter().filter(|g| g.is_large_file_group).count();
+
     println!("\n===========================================================");
-    println!("Executing Plan ({} commits)", groups.len());
+    if large_file_count > 0 {
+        println!(
+            "Executing Plan ({} commits, {} large file group{} ignored)",
+            commit_count,
+            large_file_count,
+            if large_file_count > 1 { "s" } else { "" }
+        );
+    } else {
+        println!("Executing Plan ({} commits)", commit_count);
+    }
     println!("===========================================================\n");
 
     for (idx, group) in groups.iter().enumerate() {
-        println!("Commit {}/{}", idx + 1, groups.len());
+        // Handle large file groups specially
+        if group.is_large_file_group {
+            println!("Large File Group ({})", group.files.len());
+            println!("{}\n", group.message);
+            handle_large_file_group(group, mode, dry_run)?;
+            println!();
+            continue;
+        }
+
+        println!("Commit {}/{}", idx + 1, commit_count);
         println!("{}\n", group.message);
 
         // Check mode for staging strategy
@@ -361,10 +427,46 @@ mod tests {
                 status: FileStatus::Added,
             }],
             estimated_tokens: 50,
+            is_large_file_group: false,
         }];
 
         let mode = AnalysisMode::WorkingTree;
         // Dry run should not fail even if files don't exist
+        let result = execute_plan(&groups, &mode, true, false, "gpt-4");
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn execute_plan_with_large_files() {
+        let groups = vec![
+            CommitGroup {
+                id: 0,
+                title: "Regular commit".to_string(),
+                message: "Regular commit message".to_string(),
+                files: vec!["src/main.rs".to_string()],
+                files_with_status: vec![FileWithStatus {
+                    path: "src/main.rs".to_string(),
+                    status: FileStatus::Modified,
+                }],
+                estimated_tokens: 50,
+                is_large_file_group: false,
+            },
+            CommitGroup {
+                id: 1,
+                title: "Large files (1 file, >= 50MB) - IGNORED".to_string(),
+                message: "Large files detected".to_string(),
+                files: vec!["assets/video.mp4".to_string()],
+                files_with_status: vec![FileWithStatus {
+                    path: "assets/video.mp4 (100MB)".to_string(),
+                    status: FileStatus::Ignored,
+                }],
+                estimated_tokens: 0,
+                is_large_file_group: true,
+            },
+        ];
+
+        let mode = AnalysisMode::WorkingTree;
+        // Dry run should handle large file groups correctly
         let result = execute_plan(&groups, &mode, true, false, "gpt-4");
         assert!(result.is_ok());
     }

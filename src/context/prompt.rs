@@ -76,7 +76,11 @@ fn load_user_prompts() -> Option<PromptOverrides> {
 fn load_project_prompts() -> Option<PromptOverrides> {
     git::get_repo_root()
         .ok()
-        .map(|root| std::path::PathBuf::from(root).join(".gitar").join("prompts.toml"))
+        .map(|root| {
+            std::path::PathBuf::from(root)
+                .join(".gitar")
+                .join("prompts.toml")
+        })
         .and_then(|p| load_from_path(&p))
 }
 

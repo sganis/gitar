@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use crate::cli::Cli;
 use crate::client::LlmClient;
 use crate::config::{
-    normalize_provider, provider_to_url, Config, ProviderConfig, DEFAULT_MAX_DIFF_CHARS,
-    CONFIG_PATH_ENV,
+    normalize_provider, provider_to_url, Config, ProviderConfig, CONFIG_PATH_ENV,
+    DEFAULT_MAX_DIFF_CHARS,
 };
 use crate::context::preset::Preset;
 use crate::git;
@@ -196,7 +196,11 @@ fn ensure_context_files() -> Result<()> {
         match write_file_if_missing(&prompts_path, USER_PROMPTS_TEMPLATE) {
             Ok(true) => println!("Created prompts template: {}", prompts_path.display()),
             Ok(false) => {}
-            Err(e) => println!("Warning: could not create {}: {}", prompts_path.display(), e),
+            Err(e) => println!(
+                "Warning: could not create {}: {}",
+                prompts_path.display(),
+                e
+            ),
         }
     } else {
         println!("Warning: could not determine config directory; skipping user config files");
@@ -356,7 +360,12 @@ async fn select_model(
 // MAIN COMMAND
 // =============================================================================
 
-pub async fn cmd_init(cli: &Cli, file: &Config, show: bool, auto_apply: Option<bool>) -> Result<()> {
+pub async fn cmd_init(
+    cli: &Cli,
+    file: &Config,
+    show: bool,
+    auto_apply: Option<bool>,
+) -> Result<()> {
     // Handle --show flag: display resolved configuration
     if show {
         return show_config(file);
@@ -429,10 +438,8 @@ pub async fn cmd_init(cli: &Cli, file: &Config, show: bool, auto_apply: Option<b
                 .as_deref()
                 .or(default_url)
                 .unwrap_or("http://localhost:11434/v1");
-            let input = prompt::input(
-                &format!("Base URL (press Enter for {})", default),
-                Some(""),
-            )?;
+            let input =
+                prompt::input(&format!("Base URL (press Enter for {})", default), Some(""))?;
             if input.is_empty() {
                 None // Use default, don't store in config
             } else {
@@ -507,8 +514,9 @@ pub async fn cmd_init(cli: &Cli, file: &Config, show: bool, auto_apply: Option<b
 
         // Step 3: Select model (query API)
         let current_model = provider_config.model.as_deref();
-        let effective_base_url =
-            custom_base_url.as_deref().or(provider_config.base_url.as_deref());
+        let effective_base_url = custom_base_url
+            .as_deref()
+            .or(provider_config.base_url.as_deref());
         let selected_model = match select_model(
             &selected_provider,
             &api_key,

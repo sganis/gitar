@@ -126,7 +126,10 @@ mod tests {
 
     #[test]
     fn strip_html_comments_single() {
-        assert_eq!(strip_html_comments("before<!-- comment -->after"), "beforeafter");
+        assert_eq!(
+            strip_html_comments("before<!-- comment -->after"),
+            "beforeafter"
+        );
     }
 
     #[test]
