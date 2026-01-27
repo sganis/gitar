@@ -4,8 +4,16 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
+use crate::config::Config;
+
 static CACHED_CONTEXT: OnceLock<(Option<String>, Option<String>)> = OnceLock::new();
 static CACHED_REPO_ROOT: OnceLock<Option<PathBuf>> = OnceLock::new();
+
+/// Current context filename
+const CONTEXT_FILENAME: &str = "context.md";
+
+/// Legacy context filename (for backward compatibility)
+const LEGACY_FILENAME: &str = "gitar.md";
 
 fn read_text_file_if_exists(path: &Path) -> Option<String> {
     match fs::read_to_string(path) {
@@ -18,27 +26,6 @@ fn read_text_file_if_exists(path: &Path) -> Option<String> {
             }
         }
         Err(_) => None,
-    }
-}
-
-fn home_dir() -> Option<PathBuf> {
-    if let Ok(h) = std::env::var("HOME") {
-        if !h.trim().is_empty() {
-            return Some(PathBuf::from(h));
-        }
-    }
-    if let Ok(h) = std::env::var("USERPROFILE") {
-        if !h.trim().is_empty() {
-            return Some(PathBuf::from(h));
-        }
-    }
-    let drive = std::env::var("HOMEDRIVE").ok();
-    let path = std::env::var("HOMEPATH").ok();
-    match (drive, path) {
-        (Some(d), Some(p)) if !d.trim().is_empty() && !p.trim().is_empty() => {
-            Some(PathBuf::from(format!("{}{}", d, p)))
-        }
-        _ => None,
     }
 }
 
@@ -104,16 +91,35 @@ fn clean(opt: Option<String>) -> Option<String> {
     })
 }
 
+/// Load user context from ~/.gitar/context.md (or legacy gitar.md)
+/// Uses Config::config_base_dir() which respects GITAR_CONFIG_PATH env var
 pub fn load_user_context() -> Option<String> {
-    let hd = home_dir()?;
-    let p = hd.join(".gitar").join("gitar.md");
-    clean(read_text_file_if_exists(&p))
+    let base = Config::config_base_dir()?;
+
+    // Try new filename first
+    let new_path = base.join(CONTEXT_FILENAME);
+    if let Some(content) = read_text_file_if_exists(&new_path) {
+        return clean(Some(content));
+    }
+
+    // Fall back to legacy filename
+    let legacy_path = base.join(LEGACY_FILENAME);
+    clean(read_text_file_if_exists(&legacy_path))
 }
 
+/// Load project context from .gitar/context.md (or legacy gitar.md)
 pub fn load_project_context() -> Option<String> {
     let root = repo_root_dir()?;
-    let p = root.join(".gitar").join("gitar.md");
-    clean(read_text_file_if_exists(&p))
+
+    // Try new filename first
+    let new_path = root.join(".gitar").join(CONTEXT_FILENAME);
+    if let Some(content) = read_text_file_if_exists(&new_path) {
+        return clean(Some(content));
+    }
+
+    // Fall back to legacy filename
+    let legacy_path = root.join(".gitar").join(LEGACY_FILENAME);
+    clean(read_text_file_if_exists(&legacy_path))
 }
 
 pub fn load_all_context() -> (Option<String>, Option<String>) {
@@ -121,4 +127,44 @@ pub fn load_all_context() -> (Option<String>, Option<String>) {
     CACHED_CONTEXT
         .get_or_init(|| (load_project_context(), load_user_context()))
         .clone()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_html_comments_empty() {
+        assert_eq!(strip_html_comments(""), "");
+    }
+
+    #[test]
+    fn strip_html_comments_no_comments() {
+        assert_eq!(strip_html_comments("hello world"), "hello world");
+    }
+
+    #[test]
+    fn strip_html_comments_single() {
+        assert_eq!(strip_html_comments("before<!-- comment -->after"), "beforeafter");
+    }
+
+    #[test]
+    fn strip_html_comments_multiple() {
+        let input = "a<!-- c1 -->b<!-- c2 -->c";
+        assert_eq!(strip_html_comments(input), "abc");
+    }
+
+    #[test]
+    fn clean_removes_comments() {
+        let input = "  <!-- comment -->\nactual content\n<!-- another -->  ";
+        let result = clean(Some(input.to_string()));
+        assert_eq!(result, Some("actual content".to_string()));
+    }
+
+    #[test]
+    fn clean_empty_after_strip() {
+        let input = "<!-- only comments -->";
+        let result = clean(Some(input.to_string()));
+        assert!(result.is_none());
+    }
 }

@@ -4,7 +4,7 @@ use anyhow::Result;
 use crate::client::LlmClient;
 use crate::context::load_all_context;
 use crate::context::secret::SecretAction;
-use crate::context::template::{explain_system_with_context, EXPLAIN_USER};
+use crate::context::template::{explain_system_with_context, get_explain_user};
 use crate::git::{build_diff_target, get_commit_logs, get_diff, get_diff_stats};
 
 use super::{apply_smart_diff_with_context, get_latest_tag, AnalysisContext};
@@ -92,7 +92,7 @@ pub async fn cmd_explain(
         return Ok(());
     }
 
-    let prompt = EXPLAIN_USER
+    let prompt = get_explain_user()
         .replace("{range}", if staged { "staged" } else { &display })
         .replace("{stats}", &stats)
         .replace("{diff}", &diff);

@@ -6,7 +6,7 @@ use crate::color::{success, warning};
 use crate::context::preset::Preset;
 use crate::context::repo::load_all_context;
 use crate::context::secret::SecretAction;
-use crate::context::template::{commit_system_with_context, COMMIT_USER};
+use crate::context::template::{commit_system_with_context, get_commit_user};
 use crate::git::run_git;
 use crate::prompt;
 
@@ -92,7 +92,7 @@ pub async fn cmd_rewrite(
             let system =
                 commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
 
-            let prompt = COMMIT_USER.replace("{diff}", &shaped_diff);
+            let prompt = get_commit_user().replace("{diff}", &shaped_diff);
             let msg = client.chat(&system, &prompt, stream).await?;
 
             if stream {

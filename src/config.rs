@@ -77,8 +77,11 @@ fn env_var_for_provider(provider: &str) -> Option<&'static str> {
 // CONFIG FILE
 // =============================================================================
 
-pub const CONFIG_FILENAME: &str = ".gitar.toml";
-pub const SYSTEM_CONFIG_ENV: &str = "GITAR_CONFIG_FILE";
+pub const CONFIG_DIR: &str = ".gitar";
+pub const CONFIG_FILENAME: &str = "gitar.toml";
+pub const PROMPTS_FILENAME: &str = "prompts.toml";
+pub const CONTEXT_FILENAME: &str = "context.md";
+pub const CONFIG_PATH_ENV: &str = "GITAR_CONFIG_PATH";
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
@@ -132,16 +135,41 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn path() -> Option<PathBuf> {
-        dirs::home_dir().map(|h| h.join(CONFIG_FILENAME))
-    }
-
-    /// Returns the system config path from GITAR_SYSTEM_CONFIG env var, if set.
-    pub fn system_path() -> Option<PathBuf> {
-        std::env::var(SYSTEM_CONFIG_ENV)
+    /// Returns the base directory for config files.
+    /// Checks GITAR_CONFIG_PATH env var first, falls back to ~/.gitar/
+    pub fn config_base_dir() -> Option<PathBuf> {
+        std::env::var(CONFIG_PATH_ENV)
             .ok()
             .filter(|s| !s.is_empty())
             .map(PathBuf::from)
+            .or_else(|| dirs::home_dir().map(|h| h.join(CONFIG_DIR)))
+    }
+
+    pub fn path() -> Option<PathBuf> {
+        Self::config_base_dir().map(|d| d.join(CONFIG_FILENAME))
+    }
+
+    pub fn config_dir() -> Option<PathBuf> {
+        Self::config_base_dir()
+    }
+
+    /// Returns the prompts.toml path
+    pub fn prompts_path() -> Option<PathBuf> {
+        Self::config_base_dir().map(|d| d.join(PROMPTS_FILENAME))
+    }
+
+    /// Returns the context.md path
+    pub fn context_path() -> Option<PathBuf> {
+        Self::config_base_dir().map(|d| d.join(CONTEXT_FILENAME))
+    }
+
+    /// Legacy: Returns the system config path from GITAR_CONFIG_PATH env var, if set.
+    /// This is for backward compatibility with cascading configs.
+    pub fn system_path() -> Option<PathBuf> {
+        std::env::var(CONFIG_PATH_ENV)
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(|p| PathBuf::from(p).join(CONFIG_FILENAME))
     }
 
     /// Load config from a specific path.
@@ -168,7 +196,11 @@ impl Config {
     }
 
     pub fn save(&self) -> Result<()> {
-        let path = Self::path().context("Could not determine home directory")?;
+        let dir = Self::config_dir().context("Could not determine home directory")?;
+        if !dir.exists() {
+            std::fs::create_dir_all(&dir).context("Failed to create config directory")?;
+        }
+        let path = Self::path().context("Could not determine config path")?;
         let content = toml::to_string_pretty(self).context("Failed to serialize config")?;
         std::fs::write(&path, content).context("Failed to write config file")?;
         println!("Config saved to: {}", path.display());
@@ -570,5 +602,36 @@ api_key = "test-key"
             config.gemini.as_ref().unwrap().api_key,
             Some("test-key".into())
         );
+    }
+
+    #[test]
+    fn config_base_dir_uses_env_var() {
+        let dir = TempDir::new().unwrap();
+        let path_str = dir.path().to_str().unwrap().to_string();
+
+        // Set the env var
+        std::env::set_var(CONFIG_PATH_ENV, &path_str);
+
+        let base_dir = Config::config_base_dir().unwrap();
+        assert_eq!(base_dir, dir.path());
+
+        // Clean up
+        std::env::remove_var(CONFIG_PATH_ENV);
+    }
+
+    #[test]
+    fn config_path_helpers() {
+        let dir = TempDir::new().unwrap();
+        let path_str = dir.path().to_str().unwrap().to_string();
+
+        std::env::set_var(CONFIG_PATH_ENV, &path_str);
+
+        let prompts = Config::prompts_path().unwrap();
+        assert_eq!(prompts, dir.path().join("prompts.toml"));
+
+        let context = Config::context_path().unwrap();
+        assert_eq!(context, dir.path().join("context.md"));
+
+        std::env::remove_var(CONFIG_PATH_ENV);
     }
 }

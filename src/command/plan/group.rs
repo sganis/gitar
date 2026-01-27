@@ -6,7 +6,7 @@ use crate::client::LlmClient;
 use crate::command::{apply_smart_diff_with_context, AnalysisContext};
 use crate::context::load_all_context;
 use crate::context::secret::SecretAction;
-use crate::context::template::{commit_system_with_context, COMMIT_USER};
+use crate::context::template::{commit_system_with_context, get_commit_user};
 use crate::context::Preset;
 use crate::git;
 
@@ -243,7 +243,7 @@ async fn convert_to_commit_groups(
                 // Use LLM to generate commit message
                 let system_prompt =
                     commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
-                let user_prompt = COMMIT_USER.replace("{diff}", &shaped_diff);
+                let user_prompt = get_commit_user().replace("{diff}", &shaped_diff);
 
                 let msg = match client.chat(&system_prompt, &user_prompt, false).await {
                     Ok(m) => m.trim().to_string(),

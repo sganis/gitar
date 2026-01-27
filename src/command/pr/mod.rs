@@ -4,7 +4,7 @@ use anyhow::Result;
 use crate::client::LlmClient;
 use crate::context::load_all_context;
 use crate::context::secret::SecretAction;
-use crate::context::template::{pr_system_with_context, PR_USER};
+use crate::context::template::{get_pr_user, pr_system_with_context};
 use crate::git::{
     build_diff_target, build_range, get_commit_logs, get_current_branch, get_diff, get_diff_stats,
 };
@@ -85,7 +85,7 @@ pub async fn cmd_pr(
         return Ok(());
     }
 
-    let prompt = PR_USER
+    let prompt = get_pr_user()
         .replace("{branch}", &branch)
         .replace("{commits}", &commits_text)
         .replace("{stats}", &stats)

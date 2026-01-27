@@ -6,7 +6,7 @@ use crate::color::success;
 use crate::context::preset::Preset;
 use crate::context::repo::load_all_context;
 use crate::context::secret::SecretAction;
-use crate::context::template::{commit_system_with_context, COMMIT_USER};
+use crate::context::template::{commit_system_with_context, get_commit_user};
 use crate::git::{run_git, run_git_status};
 use crate::prompt;
 
@@ -67,7 +67,7 @@ pub async fn cmd_squash(
     let (project_ctx, user_ctx) = load_all_context();
     let system = commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
 
-    let prompt = COMMIT_USER.replace("{diff}", &diff);
+    let prompt = get_commit_user().replace("{diff}", &diff);
     let suggested_message = client.chat(&system, &prompt, stream).await?;
 
     if stream {

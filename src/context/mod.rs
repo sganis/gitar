@@ -6,6 +6,7 @@
 pub mod algo;
 pub mod diff;
 pub mod preset;
+pub mod prompt;
 pub mod repo;
 pub mod secret;
 pub mod template;

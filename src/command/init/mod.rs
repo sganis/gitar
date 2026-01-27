@@ -7,7 +7,7 @@ use crate::cli::Cli;
 use crate::client::LlmClient;
 use crate::config::{
     normalize_provider, provider_to_url, Config, ProviderConfig, DEFAULT_MAX_DIFF_CHARS,
-    SYSTEM_CONFIG_ENV,
+    CONFIG_PATH_ENV,
 };
 use crate::context::preset::Preset;
 use crate::git;
@@ -17,6 +17,7 @@ const USER_CONTEXT_TEMPLATE: &str = r#"# Gitar User Context
 
 <!--
 This file is read by gitar and injected into LLM system prompts as "User Context".
+Renamed from gitar.md to context.md in v2.4.0 - legacy gitar.md still works.
 
 Purpose:
 - Your personal preferences across all repos (tone, verbosity, style, defaults)
@@ -45,6 +46,7 @@ const PROJECT_CONTEXT_TEMPLATE: &str = r#"# Gitar Project Context
 
 <!--
 This file is read by gitar and injected into LLM system prompts as "Project Context".
+Renamed from gitar.md to context.md in v2.4.0 - legacy gitar.md still works.
 
 Purpose:
 - Repo-specific conventions and rules (authoritative for this project)
@@ -82,6 +84,119 @@ Rules:
 -->
 "#;
 
+const USER_PROMPTS_TEMPLATE: &str = r#"# Gitar Custom Prompts
+#
+# Override default LLM prompts here. Uncomment sections you want to customize.
+# Each section has a system prompt and a user prompt.
+# Missing sections use built-in defaults.
+#
+# Placeholders (required in user prompts):
+#   commit:    {diff}
+#   history:   {diff}, {original_message}
+#   pr:        {branch}, {commits}, {stats}, {diff}
+#   changelog: {range}, {count}, {commits}
+#   explain:   {stats}, {diff}
+#   version:   {version}, {diff}
+#   weekly:    {stats}, {diff}
+
+# [commit]
+# system = """
+# You generate clear and informative Git commit messages from diffs.
+# Rules:
+# 1. Focus on PURPOSE, not file listings
+# 2. Ignore build/minified files
+# 3. No markdown. Use plain ASCII characters only.
+# 4. Be specific
+# """
+# user = """
+# Generate a commit message in a single-line.
+# ```
+# {diff}
+# ```
+# Respond with ONLY the commit message.
+# """
+
+# [history]
+# system = """
+# You are an expert software engineer who writes clear, informative Git commit messages.
+# """
+# user = """
+# Generate a commit message for this diff.
+# **Original message:** {original_message}
+# **Diff:**
+# ```
+# {diff}
+# ```
+# """
+
+# [pr]
+# system = """
+# Write a PR description.
+# Use plain ASCII characters only.
+# """
+# user = """
+# Generate PR description.
+# **Branch:** {branch}
+# **Commits:** {commits}
+# **Stats:** {stats}
+# **Diff:**
+# ```
+# {diff}
+# ```
+# """
+
+# [changelog]
+# system = """
+# Create release notes. Use plain ASCII characters only.
+# """
+# user = """
+# Generate release notes.
+# **Range:** {range}
+# **Count:** {count}
+# **Commits:** {commits}
+# """
+
+# [explain]
+# system = """
+# Explain code changes to non-technical stakeholders.
+# No jargon, focus on user impact, be brief.
+# """
+# user = """
+# Explain for non-technical person.
+# **Stats:** {stats}
+# **Diff:**
+# ```
+# {diff}
+# ```
+# """
+
+# [version]
+# system = """
+# Recommend semantic version bump (major/minor/patch).
+# """
+# user = """
+# Recommend version bump.
+# **Current:** {version}
+# **Diff:**
+# ```
+# {diff}
+# ```
+# """
+
+# [weekly]
+# system = """
+# Generate a Weekly Highlights Report for senior leadership.
+# """
+# user = """
+# Generate the Weekly Highlights report.
+# **Stats:** {stats}
+# **Diff:**
+# ```
+# {diff}
+# ```
+# """
+"#;
+
 fn write_file_if_missing(path: &Path, content: &str) -> Result<bool> {
     if path.exists() {
         return Ok(false);
@@ -93,56 +208,65 @@ fn write_file_if_missing(path: &Path, content: &str) -> Result<bool> {
     Ok(true)
 }
 
-fn home_dir() -> Option<PathBuf> {
-    if let Ok(h) = std::env::var("HOME") {
-        if !h.trim().is_empty() {
-            return Some(PathBuf::from(h));
-        }
-    }
-    if let Ok(h) = std::env::var("USERPROFILE") {
-        if !h.trim().is_empty() {
-            return Some(PathBuf::from(h));
-        }
-    }
-    let drive = std::env::var("HOMEDRIVE").ok();
-    let path = std::env::var("HOMEPATH").ok();
-    match (drive, path) {
-        (Some(d), Some(p)) if !d.trim().is_empty() && !p.trim().is_empty() => {
-            Some(PathBuf::from(format!("{}{}", d, p)))
-        }
-        _ => None,
-    }
-}
-
 fn ensure_context_files() -> Result<()> {
-    // 1) User context: ~/.gitar/gitar.md
-    if let Some(hd) = home_dir() {
-        let user_ctx = hd.join(".gitar").join("gitar.md");
-        match write_file_if_missing(&user_ctx, USER_CONTEXT_TEMPLATE) {
-            Ok(true) => println!("Created user context: {}", user_ctx.display()),
+    // 1) User context: ~/.gitar/context.md (uses Config::config_base_dir for GITAR_CONFIG_PATH support)
+    if let Some(base) = Config::config_base_dir() {
+        // Create context.md (new name)
+        let user_ctx = base.join("context.md");
+        let legacy_ctx = base.join("gitar.md");
+
+        // Only create if neither new nor legacy exists
+        if !user_ctx.exists() && !legacy_ctx.exists() {
+            match write_file_if_missing(&user_ctx, USER_CONTEXT_TEMPLATE) {
+                Ok(true) => println!("Created user context: {}", user_ctx.display()),
+                Ok(false) => {}
+                Err(e) => println!("Warning: could not create {}: {}", user_ctx.display(), e),
+            }
+        } else if legacy_ctx.exists() && !user_ctx.exists() {
+            // Migration notice: legacy file exists but new doesn't
+            println!(
+                "Note: Found legacy {}. Consider renaming to context.md",
+                legacy_ctx.display()
+            );
+        }
+
+        // Create prompts.toml template
+        let prompts_path = base.join("prompts.toml");
+        match write_file_if_missing(&prompts_path, USER_PROMPTS_TEMPLATE) {
+            Ok(true) => println!("Created prompts template: {}", prompts_path.display()),
             Ok(false) => {}
-            Err(e) => println!("Warning: could not create {}: {}", user_ctx.display(), e),
+            Err(e) => println!("Warning: could not create {}: {}", prompts_path.display(), e),
         }
     } else {
-        println!("Warning: could not determine home directory; skipping ~/.gitar/gitar.md");
+        println!("Warning: could not determine config directory; skipping user config files");
     }
 
-    // 2) Project context: <repo-root>/.gitar/gitar.md (only if in a git repo)
+    // 2) Project context: <repo-root>/.gitar/context.md (only if in a git repo)
     if git::is_git_repo() {
         match git::get_repo_root() {
             Ok(root) => {
-                let project_ctx = PathBuf::from(root).join(".gitar").join("gitar.md");
-                match write_file_if_missing(&project_ctx, PROJECT_CONTEXT_TEMPLATE) {
-                    Ok(true) => println!("Created project context: {}", project_ctx.display()),
-                    Ok(false) => {}
-                    Err(e) => {
-                        println!("Warning: could not create {}: {}", project_ctx.display(), e)
+                let project_ctx = PathBuf::from(&root).join(".gitar").join("context.md");
+                let legacy_ctx = PathBuf::from(&root).join(".gitar").join("gitar.md");
+
+                // Only create if neither new nor legacy exists
+                if !project_ctx.exists() && !legacy_ctx.exists() {
+                    match write_file_if_missing(&project_ctx, PROJECT_CONTEXT_TEMPLATE) {
+                        Ok(true) => println!("Created project context: {}", project_ctx.display()),
+                        Ok(false) => {}
+                        Err(e) => {
+                            println!("Warning: could not create {}: {}", project_ctx.display(), e)
+                        }
                     }
+                } else if legacy_ctx.exists() && !project_ctx.exists() {
+                    println!(
+                        "Note: Found legacy {}. Consider renaming to context.md",
+                        legacy_ctx.display()
+                    );
                 }
             }
             Err(e) => {
                 println!(
-                    "Warning: could not detect repo root; skipping .gitar/gitar.md ({})",
+                    "Warning: could not detect repo root; skipping .gitar/context.md ({})",
                     e
                 );
             }
@@ -303,7 +427,7 @@ pub async fn cmd_init(cli: &Cli, file: &Config, show: bool, auto_apply: Option<b
     // First: ensure context files exist (non-destructive)
     ensure_context_files()?;
 
-    // Then: existing config init/update behavior for ~/.gitar.toml
+    // Then: existing config init/update behavior for ~/.gitar/gitar.toml
     let mut config = file.clone();
 
     // Check if running in interactive mode (no CLI params provided AND stdin is a TTY)
@@ -633,7 +757,7 @@ fn show_config(config: &Config) -> Result<()> {
     } else {
         println!(
             "System config: (not set, use ${} to configure)",
-            SYSTEM_CONFIG_ENV
+            CONFIG_PATH_ENV
         );
     }
 

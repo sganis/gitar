@@ -14,7 +14,7 @@ use crate::command::{apply_smart_diff_with_context, AnalysisContext, SHORT_HASH_
 use crate::context::load_all_context;
 use crate::context::secret::SecretAction;
 use crate::context::template::{
-    changelog_system_with_context, version_system_with_context, CHANGELOG_USER, VERSION_USER,
+    changelog_system_with_context, get_changelog_user, get_version_user, version_system_with_context,
 };
 use crate::git::{self, build_diff_target, get_current_version, get_diff};
 
@@ -301,7 +301,7 @@ async fn suggest_version_bump_llm(
     )?;
 
     // Build prompt
-    let prompt = VERSION_USER
+    let prompt = get_version_user()
         .replace("{version}", &current)
         .replace("{diff}", &diff);
 
@@ -540,7 +540,7 @@ async fn generate_changelog_content(
     // Build the prompt using the same template as cmd_changelog
     // Include version context for release notes
     let range_with_version = format!("{} (Release v{})", display, version);
-    let prompt = CHANGELOG_USER
+    let prompt = get_changelog_user()
         .replace("{range}", &range_with_version)
         .replace("{count}", &commits.len().to_string())
         .replace("{commits}", &commit_list)

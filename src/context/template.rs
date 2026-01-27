@@ -1,6 +1,9 @@
 // src/context/template.rs - LLM prompt templates
 
+use std::borrow::Cow;
+
 use super::preset::Preset;
+use super::prompt::{get_custom_system, get_custom_user};
 
 // =============================================================================
 // CONTEXT INJECTION (optional)
@@ -15,7 +18,7 @@ fn format_context(project_ctx: Option<&str>, user_ctx: Option<&str>) -> String {
             out.push_str(
                 r#"
 
-User Context (~/.gitar/gitar.md; personal preferences; follow when relevant):
+User Context (~/.gitar/context.md; personal preferences; follow when relevant):
 "#,
             );
             out.push_str(s);
@@ -37,7 +40,7 @@ Rules:
             out.push_str(
                 r#"
 
-Project Context (.gitar/gitar.md; repo conventions; authoritative for this project):
+Project Context (.gitar/context.md; repo conventions; authoritative for this project):
 "#,
             );
             out.push_str(s);
@@ -87,9 +90,18 @@ pub fn commit_system_with_context(
     project_context: Option<&str>,
     user_context: Option<&str>,
 ) -> String {
+    let base = get_custom_system("commit").unwrap_or(COMMIT_SYSTEM);
     let hints = preset.hints().format(preset.name());
     let ctx = format_context(project_context, user_context);
-    format!("{}{}{}", COMMIT_SYSTEM, hints, ctx)
+    format!("{}{}{}", base, hints, ctx)
+}
+
+/// Get the commit user prompt (custom or default)
+pub fn get_commit_user() -> Cow<'static, str> {
+    match get_custom_user("commit") {
+        Some(s) => Cow::Borrowed(s),
+        None => Cow::Borrowed(COMMIT_USER),
+    }
 }
 
 // =============================================================================
@@ -140,9 +152,18 @@ pub fn history_system_with_context(
     project_context: Option<&str>,
     user_context: Option<&str>,
 ) -> String {
+    let base = get_custom_system("history").unwrap_or(HISTORY_SYSTEM);
     let hints = preset.hints().format(preset.name());
     let ctx = format_context(project_context, user_context);
-    format!("{}{}{}", HISTORY_SYSTEM, hints, ctx)
+    format!("{}{}{}", base, hints, ctx)
+}
+
+/// Get the history user prompt (custom or default)
+pub fn get_history_user() -> Cow<'static, str> {
+    match get_custom_user("history") {
+        Some(s) => Cow::Borrowed(s),
+        None => Cow::Borrowed(HISTORY_USER),
+    }
 }
 
 // =============================================================================
@@ -188,8 +209,17 @@ pub const PR_USER: &str = r#"Generate PR description.
 "#;
 
 pub fn pr_system_with_context(project_context: Option<&str>, user_context: Option<&str>) -> String {
+    let base = get_custom_system("pr").unwrap_or(PR_SYSTEM);
     let ctx = format_context(project_context, user_context);
-    format!("{}{}", PR_SYSTEM, ctx)
+    format!("{}{}", base, ctx)
+}
+
+/// Get the PR user prompt (custom or default)
+pub fn get_pr_user() -> Cow<'static, str> {
+    match get_custom_user("pr") {
+        Some(s) => Cow::Borrowed(s),
+        None => Cow::Borrowed(PR_USER),
+    }
 }
 
 // =============================================================================
@@ -222,8 +252,17 @@ pub fn changelog_system_with_context(
     project_context: Option<&str>,
     user_context: Option<&str>,
 ) -> String {
+    let base = get_custom_system("changelog").unwrap_or(CHANGELOG_SYSTEM);
     let ctx = format_context(project_context, user_context);
-    format!("{}{}", CHANGELOG_SYSTEM, ctx)
+    format!("{}{}", base, ctx)
+}
+
+/// Get the changelog user prompt (custom or default)
+pub fn get_changelog_user() -> Cow<'static, str> {
+    match get_custom_user("changelog") {
+        Some(s) => Cow::Borrowed(s),
+        None => Cow::Borrowed(CHANGELOG_USER),
+    }
 }
 
 // =============================================================================
@@ -264,8 +303,17 @@ pub fn explain_system_with_context(
     project_context: Option<&str>,
     user_context: Option<&str>,
 ) -> String {
+    let base = get_custom_system("explain").unwrap_or(EXPLAIN_SYSTEM);
     let ctx = format_context(project_context, user_context);
-    format!("{}{}", EXPLAIN_SYSTEM, ctx)
+    format!("{}{}", base, ctx)
+}
+
+/// Get the explain user prompt (custom or default)
+pub fn get_explain_user() -> Cow<'static, str> {
+    match get_custom_user("explain") {
+        Some(s) => Cow::Borrowed(s),
+        None => Cow::Borrowed(EXPLAIN_USER),
+    }
 }
 
 // =============================================================================
@@ -315,8 +363,17 @@ pub fn version_system_with_context(
     project_context: Option<&str>,
     user_context: Option<&str>,
 ) -> String {
+    let base = get_custom_system("version").unwrap_or(VERSION_SYSTEM);
     let ctx = format_context(project_context, user_context);
-    format!("{}{}", VERSION_SYSTEM, ctx)
+    format!("{}{}", base, ctx)
+}
+
+/// Get the version user prompt (custom or default)
+pub fn get_version_user() -> Cow<'static, str> {
+    match get_custom_user("version") {
+        Some(s) => Cow::Borrowed(s),
+        None => Cow::Borrowed(VERSION_USER),
+    }
 }
 
 // =============================================================================
@@ -340,6 +397,8 @@ mod tests {
         assert!(!EXPLAIN_USER.is_empty());
         assert!(!VERSION_SYSTEM.is_empty());
         assert!(!VERSION_USER.is_empty());
+        assert!(!WEEKLY_SYSTEM.is_empty());
+        assert!(!WEEKLY_USER.is_empty());
     }
 
     #[test]
@@ -351,6 +410,7 @@ mod tests {
             CHANGELOG_SYSTEM,
             EXPLAIN_SYSTEM,
             VERSION_SYSTEM,
+            WEEKLY_SYSTEM,
         ];
         for t in templates {
             assert!(
@@ -375,6 +435,8 @@ mod tests {
         assert!(EXPLAIN_USER.contains("{diff}"));
         assert!(VERSION_USER.contains("{version}"));
         assert!(VERSION_USER.contains("{diff}"));
+        assert!(WEEKLY_USER.contains("{stats}"));
+        assert!(WEEKLY_USER.contains("{diff}"));
     }
 
     #[test]
@@ -398,5 +460,51 @@ mod tests {
         let p5 = version_system_with_context(Some("Repo rules"), Some("User prefs"));
         assert!(p5.contains("Project Context"));
         assert!(p5.contains("User Context"));
+
+        let p6 = weekly_system_with_context(Some("Repo rules"), Some("User prefs"));
+        assert!(p6.contains("Project Context"));
+        assert!(p6.contains("User Context"));
+    }
+}
+
+pub const WEEKLY_SYSTEM: &str = r#"Generate a Weekly Highlights Report for senior leadership.
+
+Format: 4-5 paragraphs, no headings or bullets. Plain ASCII only.
+
+Each paragraph must:
+1. Start with delivery language: "The [Team] delivered/deployed/shipped..."
+2. Name a stakeholder: Core Team, CLI Users, Contributors, Platform, CI Operators
+3. State the outcome or improvement
+4. End with a next step
+
+Style: Executive summary tone. Focus on deliverables and business value, not code details.
+Group related changes into themes like reliability, developer experience, or workflow improvements."#;
+
+pub const WEEKLY_USER: &str = r#"Generate the Weekly Highlights report.
+
+**Stats:**
+{stats}
+
+**Diff:**
+```
+{diff}
+```
+
+"#;
+
+pub fn weekly_system_with_context(
+    project_context: Option<&str>,
+    user_context: Option<&str>,
+) -> String {
+    let base = get_custom_system("weekly").unwrap_or(WEEKLY_SYSTEM);
+    let ctx = format_context(project_context, user_context);
+    format!("{}{}", base, ctx)
+}
+
+/// Get the weekly user prompt (custom or default)
+pub fn get_weekly_user() -> Cow<'static, str> {
+    match get_custom_user("weekly") {
+        Some(s) => Cow::Borrowed(s),
+        None => Cow::Borrowed(WEEKLY_USER),
     }
 }

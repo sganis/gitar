@@ -225,7 +225,7 @@ fn format_block_error(r: &SecretScanResult) -> String {
 
     msg.push_str("\nOptions:\n");
     msg.push_str("  * Remove secrets from your changes\n");
-    msg.push_str("  * Set secret_action = \"redact\" in ~/.gitar.toml\n");
+    msg.push_str("  * Set secret_action = \"redact\" in ~/.gitar/gitar.toml\n");
     msg.push_str("  * Set secret_action = \"warn\" to send anyway\n");
     msg
 }

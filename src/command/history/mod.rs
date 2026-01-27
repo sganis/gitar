@@ -5,7 +5,7 @@ use crate::client::LlmClient;
 use crate::context::load_all_context;
 use crate::context::preset::Preset;
 use crate::context::secret::SecretAction;
-use crate::context::template::{history_system_with_context, HISTORY_USER};
+use crate::context::template::{get_history_user, history_system_with_context};
 use crate::git::{get_commit_diff, get_commit_logs};
 
 use super::{apply_smart_diff_with_context, get_latest_tag, AnalysisContext, SHORT_HASH_LEN};
@@ -109,7 +109,7 @@ pub async fn cmd_history(
             secret_action,
         )?;
 
-        let prompt = HISTORY_USER
+        let prompt = get_history_user()
             .replace("{original_message}", &c.message)
             .replace("{diff}", &diff);
 

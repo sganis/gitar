@@ -153,6 +153,7 @@ async fn main() -> Result<()> {
             changelog,
             history,
             explain: _,
+            weekly,
             reference,
             to,
             staged,
@@ -225,6 +226,21 @@ async fn main() -> Result<()> {
                     until,
                     limit,
                     delay,
+                    do_stream,
+                    algo,
+                    config.max_diff_chars,
+                    config.secret_action,
+                )
+                .await?
+            } else if weekly {
+                cmd_weekly(
+                    &client,
+                    reference, // from ref
+                    to,
+                    since,
+                    until,
+                    &config.base_branch,
+                    staged,
                     do_stream,
                     algo,
                     config.max_diff_chars,

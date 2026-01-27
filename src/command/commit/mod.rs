@@ -6,7 +6,7 @@ use crate::client::LlmClient;
 use crate::context::preset::Preset;
 use crate::context::repo::load_all_context;
 use crate::context::secret::SecretAction;
-use crate::context::template::{commit_system_with_context, COMMIT_USER};
+use crate::context::template::{commit_system_with_context, get_commit_user};
 use crate::git::{get_diff, run_git, run_git_status};
 use crate::prompt;
 
@@ -80,7 +80,7 @@ pub async fn cmd_commit(
 
     // Hook mode: never stream (hooks expect file output only)
     if let Some(ref output_file) = write_to {
-        let prompt = COMMIT_USER.replace("{diff}", &diff);
+        let prompt = get_commit_user().replace("{diff}", &diff);
         let msg = client.chat(&system, &prompt, false).await?;
         fs::write(output_file, format!("{}\n", msg.trim()))?;
         return Ok(());
@@ -88,7 +88,7 @@ pub async fn cmd_commit(
 
     // Interactive mode
     let commit_message = loop {
-        let prompt = COMMIT_USER.replace("{diff}", &diff);
+        let prompt = get_commit_user().replace("{diff}", &diff);
 
         let do_stream = stream && !silent;
         let msg = client.chat(&system, &prompt, do_stream).await?;
@@ -212,7 +212,7 @@ pub async fn cmd_staged(
     let (project_ctx, user_ctx) = load_all_context();
     let system = commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
 
-    let prompt = COMMIT_USER.replace("{diff}", &diff);
+    let prompt = get_commit_user().replace("{diff}", &diff);
     let msg = client.chat(&system, &prompt, stream).await?;
 
     if stream {
@@ -252,7 +252,7 @@ pub async fn cmd_unstaged(
     let (project_ctx, user_ctx) = load_all_context();
     let system = commit_system_with_context(preset, project_ctx.as_deref(), user_ctx.as_deref());
 
-    let prompt = COMMIT_USER.replace("{diff}", &diff);
+    let prompt = get_commit_user().replace("{diff}", &diff);
     let msg = client.chat(&system, &prompt, stream).await?;
     if stream {
         println!();

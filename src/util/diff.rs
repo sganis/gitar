@@ -90,7 +90,7 @@ pub fn apply_smart_diff_with_context(
         Ok(processed) => processed.into_owned(),
         Err(scan_result) => {
             bail!(
-                "Blocked: Found {} secret(s) in diff. Remove secrets or set secret_action = \"redact\" in ~/.gitar.toml",
+                "Blocked: Found {} secret(s) in diff. Remove secrets or set secret_action = \"redact\" in ~/.gitar/gitar.toml",
                 scan_result.total()
             );
         }

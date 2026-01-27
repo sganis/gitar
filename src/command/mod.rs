@@ -13,6 +13,7 @@ mod pr;
 mod release;
 mod rewrite;
 mod squash;
+mod weekly;
 
 pub use changelog::cmd_changelog;
 pub use commit::{cmd_commit, cmd_staged, cmd_unstaged};
@@ -30,6 +31,7 @@ pub use pr::cmd_pr;
 pub use release::{cmd_release, get_latest_tag};
 pub use rewrite::cmd_rewrite;
 pub use squash::cmd_squash;
+pub use weekly::cmd_weekly;
 
 // Re-export utilities from util module for backward compatibility
 pub(crate) use crate::util::{apply_smart_diff_with_context, AnalysisContext, SHORT_HASH_LEN};

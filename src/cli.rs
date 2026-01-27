@@ -251,6 +251,7 @@ pub enum Commands {
     ///   --pr         Generate PR description
     ///   --changelog  Generate release notes
     ///   --history    Describe commit range
+    ///   --weekly     Executive weekly highlights narrative
     ///   --explain    Plain English business value explanation  (default)
     #[command(visible_alias = "t")]
     Tell {
@@ -273,6 +274,10 @@ pub enum Commands {
         /// Plain English business value explanation (default)
         #[arg(long, group = "selector")]
         explain: bool,
+
+        /// Executive weekly highlights narrative for leadership
+        #[arg(long, group = "selector")]
+        weekly: bool,
 
         /// Reference (tag, commit, branch) - meaning depends on selector
         #[arg(value_name = "REF")]
@@ -419,7 +424,7 @@ pub enum Commands {
         uninstall: bool,
     },
 
-    /// Create or update `~/.gitar.toml` with provider/model defaults
+    /// Create or update `~/.gitar/gitar.toml` with provider/model defaults
     Init {
         /// Show the resolved configuration instead of running setup
         #[arg(long)]
