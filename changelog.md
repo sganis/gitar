@@ -1,3 +1,14 @@
+## [3.0.0] - 2026-01-28
+
+# Release Notes
+## Improvements
+*   Enhanced system template consistency by adding strict output formatting rules to the `WEEKLY_SYSTEM` template.
+*   Improved configuration management by separating user-writable paths from system configuration within the config module.
+*   Streamlined project context by simplifying `gitar` project context and removing extraneous template documentation.
+
+## Infrastructure
+*   Updated Rust dependencies to ensure stability and incorporate the latest security patches.
+
 ## [2.6.0] - 2026-01-27
 
 # Release Notes
