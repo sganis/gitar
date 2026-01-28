@@ -135,14 +135,27 @@ pub struct Config {
 }
 
 impl Config {
-    /// Returns the base directory for config files.
-    /// Checks GITAR_CONFIG_PATH env var first, falls back to ~/.gitar/
+    /// Returns the user's config base directory: ~/.gitar/
+    /// This is always writable and used for saving config files.
+    pub fn user_config_base_dir() -> Option<PathBuf> {
+        dirs::home_dir().map(|h| h.join(CONFIG_DIR))
+    }
+
+    /// Returns the base directory for reading config files.
+    /// Checks GITAR_CONFIG_PATH env var first (read-only system config),
+    /// falls back to ~/.gitar/
     pub fn config_base_dir() -> Option<PathBuf> {
         std::env::var(CONFIG_PATH_ENV)
             .ok()
             .filter(|s| !s.is_empty())
             .map(PathBuf::from)
-            .or_else(|| dirs::home_dir().map(|h| h.join(CONFIG_DIR)))
+            .or_else(Self::user_config_base_dir)
+    }
+
+    /// Returns the user's config file path: ~/.gitar/gitar.toml
+    /// This is where save() writes to.
+    pub fn user_config_path() -> Option<PathBuf> {
+        Self::user_config_base_dir().map(|d| d.join(CONFIG_FILENAME))
     }
 
     pub fn path() -> Option<PathBuf> {
@@ -153,18 +166,18 @@ impl Config {
         Self::config_base_dir()
     }
 
-    /// Returns the prompts.toml path
+    /// Returns the prompts.toml path (user-writable)
     pub fn prompts_path() -> Option<PathBuf> {
-        Self::config_base_dir().map(|d| d.join(PROMPTS_FILENAME))
+        Self::user_config_base_dir().map(|d| d.join(PROMPTS_FILENAME))
     }
 
-    /// Returns the context.md path
+    /// Returns the context.md path (user-writable)
     pub fn context_path() -> Option<PathBuf> {
-        Self::config_base_dir().map(|d| d.join(CONTEXT_FILENAME))
+        Self::user_config_base_dir().map(|d| d.join(CONTEXT_FILENAME))
     }
 
-    /// Legacy: Returns the system config path from GITAR_CONFIG_PATH env var, if set.
-    /// This is for backward compatibility with cascading configs.
+    /// Returns the system config path from GITAR_CONFIG_PATH env var, if set.
+    /// This is read-only and provides defaults that user config can override.
     pub fn system_path() -> Option<PathBuf> {
         std::env::var(CONFIG_PATH_ENV)
             .ok()
@@ -196,11 +209,12 @@ impl Config {
     }
 
     pub fn save(&self) -> Result<()> {
-        let dir = Self::config_dir().context("Could not determine home directory")?;
+        // Always save to user config directory (~/.gitar/), never to system config
+        let dir = Self::user_config_base_dir().context("Could not determine home directory")?;
         if !dir.exists() {
             std::fs::create_dir_all(&dir).context("Failed to create config directory")?;
         }
-        let path = Self::path().context("Could not determine config path")?;
+        let path = Self::user_config_path().context("Could not determine config path")?;
         let content = toml::to_string_pretty(self).context("Failed to serialize config")?;
         std::fs::write(&path, content).context("Failed to write config file")?;
         println!("Config saved to: {}", path.display());
@@ -417,6 +431,7 @@ impl ResolvedConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     fn temp_repo() -> TempDir {
@@ -605,6 +620,7 @@ api_key = "test-key"
     }
 
     #[test]
+    #[serial]
     fn config_base_dir_uses_env_var() {
         let dir = TempDir::new().unwrap();
         let path_str = dir.path().to_str().unwrap().to_string();
@@ -620,18 +636,31 @@ api_key = "test-key"
     }
 
     #[test]
-    fn config_path_helpers() {
+    #[serial]
+    fn config_path_helpers_user_paths_ignore_env_var() {
         let dir = TempDir::new().unwrap();
         let path_str = dir.path().to_str().unwrap().to_string();
 
+        // Set the env var (system config path)
         std::env::set_var(CONFIG_PATH_ENV, &path_str);
 
+        // User-writable paths should always use home dir, not env var
         let prompts = Config::prompts_path().unwrap();
-        assert_eq!(prompts, dir.path().join("prompts.toml"));
-
         let context = Config::context_path().unwrap();
-        assert_eq!(context, dir.path().join("context.md"));
+        let user_config = Config::user_config_path().unwrap();
 
+        // These should NOT use the env var path
+        assert!(!prompts.starts_with(dir.path()));
+        assert!(!context.starts_with(dir.path()));
+        assert!(!user_config.starts_with(dir.path()));
+
+        // They should use the home directory
+        let home = dirs::home_dir().unwrap();
+        assert!(prompts.starts_with(&home));
+        assert!(context.starts_with(&home));
+        assert!(user_config.starts_with(&home));
+
+        // Clean up
         std::env::remove_var(CONFIG_PATH_ENV);
     }
 }

@@ -182,8 +182,8 @@ fn write_file_if_missing(path: &Path, content: &str) -> Result<bool> {
 }
 
 fn ensure_context_files() -> Result<()> {
-    // 1) User context: ~/.gitar/context.md
-    if let Some(base) = Config::config_base_dir() {
+    // 1) User context: ~/.gitar/context.md (always use user dir, not system config)
+    if let Some(base) = Config::user_config_base_dir() {
         let user_ctx = base.join("context.md");
         match write_file_if_missing(&user_ctx, USER_CONTEXT_TEMPLATE) {
             Ok(true) => println!("Created user context: {}", user_ctx.display()),
@@ -828,8 +828,8 @@ fn show_config(config: &Config) -> Result<()> {
     // Show context files
     println!("\n--- Context Files ---");
 
-    // User context
-    if let Some(base) = Config::config_base_dir() {
+    // User context (always in ~/.gitar/, not system config)
+    if let Some(base) = Config::user_config_base_dir() {
         let ctx_path = base.join("context.md");
         if ctx_path.exists() {
             println!("User context:    {}", ctx_path.display());
