@@ -157,50 +157,34 @@ pub fn execute_plan(
         println!("Group {}/{}", idx + 1, total_count);
         println!("{}\n", group.message);
 
-        // Check mode for staging strategy
-        let skip_staging = match mode {
-            AnalysisMode::Staged => {
-                // Verify files are actually staged before committing
-                let staged = git::run_git(&["diff", "--cached", "--name-only"])?;
-                if staged.trim().is_empty() {
-                    warning(&format!(
-                        "Skipping group {}/{}: no staged files",
-                        idx + 1,
-                        total_count
-                    ));
-                    println!();
-                    continue;
-                }
-                println!("Using already-staged files");
-                true
-            }
-            AnalysisMode::History { from, to } => {
-                return execute_history_mode(groups, from, to.as_deref(), dry_run);
-            }
-            _ => {
-                // Will stage files below
-                false
-            }
-        };
+        // Handle history mode separately
+        if let AnalysisMode::History { from, to } = mode {
+            return execute_history_mode(groups, from, to.as_deref(), dry_run);
+        }
 
-        if !skip_staging {
-            // Show what will be committed
-            println!("Staging files...");
+        // For staged mode: unstage everything first, then stage only this group's files
+        // This ensures each commit only includes its designated files
+        if matches!(mode, AnalysisMode::Staged) && !dry_run {
+            // Unstage all files first
+            let _ = git::run_git_status(&["reset", "HEAD"]);
+        }
+
+        // Stage only this group's files
+        println!("Staging files...");
+        for file in &group.files_with_status {
+            println!("  {} {}", file.status.label(), file.path);
+        }
+
+        if !dry_run {
+            // Stage files using files_with_status which has proper paths
             for file in &group.files_with_status {
-                println!("  {} {}", file.status.label(), file.path);
+                stage_file(&file.path, &file.status)?;
             }
 
-            if !dry_run {
-                // Stage files using files_with_status which has proper paths
-                for file in &group.files_with_status {
-                    stage_file(&file.path, &file.status)?;
-                }
-
-                // Show diff preview
-                println!("\nStaged changes:");
-                let stat = git::run_git(&["diff", "--cached", "--stat"])?;
-                println!("{}", stat);
-            }
+            // Show diff preview
+            println!("\nStaged changes:");
+            let stat = git::run_git(&["diff", "--cached", "--stat"])?;
+            println!("{}", stat);
         }
 
         // Interactive confirmation
