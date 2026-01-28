@@ -469,27 +469,69 @@ mod tests {
 
 pub const WEEKLY_SYSTEM: &str = r#"Generate a Weekly Highlights Report for senior leadership.
 
-Format: 4-5 paragraphs, around 100 words, no headings or bullets. Plain ASCII only.
+OUTPUT FORMAT (STRICT, NO EXCEPTIONS):
+- The entire output MUST be one or more "highlight blocks".
+- NOTHING is allowed outside highlight blocks (no intro, no outro, no extra paragraphs).
 
+Each highlight block MUST be exactly:
+1) Title line: "Highlight N (LEVEL):" where N starts at 1 and increments by 1
+2) Subtitle line: ALL CAPS (ASCII only)
+3) Body: 4-5 sentences TOTALING ~100 words (ASCII only). No headings, no bullets.
+4) The last sentence must be a short description of the production rollout or next steps.
+
+LEVEL RULES (STRICT):
+- LEVEL must be exactly one of: CEO, VP, DIRECTOR, MANAGER
+- Do NOT use any other levels.
+
+ONE THEME PER HIGHLIGHT (STRICT):
+- Each highlight MUST represent exactly ONE major initiative/theme.
+- Within one highlight, ALL sentences must support the SAME theme.
+- You may include multiple related deliverables inside the same theme (e.g., feature + docs + config + rollout), as long as they are part of the same initiative.
+
+HIGHLIGHT COUNT RULES (VERY STRICT):
+- Default to EXACTLY ONE highlight.
+- You MUST produce EXACTLY ONE highlight unless ALL conditions below are true:
+  A) The input describes at least TWO independent major initiatives that are NOT part of the same rollout, AND
+  B) The initiatives impact different primary stakeholder groups OR different products/programs, AND
+  C) They cannot be reasonably merged into one theme without losing clarity.
+- If A/B/C are not all true, MERGE everything into ONE highlight by choosing a single umbrella theme.
+- Never exceed 4 highlights.
+
+MERGE GUIDANCE (USE THIS TO STAY AT ONE HIGHLIGHT):
+- Treat docs, refactors, config changes, templating, scoring tweaks, and setup improvements as supporting work for the main initiative, not separate highlights.
+- If the work is in the same repo/tool/product (e.g., Gitar planning + context + init + scoring), it is ONE highlight.
+- If uncertain, choose ONE highlight.
+
+PARAGRAPH RULES (APPLY TO EVERY PARAGRAPH):
 Each paragraph must:
-1. Start with delivery language: "The [Team] delivered/deployed/shipped..."
-2. Name a relevant stakeholder (see User Context if provided)
-3. State the outcome or improvement
-4. End with a next step
+1) Start with delivery language: "The [Team] delivered..." or "The [Team] deployed..." or "The [Team] shipped..."
+2) Name a relevant stakeholder (see User Context if provided)
+3) State the outcome or improvement
+4) End with a next step
 
-Style: Executive summary tone. Focus on deliverables and business value, not code details.
-Group related changes into themes like reliability, developer experience, or workflow improvements.
+STYLE:
+Executive summary tone. Focus on deliverables and business value, not code details.
+Plain ASCII only.
 
-IMPORTANT: If User Context is provided below, use it to personalize the report:
+RANKING:
+- If more than one highlight is allowed by the strict rules, rank by business impact.
+- Choose LEVEL per highlight from CEO/VP/DIRECTOR/MANAGER based on impact.
+
+PERSONALIZATION:
+If User Context is provided below:
 - Use the author's department/team name instead of generic "The Team"
 - Target the report to the listed stakeholders (customers, leadership, etc.)
 - Reference the author's projects when relevant
+- If examples are provided, follow their format and style closely.
 
-If there is significant activity, create more than 1 highlight, maximum 4.
-Usually they are for Manager or Director levels, but high impact changes may be for VP executives or even CEO.
-Rank the highlights by importance and business impact.
-Start with the most important one, and add a title line like "Highlight 1: (VP)", "Highlight 2: (Director)", etc.
+SELF-CHECK BEFORE FINAL ANSWER (SILENT):
+- Output contains only highlight blocks.
+- If output has more than one highlight, confirm A/B/C are all true.
+- Every highlight has title + subtitle + 4-5 sentences (~100 words total).
+- LEVEL is only CEO/VP/DIRECTOR/MANAGER.
 "#;
+
+
 
 pub const WEEKLY_USER: &str = r#"Generate a Weekly Highlight Report.
 
