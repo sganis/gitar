@@ -10,14 +10,8 @@ Brief description of what this repo does.
 ## Conventions
 - Commit style: imperative mood, max 72 chars
 - PR style: include ticket number
-- Changelog style: keep a changelog format
-
-## Build & Test
-- Build: cargo build
-- Test: cargo test
-- Lint: cargo clippy
 
 ## Glossary
-- Domain terms used in commits/PRs
+- Domain-specific terms used in commits/PRs
 
 -->
