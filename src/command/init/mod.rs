@@ -236,7 +236,7 @@ fn ensure_context_files() -> Result<()> {
 // =============================================================================
 
 fn select_provider(current: Option<&str>) -> Result<Option<String>> {
-    let providers = vec!["openai", "claude", "gemini", "groq", "ollama"];
+    let providers = vec!["openai", "anthropic", "gemini", "groq", "ollama", "claudecode"];
 
     // Find default index
     let default_idx = if let Some(curr) = current {
@@ -450,14 +450,19 @@ pub async fn cmd_init(
         };
 
         // Step 2: Get API key (skip for providers that don't need it)
-        let needs_api_key = !matches!(selected_provider.as_str(), "ollama" | "local");
+        let needs_api_key = !matches!(selected_provider.as_str(), "ollama" | "local" | "claudecode");
 
         let provider_config = config.get_provider_mut(&selected_provider);
         let current_key = provider_config.api_key.clone();
 
         let api_key = if !needs_api_key {
-            // Providers like ollama don't need API keys
-            println!("\n[INFO] {} doesn't require an API key", selected_provider);
+            // Providers like ollama and claudecode don't need API keys
+            if selected_provider == "claudecode" {
+                println!("\n[INFO] claudecode uses your Claude Max subscription via browser auth");
+                println!("       Make sure you've run: claude login");
+            } else {
+                println!("\n[INFO] {} doesn't require an API key", selected_provider);
+            }
             String::new()
         } else if let Some(ref key) = current_key {
             let masked = format!(
@@ -474,7 +479,7 @@ pub async fn cmd_init(
         } else {
             let env_var = match selected_provider.as_str() {
                 "openai" => "OPENAI_API_KEY",
-                "claude" => "ANTHROPIC_API_KEY",
+                "anthropic" => "ANTHROPIC_API_KEY",
                 "gemini" => "GEMINI_API_KEY",
                 "groq" => "GROQ_API_KEY",
                 _ => "",
@@ -781,10 +786,11 @@ fn show_config(config: &Config) -> Result<()> {
 
     let providers = [
         ("openai", &config.openai, "OPENAI_API_KEY"),
-        ("claude", &config.claude, "ANTHROPIC_API_KEY"),
+        ("anthropic", &config.anthropic, "ANTHROPIC_API_KEY"),
         ("gemini", &config.gemini, "GEMINI_API_KEY"),
         ("groq", &config.groq, "GROQ_API_KEY"),
         ("ollama", &config.ollama, "(none)"),
+        ("claudecode", &config.claudecode, "(none - uses browser auth)"),
     ];
 
     for (name, pc, env_var) in providers {

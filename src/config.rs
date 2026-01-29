@@ -11,7 +11,7 @@ pub const DEFAULT_MAX_DIFF_CHARS: usize = 50_000;
 // =============================================================================
 
 pub const PROVIDER_OPENAI: &str = "https://api.openai.com/v1";
-pub const PROVIDER_CLAUDE: &str = "https://api.anthropic.com/v1";
+pub const PROVIDER_ANTHROPIC: &str = "https://api.anthropic.com/v1";
 pub const PROVIDER_GEMINI: &str = "https://generativelanguage.googleapis.com";
 pub const PROVIDER_GROQ: &str = "https://api.groq.com/openai/v1";
 pub const PROVIDER_OLLAMA: &str = "http://localhost:11434/v1";
@@ -23,7 +23,7 @@ pub const PROVIDER_CLAUDECODE: &str = "claudecode";
 // =============================================================================
 
 pub const DEFAULT_MODEL_OPENAI: &str = "gpt-4.1-2025-04-14";
-pub const DEFAULT_MODEL_CLAUDE: &str = "claude-sonnet-4-5-20250514";
+pub const DEFAULT_MODEL_ANTHROPIC: &str = "claude-sonnet-4-5-20250514";
 pub const DEFAULT_MODEL_GEMINI: &str = "gemini-2.5-flash";
 pub const DEFAULT_MODEL_GROQ: &str = "llama-3.3-70b-versatile";
 pub const DEFAULT_MODEL_OLLAMA: &str = "llama3.2:latest";
@@ -33,7 +33,7 @@ pub const DEFAULT_MODEL_CLAUDECODE: &str = "sonnet";
 pub fn provider_to_url(provider: &str) -> Option<&'static str> {
     match provider.to_lowercase().as_str() {
         "openai" => Some(PROVIDER_OPENAI),
-        "claude" | "anthropic" => Some(PROVIDER_CLAUDE),
+        "anthropic" | "claude" => Some(PROVIDER_ANTHROPIC),
         "gemini" | "google" => Some(PROVIDER_GEMINI),
         "groq" => Some(PROVIDER_GROQ),
         "ollama" | "local" => Some(PROVIDER_OLLAMA),
@@ -45,11 +45,11 @@ pub fn provider_to_url(provider: &str) -> Option<&'static str> {
 
 pub fn normalize_provider(provider: &str) -> &'static str {
     match provider.to_lowercase().as_str() {
-        "anthropic" => "claude",
+        "anthropic" => "anthropic",
+        "claude" => "anthropic", // legacy alias
         "google" => "gemini",
         "local" => "ollama",
         "openai" => "openai",
-        "claude" => "claude",
         "gemini" => "gemini",
         "groq" => "groq",
         "ollama" => "ollama",
@@ -61,7 +61,7 @@ pub fn normalize_provider(provider: &str) -> &'static str {
 fn default_model_for_provider(provider: &str) -> &'static str {
     match provider {
         "openai" => DEFAULT_MODEL_OPENAI,
-        "claude" => DEFAULT_MODEL_CLAUDE,
+        "anthropic" => DEFAULT_MODEL_ANTHROPIC,
         "gemini" => DEFAULT_MODEL_GEMINI,
         "groq" => DEFAULT_MODEL_GROQ,
         "ollama" => DEFAULT_MODEL_OLLAMA,
@@ -73,7 +73,7 @@ fn default_model_for_provider(provider: &str) -> &'static str {
 fn env_var_for_provider(provider: &str) -> Option<&'static str> {
     match provider {
         "openai" => Some("OPENAI_API_KEY"),
-        "claude" => Some("ANTHROPIC_API_KEY"),
+        "anthropic" => Some("ANTHROPIC_API_KEY"),
         "gemini" => Some("GEMINI_API_KEY"),
         "groq" => Some("GROQ_API_KEY"),
         "ollama" => None,
@@ -138,7 +138,7 @@ pub struct Config {
     /// When true, commands default to --apply mode (execute instead of dry-run)
     pub auto_apply: Option<bool>,
     pub openai: Option<ProviderConfig>,
-    pub claude: Option<ProviderConfig>,
+    pub anthropic: Option<ProviderConfig>,
     pub gemini: Option<ProviderConfig>,
     pub groq: Option<ProviderConfig>,
     pub ollama: Option<ProviderConfig>,
@@ -259,7 +259,7 @@ impl Config {
 
         // Provider configs: merge each provider section
         Self::merge_provider(&mut self.openai, &other.openai);
-        Self::merge_provider(&mut self.claude, &other.claude);
+        Self::merge_provider(&mut self.anthropic, &other.anthropic);
         Self::merge_provider(&mut self.gemini, &other.gemini);
         Self::merge_provider(&mut self.groq, &other.groq);
         Self::merge_provider(&mut self.ollama, &other.ollama);
@@ -302,7 +302,7 @@ impl Config {
     pub fn get_provider(&self, name: &str) -> Option<&ProviderConfig> {
         match name {
             "openai" => self.openai.as_ref(),
-            "claude" => self.claude.as_ref(),
+            "anthropic" => self.anthropic.as_ref(),
             "gemini" => self.gemini.as_ref(),
             "groq" => self.groq.as_ref(),
             "ollama" => self.ollama.as_ref(),
@@ -314,7 +314,7 @@ impl Config {
     pub fn get_provider_mut(&mut self, name: &str) -> &mut ProviderConfig {
         match name {
             "openai" => self.openai.get_or_insert_with(ProviderConfig::default),
-            "claude" => self.claude.get_or_insert_with(ProviderConfig::default),
+            "anthropic" => self.anthropic.get_or_insert_with(ProviderConfig::default),
             "gemini" => self.gemini.get_or_insert_with(ProviderConfig::default),
             "groq" => self.groq.get_or_insert_with(ProviderConfig::default),
             "ollama" => self.ollama.get_or_insert_with(ProviderConfig::default),
@@ -470,9 +470,11 @@ mod tests {
     #[test]
     fn provider_to_url_all() {
         assert_eq!(provider_to_url("openai"), Some(PROVIDER_OPENAI));
-        assert_eq!(provider_to_url("claude"), Some(PROVIDER_CLAUDE));
+        assert_eq!(provider_to_url("anthropic"), Some(PROVIDER_ANTHROPIC));
+        assert_eq!(provider_to_url("claude"), Some(PROVIDER_ANTHROPIC)); // legacy alias
         assert_eq!(provider_to_url("gemini"), Some(PROVIDER_GEMINI));
         assert_eq!(provider_to_url("ollama"), Some(PROVIDER_OLLAMA));
+        assert_eq!(provider_to_url("claudecode"), Some(PROVIDER_CLAUDECODE));
     }
 
     #[test]
@@ -559,7 +561,7 @@ mod tests {
         };
 
         let user = Config {
-            default_provider: Some("claude".into()),
+            default_provider: Some("anthropic".into()),
             // base_branch not set - should keep system value
             openai: Some(ProviderConfig {
                 model: Some("gpt-4o".into()), // override model
@@ -572,7 +574,7 @@ mod tests {
         system.merge_with(&user);
 
         // User values should take precedence
-        assert_eq!(system.default_provider, Some("claude".into()));
+        assert_eq!(system.default_provider, Some("anthropic".into()));
         // System values should be kept when user doesn't override
         assert_eq!(system.base_branch, Some("main".into()));
         // Provider merge: user model wins, system api_key kept
@@ -593,8 +595,8 @@ mod tests {
         };
 
         let user = Config {
-            claude: Some(ProviderConfig {
-                api_key: Some("claude-key".into()),
+            anthropic: Some(ProviderConfig {
+                api_key: Some("anthropic-key".into()),
                 ..Default::default()
             }),
             ..Default::default()
@@ -606,8 +608,8 @@ mod tests {
         assert!(system.openai.is_some());
         // User provider should be added
         assert_eq!(
-            system.claude.as_ref().unwrap().api_key,
-            Some("claude-key".into())
+            system.anthropic.as_ref().unwrap().api_key,
+            Some("anthropic-key".into())
         );
     }
 
