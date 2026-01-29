@@ -1,4 +1,4 @@
-// src/providers/claude.rs
+// src/provider/anthropic.rs
 use anyhow::{bail, Context, Result};
 use futures_util::StreamExt;
 use reqwest::Client;
