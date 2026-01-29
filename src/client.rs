@@ -4,7 +4,7 @@ use reqwest::{Certificate, Client, ClientBuilder, Proxy};
 
 use crate::color::{styled, warning_style};
 use crate::config::{provider_to_url, ProviderConfig, ResolvedConfig};
-use crate::provider::{claude, gemini, openai};
+use crate::provider::{claude, claudecode, gemini, openai};
 
 /// Environment variable for custom CA certificate file path.
 pub const CA_FILE_ENV: &str = "GITAR_CA_FILE";
@@ -107,6 +107,7 @@ impl LlmClient {
                 "gemini" => "gemini-2.5-flash".to_string(),
                 "groq" => "llama-3.3-70b-versatile".to_string(),
                 "ollama" => "llama3.2:latest".to_string(),
+                "claudecode" => "sonnet".to_string(),
                 _ => "gpt-5-chat-latest".to_string(),
             });
 
@@ -136,7 +137,15 @@ impl LlmClient {
         self.provider == "gemini" || self.base_url.contains("generativelanguage.googleapis.com")
     }
 
+    fn is_claudecode(&self) -> bool {
+        self.provider == "claudecode"
+    }
+
     pub async fn chat(&self, system: &str, user: &str, stream: bool) -> Result<String> {
+        // Claude Code uses subprocess, not HTTP - check first
+        if self.is_claudecode() {
+            return claudecode::chat(&self.model, system, user, stream).await;
+        }
         if self.is_claude() {
             return claude::chat(
                 &self.http,
@@ -180,6 +189,10 @@ impl LlmClient {
     }
 
     pub async fn list_models(&self) -> Result<Vec<String>> {
+        // Claude Code uses subprocess, not HTTP - check first
+        if self.is_claudecode() {
+            return claudecode::list_models().await;
+        }
         if self.is_gemini() {
             return gemini::list_models(&self.http, &self.base_url, self.api_key.as_deref()).await;
         }

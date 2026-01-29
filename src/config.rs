@@ -15,6 +15,8 @@ pub const PROVIDER_CLAUDE: &str = "https://api.anthropic.com/v1";
 pub const PROVIDER_GEMINI: &str = "https://generativelanguage.googleapis.com";
 pub const PROVIDER_GROQ: &str = "https://api.groq.com/openai/v1";
 pub const PROVIDER_OLLAMA: &str = "http://localhost:11434/v1";
+/// Claude Code CLI provider (uses local claude CLI subprocess, no URL needed)
+pub const PROVIDER_CLAUDECODE: &str = "claudecode";
 
 // =============================================================================
 // DEFAULT MODELS - Edit these to change defaults for each provider
@@ -25,6 +27,8 @@ pub const DEFAULT_MODEL_CLAUDE: &str = "claude-sonnet-4-5-20250514";
 pub const DEFAULT_MODEL_GEMINI: &str = "gemini-2.5-flash";
 pub const DEFAULT_MODEL_GROQ: &str = "llama-3.3-70b-versatile";
 pub const DEFAULT_MODEL_OLLAMA: &str = "llama3.2:latest";
+/// Claude Code CLI uses simple model names: sonnet, opus, haiku
+pub const DEFAULT_MODEL_CLAUDECODE: &str = "sonnet";
 
 pub fn provider_to_url(provider: &str) -> Option<&'static str> {
     match provider.to_lowercase().as_str() {
@@ -33,6 +37,8 @@ pub fn provider_to_url(provider: &str) -> Option<&'static str> {
         "gemini" | "google" => Some(PROVIDER_GEMINI),
         "groq" => Some(PROVIDER_GROQ),
         "ollama" | "local" => Some(PROVIDER_OLLAMA),
+        // claudecode uses subprocess, not HTTP - return marker string
+        "claudecode" | "claude-code" => Some(PROVIDER_CLAUDECODE),
         _ => None,
     }
 }
@@ -47,6 +53,7 @@ pub fn normalize_provider(provider: &str) -> &'static str {
         "gemini" => "gemini",
         "groq" => "groq",
         "ollama" => "ollama",
+        "claudecode" | "claude-code" => "claudecode",
         _ => "openai",
     }
 }
@@ -58,6 +65,7 @@ fn default_model_for_provider(provider: &str) -> &'static str {
         "gemini" => DEFAULT_MODEL_GEMINI,
         "groq" => DEFAULT_MODEL_GROQ,
         "ollama" => DEFAULT_MODEL_OLLAMA,
+        "claudecode" => DEFAULT_MODEL_CLAUDECODE,
         _ => "",
     }
 }
@@ -69,6 +77,8 @@ fn env_var_for_provider(provider: &str) -> Option<&'static str> {
         "gemini" => Some("GEMINI_API_KEY"),
         "groq" => Some("GROQ_API_KEY"),
         "ollama" => None,
+        // claudecode uses browser OAuth, no API key needed
+        "claudecode" => None,
         _ => Some("OPENAI_API_KEY"),
     }
 }
@@ -132,6 +142,7 @@ pub struct Config {
     pub gemini: Option<ProviderConfig>,
     pub groq: Option<ProviderConfig>,
     pub ollama: Option<ProviderConfig>,
+    pub claudecode: Option<ProviderConfig>,
 }
 
 impl Config {
@@ -252,6 +263,7 @@ impl Config {
         Self::merge_provider(&mut self.gemini, &other.gemini);
         Self::merge_provider(&mut self.groq, &other.groq);
         Self::merge_provider(&mut self.ollama, &other.ollama);
+        Self::merge_provider(&mut self.claudecode, &other.claudecode);
     }
 
     fn merge_provider(target: &mut Option<ProviderConfig>, source: &Option<ProviderConfig>) {
@@ -294,6 +306,7 @@ impl Config {
             "gemini" => self.gemini.as_ref(),
             "groq" => self.groq.as_ref(),
             "ollama" => self.ollama.as_ref(),
+            "claudecode" => self.claudecode.as_ref(),
             _ => None,
         }
     }
@@ -305,6 +318,7 @@ impl Config {
             "gemini" => self.gemini.get_or_insert_with(ProviderConfig::default),
             "groq" => self.groq.get_or_insert_with(ProviderConfig::default),
             "ollama" => self.ollama.get_or_insert_with(ProviderConfig::default),
+            "claudecode" => self.claudecode.get_or_insert_with(ProviderConfig::default),
             _ => self.openai.get_or_insert_with(ProviderConfig::default),
         }
     }
