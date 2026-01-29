@@ -20,7 +20,8 @@ All layers share a powerful **context optimization engine**:
 **Supported LLM Providers:**
 
 - **openai** — OpenAI & compatible APIs (OpenRouter, Together, Mistral, …)
-- **claude** — Anthropic
+- **anthropic** — Anthropic Claude API
+- **claudecode** — Claude via Max subscription (no API key needed)
 - **gemini** — Google
 - **groq** — Fast hosted inference
 - **ollama** — Local models (100% private)
@@ -154,7 +155,8 @@ Or pick provider directly:
 
 ```bash
 gitar init --provider openai
-gitar init --provider claude
+gitar init --provider anthropic
+gitar init --provider claudecode  # uses Claude Max subscription
 gitar init --provider gemini
 gitar init --provider groq
 gitar init --provider ollama
@@ -485,14 +487,19 @@ gitar diff --compare
 Stored in `~/.gitar/gitar.toml`:
 
 ```toml
-default_provider = "claude"
+default_provider = "anthropic"
 base_branch = "main"
 preset = "rust"
 auto_apply = false        # Set to true to execute by default
 secret_action = "redact"  # or "warn" or "block"
 
-[claude]
+[anthropic]
 model = "claude-sonnet-4-5-20250514"
+
+# Or use Claude via Max subscription (no API key needed):
+# default_provider = "claudecode"
+# [claudecode]
+# model = "sonnet"  # or "opus" for Max $200 users
 ```
 
 ### Shared Configuration (Enterprise/Cluster)
