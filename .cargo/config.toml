@@ -1,8 +1,10 @@
 # .cargo/config.toml
 # Increase stack size on Windows to prevent stack overflow
 # Default Windows stack is 1MB, which is too small for this project
+# Also specify linker to avoid Git's /usr/bin/link.exe shadowing MSVC linker
 
 [target.x86_64-pc-windows-msvc]
+linker = "C:\\Program Files\\Microsoft Visual Studio\\18\\Community\\VC\\Tools\\MSVC\\14.50.35717\\bin\\Hostx64\\x64\\link.exe"
 rustflags = ["-C", "link-args=/STACK:8388608"]
 
 [target.i686-pc-windows-msvc]
