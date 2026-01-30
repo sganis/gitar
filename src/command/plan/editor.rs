@@ -60,8 +60,8 @@ impl PlanEditor {
 
         for (idx, group) in self.groups.iter().enumerate() {
             if group.is_large_file_group {
-                // Large/binary file group - shown with SKIP indicator
-                println!("Group {}/{} [BINARY/LARGE - default: SKIP]", idx + 1, total_groups);
+                // Large file group - shown with SKIP indicator
+                println!("Group {}/{} [LARGE FILES - default: SKIP]", idx + 1, total_groups);
                 println!("Title: {}", group.title);
                 println!("Files ({}):", group.files_with_status.len());
                 for file in &group.files_with_status {
@@ -83,26 +83,26 @@ impl PlanEditor {
         println!("-----------------------------------------------------------");
         if skip_groups > 0 {
             if self.include_large_files {
-                println!("Binary/large files: WILL BE COMMITTED");
+                println!("Large files (>=50MB): WILL BE COMMITTED");
             } else {
-                println!("Binary/large files: WILL BE SKIPPED (default)");
+                println!("Large files (>=50MB): WILL BE SKIPPED (default)");
             }
             println!("-----------------------------------------------------------");
         }
         println!("Options:");
         if self.include_large_files {
-            println!("  [Enter] Accept all and commit (including binary/large files)");
+            println!("  [Enter] Accept all and commit (including large files)");
         } else {
-            println!("  [Enter] Accept all and commit (binary/large files will be SKIPPED)");
+            println!("  [Enter] Accept all and commit (large files will be SKIPPED)");
         }
         println!("  [y]     Approve commits one by one");
         println!("  [r]     Regenerate plan (re-call LLM)");
         println!("  [e]     Edit commit message");
         if skip_groups > 0 {
             if self.include_large_files {
-                println!("  [i]     Exclude binary/large files (skip them)");
+                println!("  [i]     Exclude large files (skip them)");
             } else {
-                println!("  [i]     Include binary/large files (commit them)");
+                println!("  [i]     Include large files (commit them)");
             }
         }
         println!("  [q]     Quit without executing");
@@ -148,9 +148,9 @@ impl PlanEditor {
                 Action::IncludeLargeFiles => {
                     self.include_large_files = !self.include_large_files;
                     if self.include_large_files {
-                        println!("Binary/large files will be COMMITTED.");
+                        println!("Large files will be COMMITTED.");
                     } else {
-                        println!("Binary/large files will be SKIPPED (default).");
+                        println!("Large files will be SKIPPED (default).");
                     }
                 }
                 Action::Quit => {

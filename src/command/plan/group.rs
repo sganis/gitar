@@ -83,27 +83,24 @@ const LOCK_FILES: &[&str] = &[
 
 use super::analyze::LARGE_FILE_THRESHOLD;
 
-/// Create a commit group for large/binary files
+/// Create a commit group for large files (>=50MB)
 /// This group appears in the plan but defaults to "skip" during execution
+/// Note: Binary files are NOT included here - they're normal assets that get committed
 fn create_skip_file_group(
     skip_files: &[&super::analyze::FileChange],
     _mode: &AnalysisMode,
 ) -> CommitGroup {
     let file_count = skip_files.len();
-    let has_large = skip_files.iter().any(|f| f.is_large_file());
-    let has_binary = skip_files.iter().any(|f| f.is_binary_file());
+    let threshold_mb = LARGE_FILE_THRESHOLD / (1024 * 1024);
+    let title = format!(
+        "Large files >= {}MB ({} file{}) [default: SKIP]",
+        threshold_mb,
+        file_count,
+        if file_count > 1 { "s" } else { "" }
+    );
 
-    let title = if has_large && has_binary {
-        format!("Binary/Large files ({} file{}) [default: SKIP]", file_count, if file_count > 1 { "s" } else { "" })
-    } else if has_large {
-        let threshold_mb = LARGE_FILE_THRESHOLD / (1024 * 1024);
-        format!("Large files >= {}MB ({} file{}) [default: SKIP]", threshold_mb, file_count, if file_count > 1 { "s" } else { "" })
-    } else {
-        format!("Binary files ({} file{}) [default: SKIP]", file_count, if file_count > 1 { "s" } else { "" })
-    };
-
-    let message = "Add binary/large files\n\n\
-        Note: These files are excluded from AI analysis.\n\
+    let message = "Add large files\n\n\
+        Note: These files exceed 50MB and are excluded from AI analysis.\n\
         Default action is SKIP. Choose 'commit' to include them."
         .to_string();
 
@@ -157,11 +154,13 @@ pub async fn create_groups(
         return Ok(vec![]);
     }
 
-    // Separate files to skip (large or binary) from regular files
+    // Separate large files (>=50MB) for the skip group
+    // Note: Binary files are NOT skipped - they're normal assets that should be committed
+    // They just don't get LLM diff analysis (which wouldn't work anyway)
     let skip_files: Vec<_> = analysis
         .files
         .iter()
-        .filter(|f| f.should_skip_llm())
+        .filter(|f| f.is_large_file())
         .collect();
 
     // Create skip file group if any exist
@@ -171,12 +170,13 @@ pub async fn create_groups(
         None
     };
 
-    // Filter out skip files from planning context for LLM
+    // Filter out large files from planning context for LLM
+    // Binary files remain in context so LLM can group them appropriately
     let filtered_context = if !skip_files.is_empty() {
         let filtered_files: Vec<_> = planning_context
             .files
             .iter()
-            .filter(|f| !f.should_skip_llm())
+            .filter(|f| !f.large_file)
             .cloned()
             .collect();
         super::model::PlanningContext::new(filtered_files)

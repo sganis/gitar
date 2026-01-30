@@ -107,6 +107,8 @@ impl FileChange {
     }
 
     /// Check if this file should be skipped from LLM analysis (large or binary)
+    /// Note: Currently only used in tests - production code uses is_large_file() directly
+    #[allow(dead_code)]
     pub fn should_skip_llm(&self) -> bool {
         self.is_large_file() || self.is_binary_file()
     }

@@ -92,7 +92,7 @@ pub async fn cmd_plan(
 
     // Step 3: Interactive editing (if interactive)
     // execute_interactive tracks whether to prompt for each commit during execution
-    // include_large_files tracks whether to commit binary/large files
+    // include_large_files tracks whether to commit large files (>=50MB)
     let (approved_groups, execute_interactive, include_large_files) = if interactive {
         let mut editor = editor::PlanEditor::new(groups);
         match editor

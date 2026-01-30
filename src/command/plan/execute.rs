@@ -119,9 +119,9 @@ pub fn execute_plan(
     println!("\n===========================================================");
     if large_file_count > 0 {
         if include_large_files {
-            println!("Executing Plan ({} groups, binary/large files INCLUDED)", total_count);
+            println!("Executing Plan ({} groups, large files INCLUDED)", total_count);
         } else {
-            println!("Executing Plan ({} groups, binary/large files SKIPPED)", total_count);
+            println!("Executing Plan ({} groups, large files SKIPPED)", total_count);
         }
     } else {
         println!("Executing Plan ({} groups)", total_count);
@@ -131,7 +131,7 @@ pub fn execute_plan(
     for (idx, group) in groups.iter().enumerate() {
         // Handle large file groups
         if group.is_large_file_group {
-            println!("Group {}/{} [BINARY/LARGE FILES]", idx + 1, total_count);
+            println!("Group {}/{} [LARGE FILES]", idx + 1, total_count);
             println!("Files ({}):", group.files.len());
             for file in &group.files_with_status {
                 println!("  {} {}", file.status.label(), file.path);
@@ -140,7 +140,7 @@ pub fn execute_plan(
 
             if include_large_files {
                 // User chose to include - commit these files
-                println!("Committing binary/large files...");
+                println!("Committing large files...");
                 if !dry_run {
                     execute_commit_group(group, mode, model)?;
                 } else {
