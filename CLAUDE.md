@@ -57,6 +57,10 @@ src/
 │   │   ├── mod.rs       # Main plan logic & command entry
 │   │   ├── analyze.rs   # Repository state analysis
 │   │   ├── group.rs     # LLM-based commit grouping
+│   │   ├── scoring.rs   # Deterministic plan quality scoring
+│   │   ├── model.rs     # Data structures (PlanCandidate, PlanScore, etc.)
+│   │   ├── prompt.rs    # LLM prompt construction & response parsing
+│   │   ├── context.rs   # Build planning context from analysis
 │   │   ├── editor.rs    # Interactive strategy editing
 │   │   └── execute.rs   # Strategy execution (git operations)
 │   ├── explain/      # Read-only narration (dispatches to subcommands) - CLI: "tell"
@@ -170,6 +174,13 @@ src/
 - Global defaults: default_provider, base_branch, max_diff_chars, preset, secret_action
 - API keys read from environment variables (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
 - claudecode provider uses browser OAuth (no API key needed)
+- Release config: `[release]` section for custom version file locations
+
+**Custom Version Files (Release Command)**
+- Configure non-standard version files in `[release]` section
+- Single file: `version_file = "path"` with `version_json_path` for JSON
+- Multiple files: `version_files = [{ file, json_path }]` array
+- Custom patterns: `pattern` (regex) + `template` (replacement) for non-JSON
 
 **Proxy Support**
 - Respects GITAR_PROXY environment variable
@@ -208,7 +219,76 @@ fn test_command_name() {
 **Plan Command** (command/plan/) — Default when running `gitar` with no args
 - Scope flags: `--working`, `--staged`, `--history <REF>`
 - `--apply` to execute, `-i` for interactive editing
-- Flow: analyze.rs → group.rs → editor.rs → execute.rs
+- Flow: analyze.rs → group.rs → scoring.rs → editor.rs → execute.rs
+
+### Plan Scoring System (command/plan/scoring.rs)
+
+The plan command uses a **deterministic scoring algorithm** to evaluate LLM-proposed commit groupings. This acts as a guardrail to catch when the AI makes poor grouping decisions.
+
+**How It Works:**
+1. LLM analyzes files and proposes commit groups
+2. Deterministic scorer validates the proposal against commit hygiene rules
+3. Score is displayed to user with detailed breakdown
+4. User can accept, regenerate, or manually edit
+
+**Score Calculation:**
+- Starts at **100** (baseline)
+- Bonuses add points for good practices
+- Penalties subtract points for violations
+- Score ≥ 50 with no violations = "acceptable"
+- Otherwise = "needs improvement"
+
+**Penalties (negative points):**
+
+| Points | Constant | Rule |
+|--------|----------|------|
+| -30 | `PENALTY_MISSING_FILES` | Files not assigned to any group |
+| -25 | `PENALTY_EXCEEDS_SIZE` | Group exceeds max files (15) or total groups exceeds max (8) |
+| -20 | `PENALTY_MIX_FORMAT_FUNCTIONAL` | Mixing formatting-only changes with functional changes |
+| -15 | `PENALTY_MIX_DOCS_SRC` | Mixing documentation with source code in same commit |
+| -10 | `PENALTY_MIX_RENAME_FEATURE` | Mixing file renames with feature changes |
+| -8 | `PENALTY_MANY_ROOTS` | Group touches >3 unrelated top-level directories |
+| -5 | (inline) | More than 6 groups in the plan |
+
+**Bonuses (positive points):**
+
+| Points | Constant | Rule |
+|--------|----------|------|
+| +10 | `BONUS_SINGLE_MODULE` | All files in group are in the same directory (cohesive) |
+| +8 | `BONUS_TESTS_WITH_SRC` | Tests grouped with their related source files |
+| +5 | `BONUS_CLEAR_RATIONALE` | LLM provided explanation >20 chars |
+| +5 | (inline) | High confidence (>0.8) from LLM |
+| +3 | (inline) | Risk properly escalated (high-risk groups flagged) |
+
+**Example Output:**
+```
+Score: 151 (needs improvement)
+
+Reasons:
+  + 8: Group 1 pairs tests with related source
+  + 10: Group 2 has good single-module cohesion
+  + 5: Clear rationale provided
+  - 5: Many groups (8)
+  - 25: Group 5 exceeds max files (17 > 15)
+
+Violations:
+  - Group 5 has 17 files (max 15)
+```
+
+**Constraints (configurable in PlanConstraints):**
+- `max_files_per_group`: 15 (default)
+- `max_groups`: 8 (default)
+- `separate_formatting`: true — formatting changes should be in own commit
+- `separate_docs`: true — docs should be separate from code
+- `separate_renames`: true — renames should be separate from features
+- `keep_tests_with_src`: true — tests should stay with related source
+
+**Design Rationale:**
+The scoring system enforces commit hygiene best practices:
+- **Atomic commits**: Each commit should do one thing
+- **Reviewability**: Commits shouldn't be too large to review
+- **Bisectability**: Clean history helps `git bisect`
+- **Clarity**: Separating concerns makes history readable
 
 **Tell Subcommands** (gitar tell --<selector>)
 - `--commit` — Generate AI commit message and commit

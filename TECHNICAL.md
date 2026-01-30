@@ -331,19 +331,124 @@ Analyze repository changes and create a multi-commit execution plan with LLM-pow
    - Create commits with messages
 ```
 
-#### Scoring Heuristics
+#### Plan Scoring System
 
-**Penalties**:
-- Mix docs and src: -15 points
-- Mix formatting with functional: -20 points
-- Mix renames with features: -10 points
-- Many unrelated directories: -8 points
-- Exceed size limits: -25 points
+**File**: `src/command/plan/scoring.rs`
 
-**Bonuses**:
-- Single-module cohesion: +10 points
-- Tests paired with src: +8 points
-- Clear rationale: +5 points
+The plan command uses a **deterministic scoring algorithm** to evaluate LLM-proposed commit groupings. This acts as a guardrail to catch when the AI makes poor grouping decisions, enforcing commit hygiene best practices.
+
+##### How It Works
+
+```
+1. LLM analyzes files and proposes 2-3 alternative commit groupings
+2. Deterministic scorer evaluates each candidate against rules
+3. Best candidate is selected (highest score)
+4. Score breakdown is displayed to user
+5. User can accept, regenerate, or manually edit
+```
+
+##### Score Calculation
+
+- **Baseline**: 100 points
+- **Bonuses**: Add points for good practices
+- **Penalties**: Subtract points for violations
+- **Acceptable**: Score ≥ 50 with no hard violations
+- **Needs Improvement**: Score < 50 or has violations
+
+##### Penalty Rules
+
+| Points | Constant | Trigger |
+|--------|----------|---------|
+| **-30** | `PENALTY_MISSING_FILES` | Files from context not assigned to any group |
+| **-25** | `PENALTY_EXCEEDS_SIZE` | Group has >15 files OR plan has >8 groups |
+| **-20** | `PENALTY_MIX_FORMAT_FUNCTIONAL` | Formatting changes mixed with functional code |
+| **-15** | `PENALTY_MIX_DOCS_SRC` | Documentation mixed with source code |
+| **-10** | `PENALTY_MIX_RENAME_FEATURE` | File renames mixed with feature changes |
+| **-8** | `PENALTY_MANY_ROOTS` | Group touches >3 unrelated top-level directories |
+| **-5** | (inline) | Plan has more than 6 groups |
+| **-10** | (inline) | Extra files in groups not present in context |
+
+##### Bonus Rules
+
+| Points | Constant | Trigger |
+|--------|----------|---------|
+| **+10** | `BONUS_SINGLE_MODULE` | All files in group share same parent directory |
+| **+8** | `BONUS_TESTS_WITH_SRC` | Test files grouped with their related source |
+| **+5** | `BONUS_CLEAR_RATIONALE` | LLM provided rationale >20 characters |
+| **+5** | (inline) | LLM confidence >0.8 |
+| **+3** | (inline) | High-risk groups properly flagged as high risk |
+
+##### Constraint Checking
+
+The scorer also validates against configurable constraints:
+
+```rust
+PlanConstraints {
+    max_files_per_group: 15,  // Hard limit per commit
+    max_groups: 8,            // Hard limit on commit count
+    separate_formatting: true, // Formatting in own commit
+    separate_docs: true,       // Docs separate from code
+    separate_renames: true,    // Renames separate from features
+    keep_tests_with_src: true, // Tests stay with related source
+}
+```
+
+##### Example Output
+
+```
+Score: 151 (needs improvement)
+
+Reasons:
+  + 8: Group 1 pairs tests with related source
+  + 10: Group 2 has good single-module cohesion
+  + 10: Group 3 has good single-module cohesion
+  + 5: Clear rationale provided
+  - 5: Many groups (8)
+  - 25: Group 5 exceeds max files (17 > 15)
+
+Violations:
+  - Group 5 has 17 files (max 15)
+```
+
+##### Design Rationale
+
+The scoring system enforces commit hygiene best practices:
+
+| Principle | Why It Matters |
+|-----------|----------------|
+| **Atomic commits** | Each commit does one logical thing |
+| **Reviewability** | Commits aren't too large to review effectively |
+| **Bisectability** | Clean history enables `git bisect` for debugging |
+| **Clarity** | Separating concerns makes history readable |
+| **Consistency** | Tests and source stay together for context |
+
+##### Key Functions
+
+```rust
+// Score a single candidate
+fn score_plan(candidate: &PlanCandidate, context: &PlanningContext) -> PlanScore
+
+// Select best from multiple candidates
+fn select_best_candidate(candidates: &[PlanCandidate], context: &PlanningContext)
+    -> Option<(usize, PlanScore)>
+
+// Format score for display
+fn format_score(score: &PlanScore) -> String
+```
+
+##### Helper Functions
+
+| Function | Purpose |
+|----------|---------|
+| `check_file_coverage` | Detect missing/extra files |
+| `score_group` | Apply per-group penalties/bonuses |
+| `has_mixed_docs_and_src` | Detect doc + code mixing |
+| `has_mixed_format_and_functional` | Detect format + code mixing |
+| `has_mixed_rename_and_feature` | Detect rename + feature mixing |
+| `count_path_roots` | Count distinct top-level directories |
+| `has_tests_with_related_src` | Detect test + source pairing |
+| `apply_global_bonuses` | Apply plan-wide bonuses |
+| `check_constraints` | Validate against hard limits |
 
 #### Analysis Modes
 
@@ -668,6 +773,60 @@ Automate version bumps, changelog generation, and git tagging.
 | `Cargo.toml` | `version = "1.2.3"` |
 | `package.json` | `"version": "1.2.3"` |
 | `pyproject.toml` | `version = "1.2.3"` |
+
+#### Custom Version File Configuration
+
+For projects with non-standard version file locations (e.g., Tauri, monorepos), configure custom version files in `~/.gitar.toml`:
+
+**Single Custom File (Simple)**
+```toml
+[release]
+version_file = "src-tauri/tauri.conf.json"
+version_json_path = "version"  # For JSON files
+```
+
+**Multiple Custom Files**
+```toml
+[release]
+version_files = [
+    # JSON file with nested path
+    { file = "src-tauri/tauri.conf.json", json_path = "package.version" },
+
+    # JSON file with top-level version
+    { file = "app/package.json", json_path = "version" },
+
+    # Custom format with regex pattern
+    { file = "version.txt", pattern = "^(\\d+\\.\\d+\\.\\d+)$", template = "${1}" },
+]
+```
+
+**Configuration Options**
+
+| Option | Type | Description |
+|--------|------|-------------|
+| `file` | string | Path to version file (relative to repo root) |
+| `json_path` | string | JSON path to version field (e.g., `"version"`, `"package.version"`) |
+| `pattern` | string | Regex pattern with capture group for version |
+| `template` | string | Replacement template using `${1}` for captured version |
+
+**Example: Tauri Project**
+```toml
+[release]
+version_files = [
+    { file = "Cargo.toml", json_path = "" },  # Uses standard detection
+    { file = "src-tauri/tauri.conf.json", json_path = "version" },
+    { file = "package.json", json_path = "version" },
+]
+```
+
+**Custom Patterns for Non-JSON Files**
+```toml
+# version.h with: #define VERSION "1.2.3"
+{ file = "version.h", pattern = "#define VERSION \"(\\d+\\.\\d+\\.\\d+)\"", template = "#define VERSION \"${1}\"" }
+
+# VERSION file with just: 1.2.3
+{ file = "VERSION", pattern = "^(\\d+\\.\\d+\\.\\d+)$", template = "${1}" }
+```
 
 #### Version Bump Strategy
 

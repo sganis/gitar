@@ -359,6 +359,40 @@ Does:
 * Creates commit + tag
 * Never auto-pushes
 
+### Supported Version Files
+
+By default, gitar detects and updates:
+- `Cargo.toml` (Rust)
+- `package.json` (Node.js)
+- `pyproject.toml` (Python)
+
+### Custom Version Files
+
+For projects with non-standard version locations (Tauri, monorepos, etc.), configure in `~/.gitar/gitar.toml`:
+
+```toml
+[release]
+# Single file with JSON path
+version_file = "src-tauri/tauri.conf.json"
+version_json_path = "version"
+
+# Or multiple files
+version_files = [
+    { file = "Cargo.toml" },
+    { file = "src-tauri/tauri.conf.json", json_path = "version" },
+    { file = "package.json", json_path = "version" },
+]
+```
+
+For non-JSON files, use regex patterns:
+
+```toml
+# version.h with: #define VERSION "1.2.3"
+version_files = [
+    { file = "version.h", pattern = "#define VERSION \"(\\d+\\.\\d+\\.\\d+)\"", template = "#define VERSION \"${1}\"" },
+]
+```
+
 ---
 
 ## Utilities
