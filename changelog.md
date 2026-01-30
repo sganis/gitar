@@ -1,3 +1,17 @@
+## [3.0.2] - 2026-01-30
+
+# Release Notes v3.0.2
+
+## Fixes
+
+- Binary files are now treated as normal assets in the plan command instead of being skipped entirely; only files >= 50MB are excluded
+
+## Infrastructure
+
+- Added Windows-specific cargo config to increase stack size to 8MB, preventing stack overflow on deep recursion
+- Normalized line endings in install script to LF via .gitattributes for cross-platform consistency
+- Added .gitattributes to preserve CRLF line endings for Windows batch files
+
 ## [3.0.1] - 2026-01-29
 
 # Release Notes
