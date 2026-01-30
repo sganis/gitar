@@ -100,7 +100,8 @@ src/
 │   └── repo.rs       # Repository context (repo root, user/project context)
 └── provider/         # LLM provider implementations
     ├── openai.rs     # OpenAI & compatible APIs
-    ├── claude.rs     # Anthropic Claude
+    ├── anthropic.rs  # Anthropic Claude API
+    ├── claudecode.rs # Claude via Max subscription (CLI subprocess)
     ├── gemini.rs     # Google Gemini
     └── retry.rs      # Exponential backoff retry logic
 ```
@@ -165,9 +166,10 @@ src/
 
 **Configuration**
 - Single config file: ~/.gitar.toml
-- Provider-specific sections: [openai], [claude], [gemini], etc.
+- Provider-specific sections: [openai], [anthropic], [gemini], [claudecode], etc.
 - Global defaults: default_provider, base_branch, max_diff_chars, preset, secret_action
 - API keys read from environment variables (OPENAI_API_KEY, ANTHROPIC_API_KEY, etc.)
+- claudecode provider uses browser OAuth (no API key needed)
 
 **Proxy Support**
 - Respects GITAR_PROXY environment variable

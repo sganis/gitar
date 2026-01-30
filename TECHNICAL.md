@@ -99,11 +99,14 @@ model = "gpt-4.1-2025-04-14"
 max_tokens = 4096
 temperature = 0.7
 
-[claude]
+[anthropic]
 model = "claude-sonnet-4-5-20250514"
 
 [gemini]
 model = "gemini-2.5-flash"
+
+[claudecode]
+model = "sonnet"  # uses Claude Max subscription via CLI
 ```
 
 ### Default Models by Provider
@@ -111,7 +114,8 @@ model = "gemini-2.5-flash"
 | Provider | Default Model |
 |----------|---------------|
 | OpenAI | `gpt-4.1-2025-04-14` |
-| Claude | `claude-sonnet-4-5-20250514` |
+| Anthropic | `claude-sonnet-4-5-20250514` |
+| Claude Code | `sonnet` |
 | Gemini | `gemini-2.5-flash` |
 | Groq | `llama-3.3-70b-versatile` |
 | Ollama | `llama3.2:latest` |
@@ -136,15 +140,15 @@ model = "gemini-2.5-flash"
 
 The client auto-detects provider from:
 1. Explicit `--provider` flag
-2. Base URL patterns (anthropic.com -> claude, googleapis.com -> gemini)
-3. API key prefix (`sk-ant-*` -> claude)
+2. Base URL patterns (anthropic.com -> anthropic, googleapis.com -> gemini)
+3. API key prefix (`sk-ant-*` -> anthropic)
 
 ### Supported Providers
 
 ```rust
 LlmClient {
     http: Client,           // reqwest HTTP client
-    provider: String,       // openai|claude|gemini|groq|ollama
+    provider: String,       // openai|anthropic|gemini|groq|ollama|claudecode
     base_url: String,       // API endpoint
     api_key: Option<String>,
     model: String,
@@ -152,6 +156,8 @@ LlmClient {
     temperature: f32,
 }
 ```
+
+Note: `claudecode` provider uses local Claude CLI subprocess instead of HTTP API.
 
 ### Key Methods
 
@@ -985,7 +991,8 @@ src/
 │   └── repo.rs       # Context file loading
 ├── provider/
 │   ├── openai.rs
-│   ├── claude.rs
+│   ├── anthropic.rs
+│   ├── claudecode.rs
 │   ├── gemini.rs
 │   └── retry.rs
 └── util/

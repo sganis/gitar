@@ -95,7 +95,8 @@ fn cli_rejects_invalid_algo() {
 #[test]
 fn cli_parses_valid_providers() {
     let providers = [
-        "openai", "claude", "gemini", "google", "groq", "ollama", "local",
+        "openai", "anthropic", "claude", "gemini", "google", "groq", "ollama", "local",
+        "claudecode", "claude-code",
     ];
     for provider in providers {
         let cli =

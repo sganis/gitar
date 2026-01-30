@@ -4,7 +4,7 @@ use reqwest::{Certificate, Client, ClientBuilder, Proxy};
 
 use crate::color::{styled, warning_style};
 use crate::config::{provider_to_url, ProviderConfig, ResolvedConfig};
-use crate::provider::{claude, gemini, openai};
+use crate::provider::{anthropic, claudecode, gemini, openai};
 
 /// Environment variable for custom CA certificate file path.
 pub const CA_FILE_ENV: &str = "GITAR_CA_FILE";
@@ -103,10 +103,11 @@ impl LlmClient {
             .clone()
             .unwrap_or_else(|| match provider {
                 "openai" => "gpt-5-chat-latest".to_string(),
-                "claude" => "claude-sonnet-4-5-20250929".to_string(),
+                "anthropic" => "claude-sonnet-4-5-20250929".to_string(),
                 "gemini" => "gemini-2.5-flash".to_string(),
                 "groq" => "llama-3.3-70b-versatile".to_string(),
                 "ollama" => "llama3.2:latest".to_string(),
+                "claudecode" => "sonnet".to_string(),
                 _ => "gpt-5-chat-latest".to_string(),
             });
 
@@ -128,17 +129,25 @@ impl LlmClient {
         &self.provider
     }
 
-    fn is_claude(&self) -> bool {
-        self.provider == "claude" || self.base_url.contains("anthropic.com")
+    fn is_anthropic(&self) -> bool {
+        self.provider == "anthropic" || self.base_url.contains("anthropic.com")
     }
 
     fn is_gemini(&self) -> bool {
         self.provider == "gemini" || self.base_url.contains("generativelanguage.googleapis.com")
     }
 
+    fn is_claudecode(&self) -> bool {
+        self.provider == "claudecode"
+    }
+
     pub async fn chat(&self, system: &str, user: &str, stream: bool) -> Result<String> {
-        if self.is_claude() {
-            return claude::chat(
+        // Claude Code uses subprocess, not HTTP - check first
+        if self.is_claudecode() {
+            return claudecode::chat(&self.model, system, user, stream).await;
+        }
+        if self.is_anthropic() {
+            return anthropic::chat(
                 &self.http,
                 &self.base_url,
                 self.api_key.as_deref(),
@@ -180,11 +189,15 @@ impl LlmClient {
     }
 
     pub async fn list_models(&self) -> Result<Vec<String>> {
+        // Claude Code uses subprocess, not HTTP - check first
+        if self.is_claudecode() {
+            return claudecode::list_models().await;
+        }
         if self.is_gemini() {
             return gemini::list_models(&self.http, &self.base_url, self.api_key.as_deref()).await;
         }
-        if self.is_claude() {
-            return claude::list_models(&self.http, &self.base_url, self.api_key.as_deref()).await;
+        if self.is_anthropic() {
+            return anthropic::list_models(&self.http, &self.base_url, self.api_key.as_deref()).await;
         }
         openai::list_models(&self.http, &self.base_url, self.api_key.as_deref()).await
     }
@@ -234,11 +247,11 @@ mod tests {
     }
 
     #[test]
-    fn detect_claude() {
+    fn detect_anthropic() {
         let _e1 = EnvGuard::remove("GITAR_PROXY");
         let _e2 = EnvGuard::remove(CA_FILE_ENV);
-        let c = LlmClient::new(&make_config("claude", "https://api.openai.com")).unwrap();
-        assert!(c.is_claude());
+        let c = LlmClient::new(&make_config("anthropic", "https://api.openai.com")).unwrap();
+        assert!(c.is_anthropic());
     }
 
     #[test]
@@ -254,6 +267,6 @@ mod tests {
         let _e1 = EnvGuard::remove("GITAR_PROXY");
         let _e2 = EnvGuard::remove(CA_FILE_ENV);
         let c = LlmClient::new(&make_config("openai", "https://api.anthropic.com/v1")).unwrap();
-        assert!(c.is_claude());
+        assert!(c.is_anthropic());
     }
 }

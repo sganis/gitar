@@ -167,7 +167,7 @@ pub struct Cli {
     #[arg(
         long,
         global = true,
-        value_parser = ["openai", "claude", "gemini", "google", "groq", "ollama", "local"]
+        value_parser = ["openai", "anthropic", "claude", "gemini", "google", "groq", "ollama", "local", "claudecode", "claude-code"]
     )]
     pub provider: Option<String>,
 

@@ -1,3 +1,22 @@
+## [3.0.1] - 2026-01-29
+
+# Release Notes
+
+## Features
+
+- Added Claude Code CLI provider integration for Max subscription users, enabling local AI assistance through subprocess communication
+- Introduced "anthropic" as a standalone provider alias alongside the existing "claude" option for improved flexibility
+
+## Improvements
+
+- Refactored plan execution logic to cleanly separate history mode operations from other execution paths
+- Renamed claude provider to anthropic throughout the codebase for consistency with official branding
+- Updated Rust dependencies to latest versions
+
+## Infrastructure
+
+- Disabled Linux x86_64 glibc build target in CI workflow
+
 ## [3.0.0] - 2026-01-28
 
 # Release Notes
