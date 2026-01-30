@@ -1,0 +1,5 @@
+# Disable line ending normalization for Windows batch files
+# This preserves CRLF in the repository blob so raw.githubusercontent.com
+# serves files that work directly with Windows CMD
+*.cmd -text
+*.bat -text
