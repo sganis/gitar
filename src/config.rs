@@ -127,6 +127,34 @@ impl ProviderConfig {
     }
 }
 
+/// Configuration for a single custom version file
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct VersionFileConfig {
+    /// Path to the version file (relative to repo root or current directory)
+    pub file: String,
+    /// For JSON files: dot-notation path to version field (e.g., "version" or "package.version")
+    pub json_path: Option<String>,
+    /// For other files: regex pattern with capture group for version (e.g., r#"version = "(\d+\.\d+\.\d+)""#)
+    pub pattern: Option<String>,
+    /// Template for replacement (e.g., "version = \"{version}\""). Use {version} placeholder.
+    pub template: Option<String>,
+}
+
+/// Configuration for the release command
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct ReleaseConfig {
+    /// Single version file (simple case)
+    pub version_file: Option<String>,
+    /// JSON path for the version field (for JSON files)
+    pub version_json_path: Option<String>,
+    /// Regex pattern for version extraction
+    pub version_pattern: Option<String>,
+    /// Template for version replacement
+    pub version_template: Option<String>,
+    /// Multiple version files (advanced case, e.g., monorepos)
+    pub version_files: Option<Vec<VersionFileConfig>>,
+}
+
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub default_provider: Option<String>,
@@ -137,6 +165,8 @@ pub struct Config {
     pub secret_action: Option<String>,
     /// When true, commands default to --apply mode (execute instead of dry-run)
     pub auto_apply: Option<bool>,
+    /// Release command configuration
+    pub release: Option<ReleaseConfig>,
     pub openai: Option<ProviderConfig>,
     pub anthropic: Option<ProviderConfig>,
     pub gemini: Option<ProviderConfig>,
