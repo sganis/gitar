@@ -1,0 +1,9 @@
+# .cargo/config.toml
+# Increase stack size on Windows to prevent stack overflow
+# Default Windows stack is 1MB, which is too small for this project
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "link-args=/STACK:8388608"]
+
+[target.i686-pc-windows-msvc]
+rustflags = ["-C", "link-args=/STACK:8388608"]
