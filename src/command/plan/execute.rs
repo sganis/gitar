@@ -57,12 +57,30 @@ fn handle_large_file_group(group: &CommitGroup, mode: &AnalysisMode, dry_run: bo
 fn stage_file(path: &str, status: &FileStatus) -> Result<()> {
     match status {
         FileStatus::Deleted => {
-            // For deleted files, use git rm --cached (file already deleted from disk)
-            // Or use git add -u which handles deletions
-            let result = git::run_git_status(&["add", "-u", "--", path]);
-            if !result.2 {
-                // Fallback: try git rm --cached if git add -u fails
-                git::run_git(&["rm", "--cached", "--", path])?;
+            // For deleted files, we need to check if the file is tracked in HEAD
+            // If it is, stage the deletion. If not, it was a new file that got deleted
+            // (e.g., status "AD") and there's nothing to commit.
+            let exists_in_head =
+                git::run_git_status(&["cat-file", "-e", &format!("HEAD:{}", path)]).2;
+
+            if exists_in_head {
+                // File exists in HEAD, stage the deletion with git rm --cached
+                let result = git::run_git_status(&["rm", "--cached", "--", path]);
+                if !result.2 {
+                    // Fallback: try git add -u which also handles deletions
+                    let add_result = git::run_git_status(&["add", "-u", "--", path]);
+                    if !add_result.2 {
+                        // Both failed - this shouldn't happen for a tracked file
+                        // but don't error out, just warn
+                        warning(format!("Could not stage deletion of {}", path));
+                    }
+                }
+            } else {
+                // File doesn't exist in HEAD - it was staged as new then deleted
+                // Try to remove from index if still there (might have been reset)
+                let _ = git::run_git_status(&["rm", "--cached", "--force", "--", path]);
+                // If this fails, the file isn't in the index either - nothing to commit
+                // This is expected after "git reset HEAD" for files that were staged as new
             }
         }
         FileStatus::Renamed => {

@@ -311,6 +311,11 @@ fn scan_working_tree() -> Result<Vec<FileChange>> {
                     });
                 }
             }
+            "AD" => {
+                // File was staged as new (A) then deleted from working tree (D)
+                // This results in NO net change - remove from changes if present
+                changes.retain(|c| c.path != path);
+            }
             "A " | "AM" => {
                 // Staged new file
                 if let Some(change) = changes.iter_mut().find(|c| c.path == path) {
@@ -335,9 +340,19 @@ fn scan_working_tree() -> Result<Vec<FileChange>> {
                 }
             }
             "D " | " D" | "DD" => {
-                // Deleted file
+                // Deleted file (tracked in HEAD)
                 if let Some(change) = changes.iter_mut().find(|c| c.path == path) {
                     change.status = ChangeStatus::Deleted;
+                } else {
+                    // File is being deleted but wasn't in numstat - add it
+                    changes.push(FileChange {
+                        path: path.clone(),
+                        status: ChangeStatus::Deleted,
+                        additions: 0,
+                        deletions: 0,
+                        category: categorize_file(&path),
+                        size_bytes: None, // Deleted files have no size
+                    });
                 }
             }
             s if s.starts_with('R') => {
@@ -432,12 +447,33 @@ fn scan_staged() -> Result<Vec<FileChange>> {
                 // Added file
                 if let Some(change) = changes.iter_mut().find(|c| c.path == path) {
                     change.status = ChangeStatus::Added;
+                } else {
+                    // File wasn't in numstat (might be binary) - add it
+                    let size_bytes = get_file_size(&path);
+                    changes.push(FileChange {
+                        path: path.clone(),
+                        status: ChangeStatus::Added,
+                        additions: 0,
+                        deletions: 0,
+                        category: categorize_file(&path),
+                        size_bytes,
+                    });
                 }
             }
             "D" => {
                 // Deleted file
                 if let Some(change) = changes.iter_mut().find(|c| c.path == path) {
                     change.status = ChangeStatus::Deleted;
+                } else {
+                    // Deleted file wasn't in numstat - add it
+                    changes.push(FileChange {
+                        path: path.clone(),
+                        status: ChangeStatus::Deleted,
+                        additions: 0,
+                        deletions: 0,
+                        category: categorize_file(&path),
+                        size_bytes: None, // Deleted files have no size
+                    });
                 }
             }
             s if s.starts_with('R') => {
