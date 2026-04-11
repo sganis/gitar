@@ -13,7 +13,7 @@
 use anyhow::{bail, Context, Result};
 use serde::Deserialize;
 use std::io::{self, Write};
-use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::Command;
 
 /// Message types from Claude CLI stream-json output
@@ -77,16 +77,19 @@ pub async fn chat(
         format!("{}\n\n{}", system, user)
     };
 
-    // Build command
-    // Note: --verbose is required when using -p with --output-format=stream-json
+    // Build command. Pipe the prompt via stdin instead of passing it as a -p
+    // argument: large prompts (e.g. plan-grouping with many files) can exceed
+    // Windows command-line limits or trigger silent CLI failures, while stdin
+    // has no such limit and avoids any shell-escaping concerns.
     let mut cmd = Command::new("claude");
     cmd.args([
         "-p",
-        &full_prompt,
         "--model",
         model,
         "--output-format",
         "stream-json",
+        "--input-format",
+        "text",
         "--max-turns",
         "1",
         "--verbose",
@@ -96,6 +99,7 @@ pub async fn chat(
     // If this env var is set, claude CLI will use API instead of subscription
     cmd.env_remove("ANTHROPIC_API_KEY");
 
+    cmd.stdin(std::process::Stdio::piped());
     cmd.stdout(std::process::Stdio::piped());
     cmd.stderr(std::process::Stdio::piped());
 
@@ -103,10 +107,32 @@ pub async fn chat(
         .spawn()
         .context("Failed to spawn claude CLI process")?;
 
+    let mut stdin = child
+        .stdin
+        .take()
+        .context("Failed to capture claude CLI stdin")?;
+    let prompt_bytes = full_prompt.into_bytes();
+    let stdin_task = tokio::spawn(async move {
+        stdin.write_all(&prompt_bytes).await?;
+        stdin.shutdown().await?;
+        Ok::<(), std::io::Error>(())
+    });
+
     let stdout = child
         .stdout
         .take()
         .context("Failed to capture claude CLI stdout")?;
+
+    let mut stderr_pipe = child
+        .stderr
+        .take()
+        .context("Failed to capture claude CLI stderr")?;
+
+    let stderr_task = tokio::spawn(async move {
+        let mut buf = String::new();
+        let _ = stderr_pipe.read_to_string(&mut buf).await;
+        buf
+    });
 
     let mut reader = BufReader::new(stdout).lines();
     let mut result_text = String::new();
@@ -154,12 +180,24 @@ pub async fn chat(
 
     // Wait for process to complete
     let status = child.wait().await?;
+    let stderr_output = stderr_task.await.unwrap_or_default();
+    let _ = stdin_task.await;
 
     if !status.success() {
+        let stderr_trimmed = stderr_output.trim();
+        let stderr_preview = if stderr_trimmed.is_empty() {
+            "(no stderr output)".to_string()
+        } else if stderr_trimmed.len() > 500 {
+            format!("{}...", &stderr_trimmed[..500])
+        } else {
+            stderr_trimmed.to_string()
+        };
         bail!(
             "Claude CLI exited with error (code {:?}).\n\
+             stderr: {}\n\
              Make sure you're authenticated: run 'claude login'",
-            status.code()
+            status.code(),
+            stderr_preview
         );
     }
 
