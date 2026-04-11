@@ -54,7 +54,7 @@ fn handle_large_file_group(group: &CommitGroup, mode: &AnalysisMode, dry_run: bo
 // =============================================================================
 
 /// Stage a file based on its status
-fn stage_file(path: &str, status: &FileStatus) -> Result<()> {
+fn stage_file(path: &str, status: &FileStatus, from: Option<&str>) -> Result<()> {
     match status {
         FileStatus::Deleted => {
             // For deleted files, we need to check if the file is tracked in HEAD
@@ -84,9 +84,13 @@ fn stage_file(path: &str, status: &FileStatus) -> Result<()> {
             }
         }
         FileStatus::Renamed => {
-            // For renamed files, stage both the deletion and addition
-            // git add -A handles this correctly
-            git::run_git(&["add", "-A", "--", path])?;
+            // Stage both the addition of the new path and the deletion of the
+            // old path. `git add -- newpath` won't pick up the old path, so we
+            // need to handle them explicitly.
+            git::run_git(&["add", "--", path])?;
+            if let Some(old) = from {
+                let _ = git::run_git_status(&["rm", "--cached", "--", old]);
+            }
         }
         _ => {
             // For added and modified files, use standard git add
@@ -101,7 +105,7 @@ fn execute_commit_group(group: &CommitGroup, mode: &AnalysisMode, model: &str) -
     // Stage files if not already staged
     if !matches!(mode, AnalysisMode::Staged) {
         for file in &group.files_with_status {
-            stage_file(&file.path, &file.status)?;
+            stage_file(&file.path, &file.status, file.from.as_deref())?;
         }
     }
 
@@ -180,10 +184,11 @@ pub fn execute_plan(
             return execute_history_mode(groups, from, to.as_deref(), dry_run);
         }
 
-        // For staged mode: unstage everything first, then stage only this group's files
-        // This ensures each commit only includes its designated files
-        if matches!(mode, AnalysisMode::Staged) && !dry_run {
-            // Unstage all files first
+        // Unstage everything first, then stage only this group's files. This
+        // ensures each commit only includes its designated files even when the
+        // user had unrelated files pre-staged before invoking gitar (which puts
+        // detect_mode() into WorkingTree but leaves the index dirty).
+        if !dry_run {
             let _ = git::run_git_status(&["reset", "HEAD"]);
         }
 
@@ -196,7 +201,7 @@ pub fn execute_plan(
         if !dry_run {
             // Stage files using files_with_status which has proper paths
             for file in &group.files_with_status {
-                stage_file(&file.path, &file.status)?;
+                stage_file(&file.path, &file.status, file.from.as_deref())?;
             }
 
             // Show diff preview
@@ -491,6 +496,7 @@ mod tests {
             files_with_status: vec![FileWithStatus {
                 path: "test.txt".to_string(),
                 status: FileStatus::Added,
+                from: None,
             }],
             estimated_tokens: 50,
             is_large_file_group: false,
@@ -513,6 +519,7 @@ mod tests {
                 files_with_status: vec![FileWithStatus {
                     path: "src/main.rs".to_string(),
                     status: FileStatus::Modified,
+                    from: None,
                 }],
                 estimated_tokens: 50,
                 is_large_file_group: false,
@@ -525,6 +532,7 @@ mod tests {
                 files_with_status: vec![FileWithStatus {
                     path: "assets/video.mp4".to_string(),
                     status: FileStatus::Added,
+                    from: None,
                 }],
                 estimated_tokens: 0,
                 is_large_file_group: true,

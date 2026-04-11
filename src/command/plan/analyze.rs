@@ -356,9 +356,25 @@ fn scan_working_tree() -> Result<Vec<FileChange>> {
                 }
             }
             s if s.starts_with('R') => {
-                // Renamed file - path contains "old -> new"
-                if let Some(change) = changes.iter_mut().find(|c| c.path == path) {
-                    change.status = ChangeStatus::Renamed { from: path.clone() };
+                // git status --porcelain renames look like "R  old -> new"
+                let (from, to) = match path.find(" -> ") {
+                    Some(idx) => (path[..idx].to_string(), path[idx + 4..].to_string()),
+                    None => continue,
+                };
+                // Drop any stale entry numstat may have added for the old path
+                changes.retain(|c| c.path != from);
+                if let Some(change) = changes.iter_mut().find(|c| c.path == to) {
+                    change.status = ChangeStatus::Renamed { from };
+                } else {
+                    let size_bytes = get_file_size(&to);
+                    changes.push(FileChange {
+                        path: to.clone(),
+                        status: ChangeStatus::Renamed { from },
+                        additions: 0,
+                        deletions: 0,
+                        category: categorize_file(&to),
+                        size_bytes,
+                    });
                 }
             }
             _ => {}
@@ -428,19 +444,21 @@ fn scan_staged() -> Result<Vec<FileChange>> {
         }
     }
 
-    // Get status for staged additions and deletions
+    // Get status for staged additions and deletions. --name-status output is
+    // tab-separated; splitting on whitespace would mangle filenames containing
+    // spaces (especially the "old\tnew" pair on rename lines).
     let status = git::run_git(&["diff", "--cached", "--name-status"])?;
     for line in status.lines() {
-        if line.len() < 3 {
+        if line.is_empty() {
             continue;
         }
-        let parts: Vec<&str> = line.split_whitespace().collect();
+        let parts: Vec<&str> = line.splitn(3, '\t').collect();
         if parts.len() < 2 {
             continue;
         }
 
         let status_code = parts[0];
-        let path = parts[1..].join(" ");
+        let path = parts[1].to_string();
 
         match status_code {
             "A" => {

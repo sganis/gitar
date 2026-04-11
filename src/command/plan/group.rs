@@ -48,6 +48,8 @@ impl FileStatus {
 pub struct FileWithStatus {
     pub path: String,
     pub status: FileStatus,
+    /// Original path for renames; None otherwise
+    pub from: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -109,16 +111,19 @@ fn create_skip_file_group(
     let files_with_status: Vec<FileWithStatus> = skip_files
         .iter()
         .map(|f| {
-            let status = match &f.status {
-                super::analyze::ChangeStatus::Added => FileStatus::Added,
-                super::analyze::ChangeStatus::Modified => FileStatus::Modified,
-                super::analyze::ChangeStatus::Deleted => FileStatus::Deleted,
-                super::analyze::ChangeStatus::Renamed { .. } => FileStatus::Renamed,
-                super::analyze::ChangeStatus::Unknown => FileStatus::Unknown,
+            let (status, from) = match &f.status {
+                super::analyze::ChangeStatus::Added => (FileStatus::Added, None),
+                super::analyze::ChangeStatus::Modified => (FileStatus::Modified, None),
+                super::analyze::ChangeStatus::Deleted => (FileStatus::Deleted, None),
+                super::analyze::ChangeStatus::Renamed { from } => {
+                    (FileStatus::Renamed, Some(from.clone()))
+                }
+                super::analyze::ChangeStatus::Unknown => (FileStatus::Unknown, None),
             };
             FileWithStatus {
                 path: f.path.clone(),
                 status,
+                from,
             }
         })
         .collect();
@@ -419,15 +424,18 @@ async fn convert_to_commit_groups(
         let files_with_status: Vec<FileWithStatus> = files
             .iter()
             .map(|path| {
-                let status = analysis
-                    .files
-                    .iter()
-                    .find(|f| &f.path == path)
+                let matched = analysis.files.iter().find(|f| &f.path == path);
+                let status = matched
                     .map(|f| change_status_to_file_status(&f.status))
                     .unwrap_or(FileStatus::Modified);
+                let from = matched.and_then(|f| match &f.status {
+                    ChangeStatus::Renamed { from } => Some(from.clone()),
+                    _ => None,
+                });
                 FileWithStatus {
                     path: path.clone(),
                     status,
+                    from,
                 }
             })
             .collect();
@@ -683,6 +691,7 @@ mod tests {
             files_with_status: vec![FileWithStatus {
                 path: "file.rs".to_string(),
                 status: FileStatus::Added,
+                from: None,
             }],
             estimated_tokens: 100,
             is_large_file_group: false,

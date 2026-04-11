@@ -289,10 +289,12 @@ mod tests {
                     FileWithStatus {
                         path: "README.md".to_string(),
                         status: FileStatus::Modified,
+                        from: None,
                     },
                     FileWithStatus {
                         path: "CHANGELOG.md".to_string(),
                         status: FileStatus::Modified,
+                        from: None,
                     },
                 ],
                 estimated_tokens: 100,
@@ -306,6 +308,7 @@ mod tests {
                 files_with_status: vec![FileWithStatus {
                     path: "test.rs".to_string(),
                     status: FileStatus::Added,
+                    from: None,
                 }],
                 estimated_tokens: 150,
                 is_large_file_group: false,
