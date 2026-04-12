@@ -96,6 +96,11 @@ jobs:
         with:
           arch: x64
 
+      - name: Remove Git link.exe that shadows MSVC linker (Windows only)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: rm -f /usr/bin/link.exe
+
       - name: Setup Rust (stable)
         uses: dtolnay/rust-toolchain@stable
         with:
