@@ -182,6 +182,7 @@ jobs:
           name: ${{ env.ARTIFACT_NAME }}
           path: dist/${{ env.ARTIFACT_NAME }}
           if-no-files-found: error
+          retention-days: 1
 
   release:
     name: Create GitHub Release
